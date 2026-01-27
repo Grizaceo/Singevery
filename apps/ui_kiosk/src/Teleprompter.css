@@ -1,0 +1,59 @@
+/* Teleprompter.css */
+body {
+    background-color: black;
+    color: white;
+    font-family: 'Inter', sans-serif;
+    margin: 0;
+    overflow: hidden;
+}
+
+.teleprompter-container {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    height: 100vh;
+    width: 100vw;
+    padding: 2rem;
+    box-sizing: border-box;
+}
+
+.status-indicator {
+    position: absolute;
+    top: 1rem;
+    left: 1rem;
+    font-size: 0.8rem;
+    color: #666;
+    text-transform: uppercase;
+    border: 1px solid #333;
+    padding: 0.2rem 0.5rem;
+    border-radius: 4px;
+}
+
+.lyrics-display {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1rem;
+    max-width: 80%;
+}
+
+.lyrics-previous, .lyrics-next {
+    color: #444; /* Dimmed */
+    font-size: 2rem;
+    font-weight: 300;
+}
+
+.lyrics-current {
+    font-weight: 700;
+    color: #fff;
+    text-shadow: 0 0 10px rgba(255, 255, 255, 0.5); /* Glow */
+    margin: 1rem 0;
+}
+
+.track-info {
+    position: absolute;
+    bottom: 2rem;
+    font-size: 1rem;
+    color: #888;
+}

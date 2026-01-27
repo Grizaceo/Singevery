@@ -1,0 +1,15 @@
+# Audio
+pyaudio
+webrtcvad
+numpy
+
+# Network / IPC
+websockets
+aiohttp
+requests
+
+# Async
+asyncio
+
+# Utils
+pydantic
