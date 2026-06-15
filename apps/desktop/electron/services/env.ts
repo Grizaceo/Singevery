@@ -7,6 +7,10 @@ export function loadDotEnv(): void {
   const candidates = [
     path.join(process.cwd(), '.env'),
     path.join(app.getAppPath(), '.env'),
+    // En dev: apps/desktop/dist-electron/electron/main.js → repo root es ../../..
+    path.join(__dirname, '..', '..', '..', '.env'),
+    // En prod: apps/desktop/dist-electron/electron/main.js → repo root es ../../..
+    path.join(__dirname, '..', '..', '.env'),
   ];
 
   for (const envPath of candidates) {
@@ -23,6 +27,7 @@ export function loadDotEnv(): void {
         process.env[key] = value;
       }
     }
+    console.log(`[env] Cargado .env desde: ${envPath}`);
     break;
   }
 }
