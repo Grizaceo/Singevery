@@ -1,0 +1,50 @@
+{
+  "name": "espejo-teleprompter-desktop",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Widget de escritorio que reconoce la música que suena y muestra la letra sincronizada para cantar.",
+  "author": "Gris",
+  "main": "dist-electron/electron/main.js",
+  "scripts": {
+    "dev": "vite",
+    "dev:electron": "concurrently -k \"npm:dev:vite\" \"npm:dev:wait-electron\"",
+    "dev:vite": "vite",
+    "dev:wait-electron": "npm run build:electron && wait-on tcp:5174 && cross-env NODE_ENV=development ELECTRON_DISABLE_SECURITY_WARNINGS=1 ELECTRON_DISABLE_GPU=1 electron .",
+    "build": "tsc -b && vite build && tsc -p tsconfig.electron.json",
+    "build:electron": "tsc -p tsconfig.electron.json",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "eslint .",
+    "package": "npm run build && electron-builder --config electron-builder.yml"
+  },
+  "dependencies": {
+    "electron-store": "^10.0.0",
+    "kuroshiro": "^1.2.0",
+    "kuroshiro-analyzer-kuromoji": "^1.1.0",
+    "pinyin-pro": "^3.27.0",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "transliteration": "^2.3.5"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.1",
+    "@types/node": "^24.10.1",
+    "@types/react": "^19.2.5",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^5.1.1",
+    "concurrently": "^9.1.0",
+    "cross-env": "^7.0.3",
+    "electron": "^33.0.0",
+    "electron-builder": "^25.1.0",
+    "eslint": "^9.39.1",
+    "eslint-plugin-react-hooks": "^7.0.1",
+    "eslint-plugin-react-refresh": "^0.4.24",
+    "globals": "^16.5.0",
+    "typescript": "~5.9.3",
+    "typescript-eslint": "^8.46.4",
+    "vite": "^7.2.4",
+    "vitest": "^2.1.5",
+    "wait-on": "^8.0.0"
+  }
+}

@@ -1,0 +1,32 @@
+# Configuración de empaquetado con electron-builder.
+# Foco: Windows NSIS (.exe). macOS/Linux se pueden añadir después.
+appId: com.gris.espejo-teleprompter
+productName: Espejo Teleprompter
+copyright: Copyright © 2026 Gris
+
+directories:
+  output: release
+  buildResources: build
+
+files:
+  - dist/**/*
+  - dist-electron/**/*
+  - package.json
+  - node_modules/kuromoji/dict/**/*
+  - '!**/.env*'
+  - '!**/node_modules/*/{CHANGELOG.md,README.md,readme.md,readme}'
+  - '!**/node_modules/**/{*.map,*.ts,test.js,test.ts,test.d.ts}'
+
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+  artifactName: ${productName}-Setup-${version}.${ext}
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: Espejo Teleprompter

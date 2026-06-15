@@ -1,0 +1,9 @@
+/* App.css — estilos del contenedor raíz. El fondo va aquí en lugar de en
+   index.css para poder sobreescribirlo fácilmente. */
+#root {
+  width: 100vw;
+  height: 100vh;
+  margin: 0;
+  padding: 0;
+  text-align: center;
+}
