@@ -18,14 +18,6 @@ export const Teleprompter: React.FC<Props> = ({ model }) => {
     return (
         <div className="teleprompter-container" style={containerStyle}>
             <div className="drag-handle" />
-            <div className="resize-edge top" />
-            <div className="resize-edge bottom" />
-            <div className="resize-edge left" />
-            <div className="resize-edge right" />
-            <div className="resize-corner top-left" />
-            <div className="resize-corner top-right" />
-            <div className="resize-corner bottom-left" />
-            <div className="resize-corner bottom-right" />
             <div className="status-indicator">{model.status}</div>
 
             <div className="lyrics-display">

@@ -39,7 +39,7 @@ export function DebugLyricsInput() {
         value={value}
         onChange={(e) => setValue(e.target.value)}
         onKeyDown={handleKeyDown}
-        placeholder="Bohemian Rhapsody / Queen"
+        placeholder="Título / Artista"
         spellCheck={false}
       />
       {error && <span className="debug-lyrics-error">{error}</span>}

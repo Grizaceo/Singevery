@@ -16,6 +16,19 @@ function pickMimeType(): string {
   return '';
 }
 
+function pickSystemAudioMimeType(): string {
+  // getDisplayMedia con audio+video produce stream combinado; webm suele funcionar
+  const candidates = [
+    'video/webm;codecs=vp8,opus',
+    'video/webm;codecs=vp9,opus',
+    'video/webm',
+  ];
+  for (const type of candidates) {
+    if (MediaRecorder.isTypeSupported(type)) return type;
+  }
+  return '';
+}
+
 async function openStream(source: AudioSource): Promise<MediaStream> {
   if (source === 'microphone') {
     return navigator.mediaDevices.getUserMedia({
@@ -51,7 +64,7 @@ export async function recordChunk(
   signal?: AbortSignal,
 ): Promise<Blob> {
   const stream = await openStream(source);
-  const mimeType = pickMimeType();
+  const mimeType = source === 'system' ? pickSystemAudioMimeType() : pickMimeType();
 
   return new Promise((resolve, reject) => {
     if (signal?.aborted) {
