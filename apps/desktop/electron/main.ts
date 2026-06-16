@@ -223,7 +223,25 @@ if (!gotLock) {
     }
   });
 
-  app.whenReady().then(bootstrap);
+  process.on('uncaughtException', (err) => {
+    console.error('[main ERROR] uncaughtException:', err);
+  });
+
+  process.on('unhandledRejection', (reason) => {
+    console.error('[main ERROR] unhandledRejection:', reason);
+  });
+
+  app.on('render-process-gone', (_event, details) => {
+    console.error('[main ERROR] render-process-gone:', details);
+  });
+
+  app.on('child-process-gone', (_event, details) => {
+    console.error('[main ERROR] child-process-gone:', details);
+  });
+
+  app.whenReady().then(bootstrap).catch((err) => {
+    console.error('[main ERROR] bootstrap failed:', err);
+  });
 
   app.on('window-all-closed', () => {
     stateStore?.stop();

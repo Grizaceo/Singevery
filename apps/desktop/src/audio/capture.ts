@@ -17,11 +17,12 @@ function pickMimeType(): string {
 }
 
 function pickSystemAudioMimeType(): string {
-  // getDisplayMedia con audio+video produce stream combinado; webm suele funcionar
+  // Stream solo audio → mime types de audio
   const candidates = [
-    'video/webm;codecs=vp8,opus',
-    'video/webm;codecs=vp9,opus',
-    'video/webm',
+    'audio/webm;codecs=opus',
+    'audio/webm',
+    'audio/ogg;codecs=opus',
+    'audio/ogg',
   ];
   for (const type of candidates) {
     if (MediaRecorder.isTypeSupported(type)) return type;
@@ -40,22 +41,24 @@ async function openStream(source: AudioSource): Promise<MediaStream> {
     });
   }
 
-  const stream = await navigator.mediaDevices.getDisplayMedia({
+  // getDisplayMedia requiere video=true para loopback en Windows, pero solo queremos audio
+  const displayStream = await navigator.mediaDevices.getDisplayMedia({
     audio: true,
     video: true,
   });
 
-  // En Windows loopback el audio suele depender del track de vídeo: no detenerlo.
-  for (const track of stream.getVideoTracks()) {
-    track.enabled = false;
+  // Extraer solo tracks de audio
+  const audioTracks = displayStream.getAudioTracks();
+  if (audioTracks.length === 0) {
+    displayStream.getTracks().forEach((track) => track.stop());
+    throw new Error('No se pudo capturar audio del sistema (sin tracks de audio)');
   }
 
-  if (stream.getAudioTracks().length === 0) {
-    stream.getTracks().forEach((track) => track.stop());
-    throw new Error('No se pudo capturar audio del sistema');
-  }
+  // Detener tracks de video (no los necesitamos)
+  displayStream.getVideoTracks().forEach((track) => track.stop());
 
-  return stream;
+  // Crear nuevo stream solo con audio
+  return new MediaStream(audioTracks);
 }
 
 export async function recordChunk(
