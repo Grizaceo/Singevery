@@ -2,7 +2,10 @@ import { useState, useEffect, useRef } from 'react';
 import { Teleprompter } from './Teleprompter';
 import { DebugLyricsInput } from './DebugLyricsInput';
 import { RecognitionControls } from './RecognitionControls';
+import { SyncControls } from './SyncControls';
+import { ReadingControls } from './ReadingControls';
 import { WindowControls } from './WindowControls';
+import { useReadingMode } from './useReadingMode';
 import { INITIAL_RENDER_MODEL } from './initialModel';
 import type { RenderModel, DesktopApi } from './types';
 import './App.css';
@@ -15,6 +18,7 @@ declare global {
 
 function App() {
   const [model, setModel] = useState<RenderModel>(INITIAL_RENDER_MODEL);
+  const [readingMode, setReadingMode] = useReadingMode();
   const unsubscribeRef = useRef<(() => void) | undefined>(undefined);
 
   useEffect(() => {
@@ -43,8 +47,10 @@ function App() {
 
   return (
     <>
-      <Teleprompter model={model} />
+      <Teleprompter model={model} readingMode={readingMode} />
       <RecognitionControls />
+      <SyncControls />
+      <ReadingControls mode={readingMode} onChange={setReadingMode} />
       <DebugLyricsInput />
       <WindowControls api={window.api} />
     </>

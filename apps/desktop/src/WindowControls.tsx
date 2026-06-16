@@ -6,19 +6,27 @@ interface WindowControlsProps {
   api: DesktopApi | undefined;
 }
 
-export function WindowControls({ api }: WindowControlsProps) {
-  const [width, setWidth] = useState(520);
-  const [height, setHeight] = useState(320);
-  const [isResizing, setIsResizing] = useState(false);
+/** Tamaños predefinidos del widget. M coincide con el default de BrowserWindow. */
+const PRESETS = [
+  { key: 'S', label: 'S', width: 380, height: 300, title: 'Compacto (380×300)' },
+  { key: 'M', label: 'M', width: 560, height: 420, title: 'Normal (560×420)' },
+  { key: 'L', label: 'L', width: 760, height: 560, title: 'Grande (760×560)' },
+] as const;
 
-  // Obtener tamaño inicial
+type PresetKey = (typeof PRESETS)[number]['key'];
+
+export function WindowControls({ api }: WindowControlsProps) {
+  const [activePreset, setActivePreset] = useState<PresetKey | null>(null);
+
+  // Leer tamaño inicial para resaltar el preset que coincida (si hay alguno).
   useEffect(() => {
     if (!api?.getSize) return;
     api.getSize().then((result) => {
-      if (result.ok) {
-        setWidth(result.width);
-        setHeight(result.height);
-      }
+      if (!result.ok) return;
+      const match = PRESETS.find(
+        (p) => p.width === result.width && p.height === result.height,
+      );
+      setActivePreset(match ? match.key : null);
     });
   }, [api]);
 
@@ -32,29 +40,16 @@ export function WindowControls({ api }: WindowControlsProps) {
     await api.close();
   }, [api]);
 
-  const handleResize = useCallback(async (w: number, h: number) => {
-    if (!api?.setSize) return;
-    const result = await api.setSize(w, h);
-    if (result.ok) {
-      setWidth(w);
-      setHeight(h);
-    }
-  }, [api]);
-
-  const handleWidthChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const w = parseInt(e.target.value, 10);
-    if (!isNaN(w) && w >= 320) setWidth(w);
-  };
-
-  const handleHeightChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const h = parseInt(e.target.value, 10);
-    if (!isNaN(h) && h >= 200) setHeight(h);
-  };
-
-  const applyResize = () => {
-    handleResize(width, height);
-    setIsResizing(false);
-  };
+  const applyPreset = useCallback(
+    async (key: PresetKey) => {
+      if (!api?.setSize) return;
+      const preset = PRESETS.find((p) => p.key === key);
+      if (!preset) return;
+      const result = await api.setSize(preset.width, preset.height);
+      if (result.ok) setActivePreset(key);
+    },
+    [api],
+  );
 
   if (!api) return null;
 
@@ -89,39 +84,19 @@ export function WindowControls({ api }: WindowControlsProps) {
         </button>
       </div>
 
-      <div className="window-controls-row resize-row">
-        <label className="resize-input">
-          <span>W</span>
-          <input
-            type="number"
-            min="320"
-            value={width}
-            onChange={handleWidthChange}
-            onKeyDown={(e) => e.key === 'Enter' && applyResize()}
-            onBlur={applyResize}
-            aria-label="Ancho"
-          />
-        </label>
-        <label className="resize-input">
-          <span>H</span>
-          <input
-            type="number"
-            min="200"
-            value={height}
-            onChange={handleHeightChange}
-            onKeyDown={(e) => e.key === 'Enter' && applyResize()}
-            onBlur={applyResize}
-            aria-label="Alto"
-          />
-        </label>
-        <button
-          type="button"
-          className="win-btn apply"
-          onClick={applyResize}
-          disabled={isResizing}
-        >
-          {isResizing ? '…' : 'Aplicar'}
-        </button>
+      <div className="window-controls-row preset-row">
+        {PRESETS.map((preset) => (
+          <button
+            key={preset.key}
+            type="button"
+            className={`win-btn preset${activePreset === preset.key ? ' active' : ''}`}
+            onClick={() => void applyPreset(preset.key)}
+            title={preset.title}
+            aria-label={preset.title}
+          >
+            {preset.label}
+          </button>
+        ))}
       </div>
     </div>
   );

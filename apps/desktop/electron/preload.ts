@@ -39,7 +39,24 @@ const api = {
   ): Promise<{ ok: boolean; matched: boolean; error?: string }> =>
     ipcRenderer.invoke('recognition:identify', audio, mimeType, recordStartedAt),
 
+  correctAudio: (
+    audio: ArrayBuffer,
+    mimeType: string,
+    recordStartedAt: number,
+  ): Promise<{ ok: boolean; matched: boolean; changed?: boolean; error?: string }> =>
+    ipcRenderer.invoke('recognition:correct', audio, mimeType, recordStartedAt),
+
   stopRecognition: (): Promise<{ ok: boolean }> => ipcRenderer.invoke('recognition:stop'),
+
+  // Sync: seek manual + offset crónico
+  nudgeSync: (deltaMs: number): Promise<{ ok: boolean }> =>
+    ipcRenderer.invoke('sync:nudge', deltaMs),
+  seekLine: (direction: -1 | 1): Promise<{ ok: boolean }> =>
+    ipcRenderer.invoke('sync:seekLine', direction),
+  adjustSyncOffset: (deltaMs: number): Promise<{ ok: boolean; offsetMs: number }> =>
+    ipcRenderer.invoke('sync:adjustOffset', deltaMs),
+  getSyncOffset: (): Promise<{ ok: boolean; offsetMs: number }> =>
+    ipcRenderer.invoke('sync:getOffset'),
 };
 
 contextBridge.exposeInMainWorld('api', api);

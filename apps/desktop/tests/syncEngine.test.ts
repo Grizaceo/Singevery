@@ -28,20 +28,20 @@ describe('SyncEngine', () => {
 
   it('devuelve la línea 1 a los 500ms', () => {
     const model = engine.getRenderModel(500);
-    expect(model.current_line).toBe('Line 1');
-    expect(model.next_lines).toEqual(['Line 2', 'Line 3']);
+    expect(model.current_line.text).toBe('Line 1');
+    expect(model.next_lines).toEqual([{ text: 'Line 2' }, { text: 'Line 3' }]);
   });
 
   it('devuelve la línea 2 a los 1500ms con contexto', () => {
     const model = engine.getRenderModel(1500);
-    expect(model.current_line).toBe('Line 2');
-    expect(model.previous_lines).toEqual(['Line 1']);
-    expect(model.next_lines).toEqual(['Line 3', 'Line 4']);
+    expect(model.current_line.text).toBe('Line 2');
+    expect(model.previous_lines).toEqual([{ text: 'Line 1' }]);
+    expect(model.next_lines).toEqual([{ text: 'Line 3' }, { text: 'Line 4' }]);
   });
 
   it('devuelve la línea 4 al final sin próximas', () => {
     const model = engine.getRenderModel(3500);
-    expect(model.current_line).toBe('Line 4');
+    expect(model.current_line.text).toBe('Line 4');
     expect(model.next_lines).toEqual([]);
   });
 
@@ -49,7 +49,7 @@ describe('SyncEngine', () => {
     const empty = new SyncEngine();
     const model = empty.getRenderModel(0);
     expect(model.status).toBe('NO_LYRICS');
-    expect(model.current_line).toBe('');
+    expect(model.current_line.text).toBe('');
   });
 
   it('muestra "..." en el intro instrumental', () => {
@@ -63,8 +63,8 @@ describe('SyncEngine', () => {
     const e = new SyncEngine();
     e.setLyrics(withIntro);
     const model = e.getRenderModel(1000);
-    expect(model.current_line).toBe('...');
-    expect(model.next_lines).toEqual(['Primera']);
+    expect(model.current_line.text).toBe('...');
+    expect(model.next_lines).toEqual([{ text: 'Primera' }]);
     expect(model.status).toBe('IDLE');
   });
 });

@@ -1,0 +1,69 @@
+.sync-controls {
+  position: absolute;
+  bottom: 1rem;
+  right: 1rem;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.35rem;
+  pointer-events: auto;
+  -webkit-app-region: no-drag !important;
+}
+
+.sync-row {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.sync-btn {
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.85rem;
+  line-height: 1;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.sync-btn:hover:not(:disabled) {
+  background: rgba(0, 0, 0, 0.75);
+  border-color: rgba(255, 255, 255, 0.5);
+}
+
+.sync-btn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+.sync-btn.seek {
+  font-size: 0.65rem;
+  padding: 0;
+}
+
+.sync-btn.offset-adj {
+  font-weight: 700;
+  font-size: 1rem;
+  padding: 0;
+}
+
+.sync-offset-label {
+  font-size: 0.65rem;
+  font-family: 'Inter', monospace;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.7);
+  min-width: 3.5rem;
+  text-align: center;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.8);
+}
+
+.offset-row {
+  gap: 0.3rem;
+}

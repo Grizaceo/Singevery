@@ -20,13 +20,18 @@ body {
     pointer-events: auto; /* Fuerza captura de eventos en áreas transparentes */
 }
 
-.idle-message {
-    display: block;
+.idle-footer {
+    position: absolute;
+    bottom: 0.75rem;
+    left: 0;
     width: 100%;
     text-align: center;
     font-weight: 300;
-    color: rgba(255, 255, 255, 0.5);
-    font-size: 0.9em;
+    color: rgba(255, 255, 255, 0.55);
+    font-size: 0.85rem;
+    text-shadow: 0 2px 8px rgba(0, 0, 0, 0.9);
+    -webkit-app-region: no-drag !important;
+    pointer-events: auto;
 }
 
 .status-indicator {
@@ -43,12 +48,30 @@ body {
     -webkit-app-region: no-drag;
 }
 
+/* Panel de letras: área claramente diferenciada del resto de la UI.
+   Fondo translúcido, bordes redondeados y padding para que la letra no
+   se superponga con el header ni con el track-info/idle del pie. */
+.lyrics-panel {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    width: 100%;
+    max-width: 100%;
+    padding: 2.6rem 0.9rem 3.4rem;
+    box-sizing: border-box;
+    background: rgba(0, 0, 0, 0.45);
+    border-radius: 12px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    -webkit-app-region: no-drag !important;
+    pointer-events: auto;
+}
+
 .lyrics-display {
     display: flex;
     flex-direction: column;
     align-items: center;
     gap: 1rem;
-    max-width: 80%;
+    max-width: 90%;
     text-align: center;
     -webkit-app-region: no-drag !important;
     pointer-events: auto;
@@ -75,9 +98,33 @@ body {
     pointer-events: auto;
 }
 
+.lyrics-previous p,
+.lyrics-next p,
+.lyrics-current p {
+    margin: 0;
+}
+
+/* Furigana (ruby): la lectura en kana va más pequeña encima del kanji. */
+ruby > rt {
+    font-size: 0.42em;
+    font-weight: 500;
+    opacity: 0.85;
+    user-select: none;
+}
+
+/* Romaji bajo la línea actual: ayuda de lectura latina, sin robar foco. */
+.line-romaji {
+    font-size: 0.4em;
+    font-weight: 400;
+    letter-spacing: 0.02em;
+    color: rgba(255, 255, 255, 0.7);
+    text-shadow: 0 2px 8px rgba(0, 0, 0, 0.9);
+    margin-top: 0.35rem !important;
+}
+
 .track-info {
     position: absolute;
-    bottom: 2rem;
+    bottom: 2.25rem;
     font-size: 1rem;
     color: rgba(255, 255, 255, 0.7);
     text-shadow: 0 2px 8px rgba(0, 0, 0, 0.9);

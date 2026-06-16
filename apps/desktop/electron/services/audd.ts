@@ -52,7 +52,9 @@ export async function identifyFromAudio(
   if (token) form.append('api_token', token);
 
   const bytes = audio instanceof Buffer ? new Uint8Array(audio) : audio;
-  form.append('file', new Blob([bytes], { type: mimeType }), extensionForMime(mimeType));
+  const blob = new Blob([bytes], { type: mimeType });
+  console.log('[AudD DEBUG] Sending to AudD:', { mimeType, blobSize: blob.size, blobType: blob.type, hasToken: !!token });
+  form.append('file', blob, extensionForMime(mimeType));
   form.append('return', 'apple_music,spotify');
 
   const response = await fetch(AUDD_URL, { method: 'POST', body: form });
@@ -68,6 +70,7 @@ export async function identifyFromAudio(
     throw new Error(`AudD respondió con un formato inválido: ${raw.slice(0, 120)}`);
   }
   if (data.status === 'error') {
+    console.error('[AudD ERROR] Full response:', raw);
     const code = data.error?.error_code;
     const msg = data.error?.error_message ?? 'Error de AudD';
     throw new Error(code ? `AudD #${code}: ${msg}` : msg);

@@ -7,7 +7,7 @@ import type { RenderModel } from './types';
  */
 export const INITIAL_RENDER_MODEL: RenderModel = {
   previous_lines: [],
-  current_line: "Esperando música...",
+  current_line: { text: "Esperando música..." },
   next_lines: [],
   font_scale: 1.0,
   opacity: 1.0,

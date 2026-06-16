@@ -8,8 +8,10 @@
   "scripts": {
     "dev": "vite",
     "dev:electron": "concurrently -k \"npm:dev:vite\" \"npm:dev:wait-electron\"",
+    "dev:electron:win": "concurrently -k \"npm:dev:vite\" \"npm:dev:wait-electron:win\"",
     "dev:vite": "vite",
     "dev:wait-electron": "npm run build:electron && wait-on tcp:5174 && cross-env NODE_ENV=development ELECTRON_DISABLE_SECURITY_WARNINGS=1 ELECTRON_DISABLE_GPU=1 electron .",
+    "dev:wait-electron:win": "npm run build:electron && wait-on tcp:5174 && cross-env NODE_ENV=development ELECTRON_DISABLE_SECURITY_WARNINGS=1 electron .",
     "build": "tsc -b && vite build && tsc -p tsconfig.electron.json",
     "build:electron": "tsc -p tsconfig.electron.json",
     "preview": "vite preview",
