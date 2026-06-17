@@ -92,3 +92,26 @@
 .level-meter.silent {
   color: #f87171;
 }
+
+/* Encabezado del panel de fallback (SMTC es la fuente primaria). */
+.recognition-controls .fallback-header {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  background: rgba(0, 0, 0, 0.55);
+  font-size: 0.65rem;
+  opacity: 0.8;
+}
+
+.recognition-controls .fallback-caret {
+  font-size: 0.6rem;
+  line-height: 1;
+}
+
+.recognition-controls .fallback-note {
+  margin: 0;
+  font-size: 0.6rem;
+  line-height: 1.25;
+  color: #93c5fd;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.8);
+}

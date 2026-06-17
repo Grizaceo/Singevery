@@ -13,9 +13,9 @@ export interface RenderConfig {
   mirrorMode: boolean;
 }
 
-/** Convierte una línea de letra en línea de render (original + lecturas). */
+/** Convierte una línea de letra en línea de render (original + lecturas + words). */
 function toRenderLine(line: LyricLine): RenderLine {
-  return { text: line.text, furigana: line.furigana, romaji: line.romaji };
+  return { text: line.text, furigana: line.furigana, romaji: line.romaji, words: line.words };
 }
 
 const NO_LYRICS_MODEL: RenderModel = {
@@ -121,11 +121,27 @@ export class SyncEngine {
       }
     }
 
+    // Karaoke por palabra REAL (Enhanced LRC): índice de la última palabra de
+    // la línea actual cuyo start_ms <= posición. Precisión exacta por timing,
+    // sin interpolar. Si no hay `words`, el renderer cae a la interpolación.
+    let currentWordIndex: number | undefined;
+    const curWords = lines[currentIndex].words;
+    if (curWords && curWords.length > 0) {
+      let idx = -1;
+      for (let w = 0; w < curWords.length; w++) {
+        if (curWords[w].start_ms <= positionMs) idx = w;
+        else break;
+      }
+      // idx = -1 si todavía no arrancó ninguna palabra (estamos antes de la 1ª).
+      currentWordIndex = idx;
+    }
+
     return {
       previous_lines: previousLines,
       current_line: currentLine,
       next_lines: nextLines,
       current_progress: currentProgress,
+      current_word_index: currentWordIndex,
       font_scale: 1.0,
       opacity: 1.0,
       alignment: 'center',

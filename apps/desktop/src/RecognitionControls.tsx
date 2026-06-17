@@ -13,6 +13,8 @@ import {
 } from './audio/capture';
 import './RecognitionControls.css';
 
+const FALLBACK_OPEN_KEY = 'espejo.fallbackOpen';
+
 const MIC_DEVICE_KEY = 'espejo.micDeviceId';
 
 /** Medidor de nivel: 5 bloques llenados según el pico medido (0..1). */
@@ -36,6 +38,15 @@ export function RecognitionControls() {
   const [error, setError] = useState<string | null>(null);
   const [level, setLevel] = useState(0);
   const [inputs, setInputs] = useState<AudioInputDevice[]>([]);
+  // Panel colapsable: SMTC es la fuente primaria, así que los controles de
+  // captura manual quedan como "modo fallback" plegados por defecto.
+  const [open, setOpen] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem(FALLBACK_OPEN_KEY) === '1';
+    } catch {
+      return false;
+    }
+  });
   const [micDeviceId, setMicDeviceId] = useState<string>(() => {
     try {
       return localStorage.getItem(MIC_DEVICE_KEY) ?? '';
@@ -244,11 +255,38 @@ export function RecognitionControls() {
     return null;
   }
 
+  const toggleOpen = (): void => {
+    setOpen((v) => {
+      const next = !v;
+      try {
+        localStorage.setItem(FALLBACK_OPEN_KEY, next ? '1' : '0');
+      } catch {
+        /* localStorage no disponible */
+      }
+      return next;
+    });
+  };
+
   return (
     <div className="recognition-controls">
       <button
         type="button"
-        className={activeSource === 'system' ? 'active' : ''}
+        className="fallback-header"
+        onClick={toggleOpen}
+        title="La letra se sincroniza sola con tu reproductor (SMTC). Despliega esto solo para vinilo, micrófono en vivo o fuentes sin sesión de media."
+      >
+        <span className="fallback-caret">{open ? '▾' : '▸'}</span>
+        <span>Modo manual (fallback)</span>
+      </button>
+      {open && (
+        <>
+          <p className="fallback-note">
+            La letra se sincroniza sola con tu reproductor. Usa esto solo para
+            vinilo / micrófono / en vivo.
+          </p>
+          <button
+            type="button"
+            className={activeSource === 'system' ? 'active' : ''}
         onClick={() => void startListening('system')}
         disabled={activeSource !== null}
         title="Captura el audio que suena en el sistema (altavoces)"
@@ -289,6 +327,8 @@ export function RecognitionControls() {
       {activeSource && <LevelMeter level={level} />}
       {hint && !error && <span className="recognition-hint">{hint}</span>}
       {error && <span className="recognition-error">{error}</span>}
+        </>
+      )}
     </div>
   );
 }

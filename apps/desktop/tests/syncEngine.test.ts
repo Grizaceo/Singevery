@@ -86,4 +86,37 @@ describe('SyncEngine', () => {
     expect(model.next_lines).toEqual([{ text: 'Primera' }]);
     expect(model.status).toBe('IDLE');
   });
+
+  it('calcula current_word_index con Enhanced LRC (A2)', () => {
+    const a2: TimedLyrics = {
+      source: 'Test',
+      synced: true,
+      lines: [
+        {
+          start_ms: 10_000,
+          end_ms: 14_000,
+          text: '愛を取り戻せ',
+          words: [
+            { text: '愛', start_ms: 10_000 },
+            { text: 'を', start_ms: 10_600 },
+            { text: '取り戻せ', start_ms: 10_900 },
+          ],
+        },
+      ],
+    };
+    const e = new SyncEngine();
+    e.setLyrics(a2);
+
+    // Antes de la 1ª palabra → -1 (ninguna cantada).
+    expect(e.getRenderModel(10_000).current_word_index).toBe(0); // exactamente en 10s cae la 1ª
+    expect(e.getRenderModel(10_550).current_word_index).toBe(0); // solo la 1ª
+    expect(e.getRenderModel(10_700).current_word_index).toBe(1); // 1ª y 2ª
+    expect(e.getRenderModel(11_000).current_word_index).toBe(2); // las tres
+    // Propaga words a la current_line del render.
+    expect(e.getRenderModel(10_700).current_line.words?.length).toBe(3);
+  });
+
+  it('sin words → current_word_index undefined (cae a interpolación)', () => {
+    expect(engine.getRenderModel(500).current_word_index).toBeUndefined();
+  });
 });

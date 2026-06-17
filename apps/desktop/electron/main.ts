@@ -17,6 +17,7 @@ import { identifyFromAudio } from './services/audd';
 import { createPersistentOffsetStore, NULL_OFFSET_STORE } from './services/settings';
 import type { OffsetStore } from './services/settings';
 import { WindowsNowPlaying } from './services/nowPlaying';
+import { BackgroundSampler } from './services/backgroundSampler';
 import type { RecognitionPhase } from './core/stateStore';
 import { setupContentSecurityPolicy } from './csp';
 
@@ -35,6 +36,7 @@ function configureElectronRuntime(): void {
 let mainWindow: BrowserWindow | null = null;
 let stateStore: StateStore | null = null;
 let nowPlaying: WindowsNowPlaying | null = null;
+let backgroundSampler: BackgroundSampler | null = null;
 
 function createWindow(): BrowserWindow {
   // En Linux/WSLg una ventana transparent+frameless con GPU deshabilitada NO
@@ -281,12 +283,19 @@ function bootstrap(): void {
   stateStore.start(100); // 10 Hz
   registerIpcHandlers();
 
-  // Fase 1.5: posición exacta del reproductor vía Windows SMTC (no-op fuera de
-  // Windows). Si hay un "Now Playing", identifica y sincroniza solo, sin AudD.
+  // Fase 1.5: posición exacta del reproductor vía Windows SMTC (funciona en
+  // Windows nativo y WSL2). Si hay un "Now Playing", identifica y sincroniza
+  // solo, sin AudD.
   nowPlaying = new WindowsNowPlaying();
   nowPlaying.start((np) => {
     if (np) void stateStore?.applyNowPlaying(np);
   });
+
+  // Fase 2: muestreo de luminancia del fondo para contraste adaptativo.
+  // Funciona en Windows y WSLg. Si desktopCapturer falla, queda no-op y el
+  // renderer usa texto blanco + halo por defecto (no rompe nada).
+  backgroundSampler = new BackgroundSampler(mainWindow);
+  backgroundSampler.start();
 }
 
 // Solo se permite una instancia del widget.
@@ -333,11 +342,13 @@ if (!gotLock) {
   app.on('window-all-closed', () => {
     stateStore?.stop();
     nowPlaying?.stop();
+    backgroundSampler?.stop();
     app.quit();
   });
 
   app.on('before-quit', () => {
     stateStore?.stop();
     nowPlaying?.stop();
+    backgroundSampler?.stop();
   });
 }

@@ -19,6 +19,7 @@ declare global {
 
 function App() {
   const [model, setModel] = useState<RenderModel>(INITIAL_RENDER_MODEL);
+  const [bgLuminance, setBgLuminance] = useState<number | undefined>(undefined);
   const [readingMode, setReadingMode] = useReadingMode();
   const [highContrast, toggleHighContrast] = useHighContrast();
   const unsubscribeRef = useRef<(() => void) | undefined>(undefined);
@@ -42,14 +43,23 @@ function App() {
     });
     unsubscribeRef.current = unsubscribe;
 
+    const unsubLum = window.api.onBackgroundLuminance((value) => {
+      setBgLuminance(value);
+    });
+
     return () => {
       unsubscribe();
+      unsubLum();
     };
   }, []);
 
+  // Modelo enriquecido con luminancia del fondo (se inyecta en el RenderModel
+  // para que el Teleprompter decida el color del texto).
+  const enrichedModel: RenderModel = { ...model, background_luminance: bgLuminance };
+
   return (
     <>
-      <Teleprompter model={model} readingMode={readingMode} highContrast={highContrast} />
+      <Teleprompter model={enrichedModel} readingMode={readingMode} highContrast={highContrast} />
       <RecognitionControls />
       <SyncControls />
       <ReadingControls

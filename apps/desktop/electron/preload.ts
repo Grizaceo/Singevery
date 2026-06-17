@@ -20,6 +20,17 @@ const api = {
     };
   },
 
+  /** Luminancia del fondo detrás del widget (0..1). Usado para contraste adaptativo. */
+  onBackgroundLuminance: (cb: (luminance: number) => void): (() => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, value: number): void => {
+      cb(value);
+    };
+    ipcRenderer.on('background:luminance', listener);
+    return () => {
+      ipcRenderer.removeListener('background:luminance', listener);
+    };
+  },
+
   // Window controls
   minimize: (): Promise<{ ok: boolean }> => ipcRenderer.invoke('window:minimize'),
   close: (): Promise<{ ok: boolean }> => ipcRenderer.invoke('window:close'),

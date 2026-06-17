@@ -8,6 +8,8 @@ interface LrcLibResult {
   syncedLyrics?: string | null;
   plainLyrics?: string | null;
   instrumental?: boolean;
+  /** Duración de la pista en segundos (lo da lrclib). Para repartir letra plana. */
+  duration?: number | null;
 }
 
 export async function fetchLyricsByMetadata(
@@ -52,7 +54,11 @@ export async function fetchLyricsByMetadata(
     if (!trimmed) {
       return null;
     }
-    const lines = plainTextToLyrics(trimmed);
+    const durationMs =
+      typeof result.duration === 'number' && result.duration > 0
+        ? Math.round(result.duration * 1000)
+        : undefined;
+    const lines = plainTextToLyrics(trimmed, durationMs);
     if (lines.length === 0) {
       return null;
     }

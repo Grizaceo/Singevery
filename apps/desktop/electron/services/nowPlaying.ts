@@ -7,11 +7,19 @@
 // SMTC cada ~1 s y emite una línea JSON por stdout. El proceso main la parsea.
 //
 // Es la fuente de posición más precisa: da título/artista + posición + play/pause
-// continuamente, sin deriva. No-op fuera de Windows.
+// continuamente, sin deriva.
+//
+// FUNCIONA EN WSL2 TAMBIÉN: aunque el proceso Electron corre bajo Linux,
+// `powershell.exe` es alcanzable por el interop de Windows (`/mnt/c/...` en el
+// PATH) y ejecuta WinRT contra el Windows host. Verificado: devuelve el Now
+// Playing real de cualquier app de media del Windows anfitrión. Así una sola
+// base de código sincroniza solo en WSL y en Windows nativo, sin loopback ni
+// AudD. No-op en Linux real (sin interop) y en macOS.
 // ============================================================================
 
 import { spawn } from 'child_process';
 import type { ChildProcessWithoutNullStreams } from 'child_process';
+import * as fs from 'fs';
 
 export interface NowPlaying {
   title: string;
@@ -61,21 +69,50 @@ interface RawSmtc {
   playing?: boolean;
 }
 
-/** Lee el Now Playing de Windows por SMTC. No-op en otras plataformas. */
+let _canUseSmtcCache: boolean | null = null;
+
+/**
+ * ¿Podemos leer SMTC desde aquí?
+ * - Windows nativo (`process.platform === 'win32'`): sí, powershell.exe local.
+ * - WSL2 (`process.platform === 'linux'` + `/proc/version` menciona `microsoft`):
+ *   sí, porque el interop de Windows expone `powershell.exe` y éste corre WinRT
+ *   contra el Windows anfitrión.
+ * - Linux/macOS reales: no.
+ * Cacheado: leer /proc/version en cada llamada es caro y la respuesta no cambia.
+ */
+export function canUseSmtc(): boolean {
+  if (_canUseSmtcCache !== null) return _canUseSmtcCache;
+  let result = false;
+  if (process.platform === 'win32') {
+    result = true;
+  } else if (process.platform === 'linux') {
+    try {
+      const version = fs.readFileSync('/proc/version', 'utf8');
+      result = /microsoft/i.test(version);
+    } catch {
+      result = false;
+    }
+  }
+  _canUseSmtcCache = result;
+  return result;
+}
+
+/** Lee el Now Playing de Windows por SMTC. No-op si no hay interop (Linux/macOS reales). */
 export class WindowsNowPlaying {
   private proc: ChildProcessWithoutNullStreams | null = null;
   private buf = '';
 
   start(onUpdate: (np: NowPlaying | null) => void): void {
-    if (process.platform !== 'win32' || this.proc) return;
+    if (!canUseSmtc() || this.proc) return;
 
     try {
       this.proc = spawn(
         'powershell.exe',
         ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', PS_LINES.join('\n')],
-        { windowsHide: true },
+        { windowsHide: true, env: { ...process.env } },
       );
     } catch (err) {
+      // Sin powershell.exe alcanzable (p. ej. Linux real): cae a AudD en silencio.
       console.error('[nowPlaying] no se pudo lanzar PowerShell:', err);
       this.proc = null;
       return;
@@ -92,8 +129,14 @@ export class WindowsNowPlaying {
       }
     });
 
+    // 'error' (ENOENT cuando powershell.exe no existe) se emite async: no rompe
+    // nada, simplemente SMTC queda fuera de juego y el usuario usa AudD/Mic.
     this.proc.on('error', (err) => {
-      console.error('[nowPlaying] PowerShell error:', err);
+      const code = (err as NodeJS.ErrnoException).code;
+      if (code !== 'ENOENT') {
+        console.error('[nowPlaying] PowerShell error:', err);
+      }
+      this.proc = null;
     });
   }
 
