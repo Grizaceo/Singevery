@@ -244,6 +244,11 @@ export const Teleprompter: React.FC<Props> = ({ model, readingMode, highContrast
                 <div className="track-info">
                     <h2>{model.track_title}</h2>
                     <h3>{model.track_artist}</h3>
+                    {model.lyrics_source && (
+                        <span className="lyrics-source-chip" title={'Letra vía ' + model.lyrics_source}>
+                            via {model.lyrics_source}
+                        </span>
+                    )}
                 </div>
             )}
 

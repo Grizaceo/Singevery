@@ -105,6 +105,9 @@ export interface RenderModel {
 
   track_title?: string;
   track_artist?: string;
+  /** Fuente de la letra ('lrclib' | 'audd' | 'lyrics.ovh' | 'genius'). Para el
+   *  chip "via <fuente>" en el renderer y debug. */
+  lyrics_source?: string;
   status: Status;
 }
 

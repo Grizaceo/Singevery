@@ -13,7 +13,11 @@ import {
   normalizeTrackKey,
 } from './syncTiming';
 import type { RecognitionPhase } from './syncTiming';
-import { fetchLyricsByMetadata } from '../services/lrclib';
+import {
+  DEFAULT_LYRICS_SOURCES,
+  fetchLyricsChain,
+  chainResultToTimedLyrics,
+} from '../services/lyricsSource';
 import { romanizeTimedLyrics } from '../services/romanize';
 import { NULL_OFFSET_STORE } from '../services/settings';
 import type { OffsetStore } from '../services/settings';
@@ -31,6 +35,9 @@ export class StateStore {
 
   private trackTitle: string | undefined;
   private trackArtist: string | undefined;
+  /** Fuente de la letra cargada ('lrclib' | 'audd' | 'lyrics.ovh' | 'genius').
+   *  Para el chip "via <fuente>" en el renderer. */
+  private lyricsSource: string | undefined;
 
   private overrideStatus: Status | null = null;
   private lastMatchKey: string | null = null;
@@ -88,6 +95,7 @@ export class StateStore {
     this.engine.setLyrics(lyrics);
     this.trackTitle = title;
     this.trackArtist = artist;
+    if (!lyrics) this.lyricsSource = undefined; // reset al recargar/sin letra
   }
 
   /**
@@ -113,6 +121,7 @@ export class StateStore {
     artist: string,
     anchorMs = 0,
     anchorAt = Date.now(),
+    durationMs?: number,
   ): Promise<void> {
     const trackKey = normalizeTrackKey(artist, title);
     this.currentTrackKey = trackKey;
@@ -124,9 +133,18 @@ export class StateStore {
     this.trackTitle = title;
     this.trackArtist = artist;
 
+    const debug = process.env.ESPEJO_DEBUG === '1';
     try {
-      const raw = await fetchLyricsByMetadata(title, artist);
-      if (!raw) {
+      // Cadena de fuentes: lrclib (synced) → AudD findLyrics → lyrics.ovh → Genius.
+      // La primera que responde gana. durationMs (de SMTC/AudD) reparte plain.
+      const chainResult = await fetchLyricsChain(
+        DEFAULT_LYRICS_SOURCES,
+        title,
+        artist,
+        durationMs,
+        debug,
+      );
+      if (!chainResult) {
         this.setLyrics(null, title, artist);
         this.overrideStatus = 'NO_LYRICS';
         // Marcamos esta pista como "sin letra" para que los ticks de SMTC no
@@ -134,6 +152,16 @@ export class StateStore {
         this.noLyricsKey = trackKey;
         return;
       }
+
+      // synced → parseLrc (karaoke por palabra si A2); plain → reparte por duración.
+      const raw = chainResultToTimedLyrics(chainResult, durationMs);
+      if (!raw) {
+        this.setLyrics(null, title, artist);
+        this.overrideStatus = 'NO_LYRICS';
+        this.noLyricsKey = trackKey;
+        return;
+      }
+      this.lyricsSource = chainResult.source; // para el chip "via <fuente>" en UI
 
       const lyrics = await romanizeTimedLyrics(raw);
       // El crudo anclado se proyecta a "ahora" (el fetch tardó); la posición
@@ -176,6 +204,11 @@ export class StateStore {
   async applyMatch(match: TrackMatch, recordStartedAt?: number): Promise<boolean> {
     const { title, artist } = match.track;
     const matchKey = normalizeTrackKey(artist, title);
+    // duration_ms de AudD (si lo trae) reparte la letra plain sobre la pista.
+    const durationMs =
+      typeof match.track.duration_ms === 'number' && match.track.duration_ms > 0
+        ? match.track.duration_ms
+        : undefined;
 
     const anchor =
       recordStartedAt != null
@@ -191,7 +224,7 @@ export class StateStore {
       return false;
     }
 
-    await this.loadLyricsByMetadata(title, artist, anchor.positionMs, anchor.anchorAt);
+    await this.loadLyricsByMetadata(title, artist, anchor.positionMs, anchor.anchorAt, durationMs);
     return true;
   }
 
@@ -251,8 +284,15 @@ export class StateStore {
 
     if (isNewSong && !alreadyKnownNoLyrics && !fetchInProgress) {
       // Canción nueva (o sin letra aún): cargar letra anclada a la posición real.
+      // durationMs de SMTC reparte la letra plain sobre la duración de la pista.
       this.paused = false;
-      await this.loadLyricsByMetadata(np.title, np.artist, np.positionMs, np.atEpochMs);
+      await this.loadLyricsByMetadata(
+        np.title,
+        np.artist,
+        np.positionMs,
+        np.atEpochMs,
+        np.durationMs,
+      );
       this.setPaused(!np.playing);
       return;
     }
@@ -404,6 +444,7 @@ export class StateStore {
       mirror_mode: this.engine.renderConfig.mirrorMode,
       track_title: this.trackTitle,
       track_artist: this.trackArtist,
+      lyrics_source: this.lyricsSource,
       status,
     };
   }
@@ -425,6 +466,7 @@ export class StateStore {
       ...model,
       track_title: this.trackTitle,
       track_artist: this.trackArtist,
+      lyrics_source: this.lyricsSource,
     };
     this.emit(full);
   }

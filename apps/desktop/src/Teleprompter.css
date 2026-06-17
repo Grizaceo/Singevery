@@ -159,6 +159,22 @@ ruby > rt {
     pointer-events: auto;
 }
 
+.track-info h2,
+.track-info h3 {
+    margin: 0;
+    font-weight: 400;
+    font-size: 0.9rem;
+}
+
+/* Chip "via <fuente>": sutil, hereda el halo del track-info según el fondo. */
+.lyrics-source-chip {
+    display: inline-block;
+    margin-top: 0.15rem;
+    font-size: 0.6rem;
+    opacity: 0.65;
+    font-style: italic;
+}
+
 /* ====================================================================== */
 /* Contraste adaptativo (Capa 2): el color del texto se elige según la       */
 /* luminancia del fondo muestreada por el main (backgroundSampler). Sin     */
