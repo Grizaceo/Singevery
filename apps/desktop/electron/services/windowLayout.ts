@@ -30,3 +30,20 @@ export function pillBounds(
     height: pillH,
   };
 }
+
+/**
+ * Bounds expandidos por defecto: centrados en el workArea. Fallback cuando no
+ * hay bounds guardados al expandir (p. ej. expand sin colapsar previo).
+ */
+export function expandedBounds(
+  workArea: Rect,
+  width: number,
+  height: number,
+): Rect {
+  return {
+    x: Math.round(workArea.x + (workArea.width - width) / 2),
+    y: Math.round(workArea.y + (workArea.height - height) / 2),
+    width,
+    height,
+  };
+}

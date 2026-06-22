@@ -6,7 +6,9 @@ import { SyncControls } from './SyncControls';
 import { ReadingControls } from './ReadingControls';
 import { WindowControls } from './WindowControls';
 import { ResizeGrip } from './ResizeGrip';
+import { Pill } from './Pill';
 import { useReadingMode } from './useReadingMode';
+import { useRecognition } from './useRecognition';
 import { INITIAL_RENDER_MODEL } from './initialModel';
 import type { RenderModel, DesktopApi } from './types';
 import './App.css';
@@ -24,8 +26,15 @@ function App() {
   const [model, setModel] = useState<RenderModel>(INITIAL_RENDER_MODEL);
   const [readingMode, setReadingMode] = useReadingMode();
   const [chromeVisible, setChromeVisible] = useState(true);
+  // Modo widget: la app arranca colapsada como viñeta SING y se expande con el
+  // atajo Ctrl+Alt+S, al hacer clic en la pill, o al detectarse una canción.
+  const [collapsed, setCollapsed] = useState(true);
   const unsubscribeRef = useRef<(() => void) | undefined>(undefined);
   const hideTimerRef = useRef<number | undefined>(undefined);
+  const prevTrackRef = useRef<string | undefined>(undefined);
+
+  // Motor de reconocimiento (una sola instancia; lo consumen App y los controles).
+  const recognition = useRecognition();
 
   useEffect(() => {
     // Fase 0: si window.api no existe (ej. corriendo en navegador puro con
@@ -33,7 +42,7 @@ function App() {
     if (!window.api) {
       console.warn(
         '[App] window.api no disponible — ejecutando en modo navegador. ' +
-          'Para la app completa usa `npm run dev:electron`.'
+          'Para la app completa usa `npm run dev:electron`.',
       );
       const interval = window.setInterval(() => {
         setModel((prev) => ({ ...prev }));
@@ -49,6 +58,45 @@ function App() {
     return () => {
       unsubscribe();
     };
+  }, []);
+
+  // Expande el widget: sale del modo pill y arranca el reconocimiento por
+  // audio del sistema (el caso principal en Windows). Lo disparan el botón
+  // SING de la pill y el atajo global Ctrl+Alt+S (command:sing).
+  const handleSing = useCallback(() => {
+    setCollapsed(false);
+    void recognition.start('system');
+  }, [recognition]);
+
+  // Suscripción al atajo global (command:sing) emitido por main.ts.
+  useEffect(() => {
+    if (!window.api?.onSingCommand) return;
+    const unsubscribe = window.api.onSingCommand(() => {
+      void handleSing();
+    });
+    return unsubscribe;
+  }, [handleSing]);
+
+  // Sincroniza el estado `collapsed` con la ventana (main.ts la redimensiona a
+  // pill o restaura los bounds expandidos).
+  useEffect(() => {
+    void window.api?.setCollapsed?.(collapsed);
+  }, [collapsed]);
+
+  // Auto-expandir al detectar una canción nueva (SMTC o AudD): solo en la
+  // transición sin-título → título, así un colapso manual durante la misma
+  // canción no se revierte.
+  useEffect(() => {
+    const t = model.track_title;
+    if (t && t !== prevTrackRef.current && collapsed) {
+      setCollapsed(false);
+    }
+    prevTrackRef.current = t;
+  }, [model.track_title, collapsed]);
+
+  // Colapsar manualmente a la pill.
+  const handleCollapse = useCallback(() => {
+    setCollapsed(true);
   }, []);
 
   // Auto-ocultar la UI mientras se muestra la letra sincronizada. A diferencia
@@ -111,6 +159,11 @@ function App() {
       (l) => l.furigana != null || l.romaji != null,
     );
 
+  // Modo pill: solo la viñeta SING. El resto de la UI se monta al expandir.
+  if (collapsed) {
+    return <Pill onSing={handleSing} />;
+  }
+
   return (
     <>
       <Teleprompter model={model} readingMode={readingMode} chromeHidden={chromeHidden} />
@@ -131,11 +184,11 @@ function App() {
         </div>
       )}
       <div className={`app-chrome${chromeHidden ? ' chrome-hidden' : ''}`}>
-        <RecognitionControls />
+        <RecognitionControls recognition={recognition} />
         <SyncControls />
         <ReadingControls mode={readingMode} onChange={setReadingMode} hasAnnotations={hasAnnotations} />
         <DebugLyricsInput />
-        <WindowControls api={window.api} />
+        <WindowControls api={window.api} onCollapse={handleCollapse} />
         <ResizeGrip api={window.api} />
       </div>
     </>

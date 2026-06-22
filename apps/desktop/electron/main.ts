@@ -9,7 +9,7 @@
 // Fases 2-4 enchufarán reconocimiento + letras en StateStore.
 // ============================================================================
 
-import { app, BrowserWindow, ipcMain, shell, session, desktopCapturer } from 'electron';
+import { app, BrowserWindow, ipcMain, shell, session, desktopCapturer, globalShortcut, screen } from 'electron';
 import * as path from 'path';
 import { StateStore } from './core/stateStore';
 import { loadDotEnv } from './services/env';
@@ -20,6 +20,7 @@ import { FileLyricsCache } from './services/cache/lyricsCache';
 import { LyricsService } from './services/lyrics/lyricsService';
 import { SmtcReader } from './services/smtc/smtcReader';
 import { resolveSmtcSidecar } from './services/smtc/smtcPath';
+import { pillBounds, expandedBounds, PILL_WIDTH, PILL_HEIGHT, type Rect } from './services/windowLayout';
 import type { RecognitionPhase } from './core/stateStore';
 import { setupContentSecurityPolicy } from './csp';
 
@@ -39,6 +40,14 @@ let mainWindow: BrowserWindow | null = null;
 let stateStore: StateStore | null = null;
 let lyricsCache: FileLyricsCache | null = null;
 let smtcReader: SmtcReader | null = null;
+/** Bounds expandidos guardados al colapsar a pill; se restauran al expandir. */
+let savedBounds: Rect | null = null;
+
+/** Tamaño expandido por defecto (coincide con createWindow). */
+const EXPANDED_WIDTH = 760;
+const EXPANDED_HEIGHT = 560;
+/** Acelerador del atajo SING (expandir + reconocer). */
+const SING_ACCELERATOR = 'Ctrl+Alt+S';
 
 function createWindow(): BrowserWindow {
   // En Linux/WSLg una ventana transparent+frameless con GPU deshabilitada NO
@@ -171,6 +180,38 @@ function registerIpcHandlers(): void {
         }
       }
       return { ok: true };
+    },
+  );
+
+  // Modo widget: colapsar la ventana a la viñeta (pill) centrada arriba, o
+  // restaurar los bounds expandidos guardados. El renderer es la fuente de
+  // verdad del estado `collapsed` y lo comunica por IPC.
+  ipcMain.handle(
+    'window:setCollapsed',
+    (_event, collapsed: boolean): { ok: boolean; collapsed: boolean } => {
+      if (!mainWindow) return { ok: false, collapsed };
+      if (collapsed) {
+        const cur = mainWindow.getBounds();
+        // Solo guardamos si no es ya la pill (evita pisar con bounds pill).
+        if (cur.width !== PILL_WIDTH || cur.height !== PILL_HEIGHT) {
+          savedBounds = cur;
+        }
+        const workArea = screen.getDisplayMatching(cur).workArea;
+        mainWindow.setMinimumSize(PILL_WIDTH, PILL_HEIGHT);
+        mainWindow.setBounds(pillBounds(workArea));
+        mainWindow.setAlwaysOnTop(true);
+      } else {
+        mainWindow.setMinimumSize(320, 200);
+        if (savedBounds) {
+          mainWindow.setBounds(savedBounds);
+          savedBounds = null;
+        } else {
+          // Sin bounds guardados (expand sin colapsar previo): centrar tamaño por defecto.
+          const wa = screen.getPrimaryDisplay().workArea;
+          mainWindow.setBounds(expandedBounds(wa, EXPANDED_WIDTH, EXPANDED_HEIGHT));
+        }
+      }
+      return { ok: true, collapsed };
     },
   );
 
@@ -330,6 +371,7 @@ function bootstrap(): void {
   stateStore = new StateStore(mainWindow, offsetStore, lyricsService);
   stateStore.start(100); // 10 Hz
   registerIpcHandlers();
+  registerSingShortcut();
 
   // Capa b: reproductor del SO (SMTC) como reloj maestro. No-op si no hay
   // sidecar ni Windows; AudD sigue como fallback. Ruta del sidecar:
@@ -337,6 +379,23 @@ function bootstrap(): void {
   const smtcExe = resolveSmtcSidecar(process.env.SMTC_SIDECAR, smtcSidecarRoots());
   smtcReader = new SmtcReader(stateStore, smtcExe);
   smtcReader.start();
+}
+
+/**
+ * Registra el atajo global Ctrl+Alt+S → emite 'command:sing' al renderer
+ * (que expande la pill e inicia el reconocimiento). No-op si falla el registro
+ * (p. ej. el acelerador ya está tomado por otra app).
+ */
+function registerSingShortcut(): void {
+  const ok = globalShortcut.register(SING_ACCELERATOR, () => {
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    if (!mainWindow.isVisible()) mainWindow.show();
+    mainWindow.webContents.send('command:sing');
+    mainWindow.focus();
+  });
+  if (!ok) {
+    console.warn(`[main] no se pudo registrar el atajo ${SING_ACCELERATOR} (quizá ya esté en uso).`);
+  }
 }
 
 /**
@@ -399,11 +458,13 @@ if (!gotLock) {
   app.on('window-all-closed', () => {
     smtcReader?.stop();
     stateStore?.stop();
+    globalShortcut.unregisterAll();
     app.quit();
   });
 
   app.on('before-quit', () => {
     smtcReader?.stop();
     stateStore?.stop();
+    globalShortcut.unregisterAll();
   });
 }

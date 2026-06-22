@@ -4,6 +4,8 @@ import './WindowControls.css';
 
 interface WindowControlsProps {
   api: DesktopApi | undefined;
+  /** Colapsa la ventana a la viñeta (pill). Opcional: solo en modo widget. */
+  onCollapse?: () => void;
 }
 
 /** Único tamaño disponible: L (coincide con el default de BrowserWindow). */
@@ -13,7 +15,7 @@ const PRESETS = [
 
 type PresetKey = (typeof PRESETS)[number]['key'];
 
-export function WindowControls({ api }: WindowControlsProps) {
+export function WindowControls({ api, onCollapse }: WindowControlsProps) {
   const [activePreset, setActivePreset] = useState<PresetKey | null>(null);
 
   // Leer tamaño inicial para resaltar el preset que coincida (si hay alguno).
@@ -80,6 +82,17 @@ export function WindowControls({ api }: WindowControlsProps) {
         >
           ×
         </button>
+        {onCollapse && (
+          <button
+            type="button"
+            className="win-btn collapse"
+            onClick={onCollapse}
+            title="Colapsar a viñeta (SING)"
+            aria-label="Colapsar a viñeta"
+          >
+            ◧
+          </button>
+        )}
       </div>
 
       <div className="window-controls-row preset-row">
