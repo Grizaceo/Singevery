@@ -12,6 +12,7 @@ import {
   type SmtcSink,
 } from '../electron/services/smtc/smtcReader';
 import { StateStore } from '../electron/core/stateStore';
+import { CORRECTION_RAMP_MS, DRIFT_GAIN } from '../electron/core/syncTiming';
 import { LyricsService } from '../electron/services/lyrics/lyricsService';
 import type { LyricsProvider } from '../electron/services/lyrics/types';
 
@@ -80,6 +81,31 @@ describe('StateStore — fuente externa (SMTC)', () => {
     s.nudgePosition(10_000); // pos 10s
     s.applyExternalPosition(50_000, true, 0); // SO dice 50s → snap
     expect(s.getDisplayedPosition(0)).toBe(50_000);
+  });
+
+  it('applyExternalPosition suaviza los microsaltos moderados con rampa (P3.10)', () => {
+    const s = new StateStore(null);
+    s.nudgePosition(10_000); // pos 10s en t=0
+    // SMTC reporta 10.5s: error +500 (entre deadband y snap) → 'correct'.
+    s.applyExternalPosition(10_500, true, 0);
+    // No hay salto instantáneo a 10.5s: la rampa empieza en 0 y el reloj sigue.
+    expect(s.getDisplayedPosition(0)).toBe(10_000);
+    // A mitad de la rampa: base + elapsed + mitad de la corrección (error*gain).
+    const half = CORRECTION_RAMP_MS / 2;
+    const expectedAtHalf = 10_000 + half + (500 * DRIFT_GAIN) * 0.5;
+    expect(s.getDisplayedPosition(half)).toBeCloseTo(expectedAtHalf, 0);
+    // Tras la rampa (saturada): base + elapsed + corrección completa.
+    const full = CORRECTION_RAMP_MS * 2;
+    const expectedAtFull = 10_000 + full + 500 * DRIFT_GAIN;
+    expect(s.getDisplayedPosition(full)).toBeCloseTo(expectedAtFull, 0);
+  });
+
+  it('applyExternalPosition ignora el jitter por debajo de la deadband', () => {
+    const s = new StateStore(null);
+    s.nudgePosition(10_000);
+    // Error +100 (< deadband 150) → ignore, sin mover.
+    s.applyExternalPosition(10_100, true, 0);
+    expect(s.getDisplayedPosition(0)).toBe(10_000);
   });
 
   it('setPlaybackState pausa y reanuda el reloj', () => {

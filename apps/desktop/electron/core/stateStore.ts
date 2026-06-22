@@ -398,9 +398,12 @@ export class StateStore {
 
   /**
    * Posición de alta confianza del reproductor (SMTC): `positionMs` es el
-   * playhead real en `at`. Si no suena, congela. Si suena, reconcilia: ignora
-   * diferencias mínimas (anti-jitter) y, por ser fuente de verdad, ancla firme
-   * cuando el error supera la banda muerta (cubre el seek).
+   * playhead real en `at`. Si no suena, congela. Si suena, reconcilia:
+   *   - ignora diferencias mínimas (anti-jitter, deadband);
+   *   - saltos grandes (seek/skip, > DRIFT_SNAP_MS) → anclaje firme e instantáneo;
+   *   - errores moderados (microsaltos de SMTC justo sobre la deadband) → se
+   *     absorben con una rampa suave (igual que la deriva de AudD) en vez de un
+   *     reanchor duro, para que la letra no tiemble.
    */
   applyExternalPosition(positionMs: number, playing: boolean, at: number = Date.now()): void {
     if (!playing) {
@@ -411,7 +414,14 @@ export class StateStore {
     const target = Math.max(0, positionMs) + this.syncOffsetMs;
     const decision = computeDrift(target, this.currentPosition(at));
     if (decision.action === 'ignore') return;
-    this.reanchor(target, at);
+    if (decision.action === 'snap') {
+      this.reanchor(target, at);
+      return;
+    }
+    // 'correct': suaviza el microsalto con la misma rampa que la deriva de AudD.
+    this.settle(at);
+    this.correctionTargetMs = decision.correctionMs;
+    this.correctionStartedAt = at;
   }
 
   /**
