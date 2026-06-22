@@ -35,6 +35,44 @@ describe('parseLrc', () => {
     const lines = parseLrc(lrc);
     expect(lines.map((l) => l.start_ms)).toEqual([5_000, 30_000]);
   });
+
+  it('parsea Enhanced LRC (A2): palabras con timestamp <mm:ss.xx>', () => {
+    const lrc = `[00:12.00]<00:12.34>First <00:12.67>line`;
+    const lines = parseLrc(lrc);
+    expect(lines).toHaveLength(1);
+    const line = lines[0];
+    expect(line.start_ms).toBe(12_000);
+    expect(line.text).toBe('First line');
+    expect(line.words).toEqual([
+      { start_ms: 12_340, text: 'First ' },
+      { start_ms: 12_670, text: 'line' },
+    ]);
+  });
+
+  it('la concatenación de palabras reconstruye el texto', () => {
+    const lrc = `[00:10.00]<00:10.10>音 <00:10.40>楽`;
+    const line = parseLrc(lrc)[0];
+    expect(line.words!.map((w) => w.text).join('')).toBe(line.text);
+  });
+
+  it('una línea sin marcadores de palabra no lleva words', () => {
+    const lrc = `[00:12.00]Plain line`;
+    const line = parseLrc(lrc)[0];
+    expect(line.words).toBeUndefined();
+  });
+
+  it('soporta timestamps con 3 cifras de fracción', () => {
+    const lrc = `[00:01.000]<00:01.234>hi`;
+    const line = parseLrc(lrc)[0];
+    expect(line.words).toEqual([{ start_ms: 1234, text: 'hi' }]);
+  });
+
+  it('línea con solo marcadores de palabra (sin [..]) usa la 1ª palabra', () => {
+    const lrc = `<00:05.00>only words`;
+    const line = parseLrc(lrc)[0];
+    expect(line.start_ms).toBe(5_000);
+    expect(line.words).toEqual([{ start_ms: 5_000, text: 'only words' }]);
+  });
 });
 
 describe('plainTextToLyrics', () => {

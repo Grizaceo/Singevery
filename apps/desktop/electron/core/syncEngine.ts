@@ -16,7 +16,7 @@ export interface RenderConfig {
 
 /** Convierte una línea de letra en línea de render (original + lecturas). */
 function toRenderLine(line: LyricLine): RenderLine {
-  return { text: line.text, furigana: line.furigana, romaji: line.romaji };
+  return { text: line.text, furigana: line.furigana, romaji: line.romaji, words: line.words };
 }
 
 const NO_LYRICS_MODEL: RenderModel = {
@@ -115,6 +115,27 @@ export class SyncEngine {
       currentIndex + 1 < lines.length ? lines[currentIndex + 1].start_ms : undefined;
     const progress = computeLineProgress(lines[currentIndex], positionMs, nextStartMs);
 
+    // Modo palabra (A2): si la línea tiene words, calcula la palabra activa y
+    // su avance. Reutiliza computeLineProgress por palabra (el fin de cada
+    // palabra es el inicio de la siguiente, o el fin de la línea).
+    let wordIndex = -1;
+    let wordProgress = 0;
+    const words = lines[currentIndex].words;
+    if (words && words.length > 0) {
+      for (let i = 0; i < words.length; i++) {
+        if (words[i].start_ms <= positionMs) wordIndex = i;
+        else break;
+      }
+      if (wordIndex >= 0) {
+        // Fin de la palabra: inicio de la siguiente, o el fin de la línea
+        // (end_ms o inicio de la línea siguiente) si es la última.
+        const lineEndMs = lines[currentIndex].end_ms ?? nextStartMs;
+        const nextWordStart =
+          wordIndex + 1 < words.length ? words[wordIndex + 1].start_ms : lineEndMs;
+        wordProgress = computeLineProgress(words[wordIndex], positionMs, nextWordStart);
+      }
+    }
+
     return {
       previous_lines: previousLines,
       current_line: currentLine,
@@ -125,6 +146,8 @@ export class SyncEngine {
       mirror_mode: this.renderConfig.mirrorMode,
       status,
       current_line_progress: progress,
+      current_word_index: wordIndex >= 0 ? wordIndex : undefined,
+      current_word_progress: wordProgress > 0 ? wordProgress : undefined,
     };
   }
 }

@@ -1,5 +1,5 @@
 import React from 'react';
-import type { ReadingMode, RenderLine, RenderModel } from './types';
+import type { LyricWord, ReadingMode, RenderLine, RenderModel } from './types';
 import { splitAtFraction, splitSegmentsAtFraction } from './lineHighlight';
 import './Teleprompter.css';
 
@@ -13,6 +13,42 @@ interface Props {
 /** Nivel jerárquico de una línea: centro / subtítulo adyacente / contexto lejano. */
 type Tier = 'current' | 'adjacent' | 'far';
 
+/** Render por palabra (A2): las ya cantadas se atenúan, la activa se parte por
+ *  su avance, las pendientes se mantienen brillantes. */
+function WordsView({
+    words,
+    activeIndex,
+    wordProgress,
+}: {
+    words: LyricWord[];
+    activeIndex: number;
+    wordProgress: number;
+}) {
+    return (
+        <>
+            {words.map((w, i) => {
+                if (i < activeIndex) {
+                    return (
+                        <span key={i} className="line-spoken">
+                            {w.text}
+                        </span>
+                    );
+                }
+                if (i === activeIndex && wordProgress > 0) {
+                    const [spoken, rest] = splitAtFraction(w.text, wordProgress);
+                    return (
+                        <React.Fragment key={i}>
+                            {spoken && <span className="line-spoken">{spoken}</span>}
+                            {rest}
+                        </React.Fragment>
+                    );
+                }
+                return <span key={i}>{w.text}</span>;
+            })}
+        </>
+    );
+}
+
 /** Render seguro de una línea según el modo de lectura. */
 const LineView: React.FC<{
     line: RenderLine;
@@ -20,13 +56,21 @@ const LineView: React.FC<{
     tier: Tier;
     /** Avance 0..1 dentro de la línea (solo tier 'current'). Atenúa lo ya cantado. */
     progress?: number;
-}> = ({ line, mode, tier, progress }) => {
+    /** Índice de palabra activa (A2, solo tier 'current' con words). */
+    wordIndex?: number;
+    /** Avance 0..1 dentro de la palabra activa (A2). */
+    wordProgress?: number;
+}> = ({ line, mode, tier, progress, wordIndex, wordProgress }) => {
     const hasFurigana = !!line.furigana && line.furigana.length > 0;
     const hasRomaji = !!line.romaji;
 
     // Solo la línea actual se resalta; y solo cuando hay progreso real (>0).
     const highlight = tier === 'current' && progress != null && progress > 0;
     const frac = progress ?? 0;
+    // Modo palabra (A2): aplica cuando la línea actual tiene words y estamos
+    // renderizando el texto plano (original / furigana sin furigana).
+    const useWords =
+        tier === 'current' && !!line.words && line.words.length > 0 && wordIndex != null;
 
     // Modo solo-romaji: la línea principal ES el romaji (cae a texto si no hay).
     if (mode === 'romaji') {
@@ -89,6 +133,15 @@ const LineView: React.FC<{
                 </>
             );
         }
+    } else if (useWords) {
+        // Texto plano con timestamps por palabra (A2): resaltado palabra a palabra.
+        mainContent = (
+            <WordsView
+                words={line.words!}
+                activeIndex={wordIndex!}
+                wordProgress={wordProgress ?? 0}
+            />
+        );
     } else {
         // Texto plano (original, o furigana sin furigana disponible).
         if (!highlight) {
@@ -184,6 +237,8 @@ export const Teleprompter: React.FC<Props> = ({ model, readingMode, chromeHidden
                                 mode={readingMode}
                                 tier="current"
                                 progress={model.current_line_progress}
+                                wordIndex={model.current_word_index}
+                                wordProgress={model.current_word_progress}
                             />
                         </div>
 

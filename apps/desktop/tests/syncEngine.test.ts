@@ -99,3 +99,57 @@ describe('SyncEngine', () => {
     expect(e.getRenderModel(1000).current_line_progress).toBeCloseTo(0.5);
   });
 });
+
+describe('SyncEngine — modo palabra (A2)', () => {
+  const a2Lyrics: TimedLyrics = {
+    source: 'Test',
+    synced: true,
+    lines: [
+      {
+        start_ms: 10_000,
+        end_ms: 10_500,
+        text: 'First line',
+        words: [
+          { start_ms: 10_000, text: 'First ' },
+          { start_ms: 10_200, text: 'line' },
+        ],
+      },
+    ],
+  };
+
+  it('selecciona la palabra activa según positionMs', () => {
+    const e = new SyncEngine();
+    e.setLyrics(a2Lyrics);
+    // Antes de la primera palabra: sin palabra activa.
+    expect(e.getRenderModel(9_000).current_word_index).toBeUndefined();
+    // En la primera palabra (start 10000): activa la 0.
+    expect(e.getRenderModel(10_000).current_word_index).toBe(0);
+    // En la segunda palabra (start 10200): activa la 1.
+    expect(e.getRenderModel(10_200).current_word_index).toBe(1);
+    expect(e.getRenderModel(10_400).current_word_index).toBe(1);
+  });
+
+  it('calcula el avance dentro de la palabra activa', () => {
+    const e = new SyncEngine();
+    e.setLyrics(a2Lyrics);
+    // Palabra 0: 10000 → 10200. A 10100 → mitad.
+    const m = e.getRenderModel(10_100);
+    expect(m.current_word_index).toBe(0);
+    expect(m.current_word_progress).toBeCloseTo(0.5);
+  });
+
+  it('el fin de la última palabra usa el fin de la línea', () => {
+    const e = new SyncEngine();
+    e.setLyrics(a2Lyrics);
+    // Palabra 1: 10200 → 10500 (fin de línea). A 10350 → mitad.
+    const m = e.getRenderModel(10_350);
+    expect(m.current_word_index).toBe(1);
+    expect(m.current_word_progress).toBeCloseTo(0.5, 1);
+  });
+
+  it('la línea actual expone las palabras en el RenderLine', () => {
+    const e = new SyncEngine();
+    e.setLyrics(a2Lyrics);
+    expect(e.getRenderModel(10_100).current_line.words).toEqual(a2Lyrics.lines[0].words);
+  });
+});

@@ -42,6 +42,15 @@ export interface FuriganaSegment {
   rt?: string;
 }
 
+/** Palabra con timestamp (Enhanced LRC / A2 — karaoke palabra-por-palabra). */
+export interface LyricWord {
+  start_ms: number;
+  /** Fin de la palabra; se infiere del inicio de la siguiente (o del fin de línea). */
+  end_ms?: number | null;
+  /** Texto de la palabra, incluyendo el espacio que la separa de la siguiente. */
+  text: string;
+}
+
 /** Una línea de letra con timestamps en milisegundos. */
 export interface LyricLine {
   start_ms: number;
@@ -52,6 +61,11 @@ export interface LyricLine {
   furigana?: FuriganaSegment[];
   /** Romanización latina (hepburn JP / pinyin ZH / translit KO). */
   romaji?: string;
+  /**
+   * Timestamps por palabra (Enhanced LRC, marcadores <mm:ss.xx> inline).
+   * Cuando existe, el resaltado avanza por palabra en vez de por tiempo lineal.
+   */
+  words?: LyricWord[];
 }
 
 /** Letras con timestamps. `synced=false` indica letra plana (sin LRC). */
@@ -66,6 +80,8 @@ export interface RenderLine {
   text: string;
   furigana?: FuriganaSegment[];
   romaji?: string;
+  /** Palabras con timestamp (A2). Solo se usa para el resaltado por palabra. */
+  words?: LyricWord[];
 }
 
 /** Modo de lectura elegido por el usuario (estado del renderer, persistido). */
@@ -92,6 +108,13 @@ export interface RenderModel {
    * por saltos exactos por palabra.
    */
   current_line_progress?: number;
+  /**
+   * Índice de la palabra activa dentro de current_line.words (A2). -1/undefined
+   * si la línea no tiene palabras o ninguna ha empezado todavía.
+   */
+  current_word_index?: number;
+  /** Avance 0..1 dentro de la palabra activa (A2). */
+  current_word_progress?: number;
 }
 
 /** Fuente de audio para reconocimiento. */
