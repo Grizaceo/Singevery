@@ -1,5 +1,6 @@
 import React from 'react';
 import type { ReadingMode, RenderLine, RenderModel } from './types';
+import { splitAtFraction, splitSegmentsAtFraction } from './lineHighlight';
 import './Teleprompter.css';
 
 interface Props {
@@ -17,35 +18,95 @@ const LineView: React.FC<{
     line: RenderLine;
     mode: ReadingMode;
     tier: Tier;
-}> = ({ line, mode, tier }) => {
+    /** Avance 0..1 dentro de la línea (solo tier 'current'). Atenúa lo ya cantado. */
+    progress?: number;
+}> = ({ line, mode, tier, progress }) => {
     const hasFurigana = !!line.furigana && line.furigana.length > 0;
     const hasRomaji = !!line.romaji;
 
+    // Solo la línea actual se resalta; y solo cuando hay progreso real (>0).
+    const highlight = tier === 'current' && progress != null && progress > 0;
+    const frac = progress ?? 0;
+
     // Modo solo-romaji: la línea principal ES el romaji (cae a texto si no hay).
     if (mode === 'romaji') {
-        return <p className="line-main">{hasRomaji ? line.romaji : line.text}</p>;
+        const text = hasRomaji ? line.romaji! : line.text;
+        if (!highlight) return <p className="line-main">{text}</p>;
+        const [spoken, rest] = splitAtFraction(text, frac);
+        return (
+            <p className="line-main">
+                {spoken && <span className="line-spoken">{spoken}</span>}
+                {rest}
+            </p>
+        );
     }
 
     const showRuby = (mode === 'furigana' || mode === 'furigana_romaji') && hasFurigana;
     // El romaji debajo solo en la línea central, para no saturar el contexto.
     const showRomajiBelow = mode === 'furigana_romaji' && hasRomaji && tier === 'current';
 
+    let mainContent: React.ReactNode;
+    if (showRuby) {
+        if (!highlight) {
+            mainContent = line.furigana!.map((seg, i) =>
+                seg.rt ? (
+                    <ruby key={i}>
+                        {seg.base}
+                        <rt>{seg.rt}</rt>
+                    </ruby>
+                ) : (
+                    <span key={i}>{seg.base}</span>
+                ),
+            );
+        } else {
+            // Resaltado por segmento: los ya cantados se atenúan, los pendientes
+            // se mantienen brillantes (metáfora de teleprompter: leer lo que viene).
+            const { spoken, unspoken } = splitSegmentsAtFraction(line.furigana!, frac);
+            mainContent = (
+                <>
+                    {spoken.map((seg, i) =>
+                        seg.rt ? (
+                            <ruby key={`s${i}`} className="line-spoken">
+                                {seg.base}
+                                <rt>{seg.rt}</rt>
+                            </ruby>
+                        ) : (
+                            <span key={`s${i}`} className="line-spoken">
+                                {seg.base}
+                            </span>
+                        ),
+                    )}
+                    {unspoken.map((seg, i) =>
+                        seg.rt ? (
+                            <ruby key={`u${i}`}>
+                                {seg.base}
+                                <rt>{seg.rt}</rt>
+                            </ruby>
+                        ) : (
+                            <span key={`u${i}`}>{seg.base}</span>
+                        ),
+                    )}
+                </>
+            );
+        }
+    } else {
+        // Texto plano (original, o furigana sin furigana disponible).
+        if (!highlight) {
+            mainContent = line.text;
+        } else {
+            const [spoken, rest] = splitAtFraction(line.text, frac);
+            mainContent = (
+                <>
+                    {spoken && <span className="line-spoken">{spoken}</span>}
+                    {rest}
+                </>
+            );
+        }
+    }
+
     return (
         <>
-            <p className="line-main">
-                {showRuby
-                    ? line.furigana!.map((seg, i) =>
-                          seg.rt ? (
-                              <ruby key={i}>
-                                  {seg.base}
-                                  <rt>{seg.rt}</rt>
-                              </ruby>
-                          ) : (
-                              <span key={i}>{seg.base}</span>
-                          ),
-                      )
-                    : line.text}
-            </p>
+            <p className="line-main">{mainContent}</p>
             {showRomajiBelow && <p className="line-romaji">{line.romaji}</p>}
         </>
     );
@@ -118,7 +179,12 @@ export const Teleprompter: React.FC<Props> = ({ model, readingMode, chromeHidden
                         </div>
 
                         <div className="lyrics-current" style={{ fontSize: currentSize }}>
-                            <LineView line={model.current_line} mode={readingMode} tier="current" />
+                            <LineView
+                                line={model.current_line}
+                                mode={readingMode}
+                                tier="current"
+                                progress={model.current_line_progress}
+                            />
                         </div>
 
                         <div className="lyrics-adjacent" style={{ fontSize: adjacentSize }}>

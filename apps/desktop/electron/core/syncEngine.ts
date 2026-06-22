@@ -6,6 +6,7 @@
 // ============================================================================
 
 import type { LyricLine, RenderLine, RenderModel, Status, TimedLyrics } from '../../src/types';
+import { computeLineProgress } from './syncTiming';
 
 export interface RenderConfig {
   /** Número de líneas de contexto antes y después de la línea actual. */
@@ -108,6 +109,12 @@ export class SyncEngine {
       nextLines.push(toRenderLine(lines[i]));
     }
 
+    // Progreso interpolado dentro de la línea actual (resaltado por tiempo).
+    // Si la línea no tiene end_ms, se estima con el inicio de la siguiente.
+    const nextStartMs =
+      currentIndex + 1 < lines.length ? lines[currentIndex + 1].start_ms : undefined;
+    const progress = computeLineProgress(lines[currentIndex], positionMs, nextStartMs);
+
     return {
       previous_lines: previousLines,
       current_line: currentLine,
@@ -117,6 +124,7 @@ export class SyncEngine {
       alignment: 'center',
       mirror_mode: this.renderConfig.mirrorMode,
       status,
+      current_line_progress: progress,
     };
   }
 }

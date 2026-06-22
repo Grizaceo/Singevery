@@ -86,6 +86,27 @@ export function rampedCorrection(
   return targetMs * t;
 }
 
+/**
+ * Progreso fraccional (0..1) de la línea actual en `positionMs`. Avanza
+ * linealmente desde start_ms hasta end_ms; si falta end_ms se usa el inicio
+ * de la siguiente línea (nextStartMs). Antes de start → 0; a partir de end → 1.
+ * Si no se puede inferir la duración (última línea sin end_ms ni siguiente),
+ * devuelve 0 (sin resaltado) — la precisión por palabra (A2/P2.7) cubre ese
+ * caso. Función pura (testeable).
+ */
+export function computeLineProgress(
+  line: { start_ms: number; end_ms?: number | null },
+  positionMs: number,
+  nextStartMs?: number,
+): number {
+  const start = line.start_ms;
+  const end = line.end_ms ?? nextStartMs;
+  if (end == null || end <= start) return 0;
+  if (positionMs <= start) return 0;
+  if (positionMs >= end) return 1;
+  return (positionMs - start) / (end - start);
+}
+
 /** Clave canónica de pista para persistir el offset crónico. */
 export function normalizeTrackKey(artist: string, title: string): string {
   const norm = (s: string): string => s.toLowerCase().trim().replace(/\s+/g, ' ');

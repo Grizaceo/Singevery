@@ -5,6 +5,7 @@ import {
   computeDrift,
   rampedCorrection,
   normalizeTrackKey,
+  computeLineProgress,
   DRIFT_GAIN,
   CORRECTION_RAMP_MS,
 } from '../electron/core/syncTiming';
@@ -91,5 +92,36 @@ describe('normalizeTrackKey', () => {
 
   it('separa artista y título', () => {
     expect(normalizeTrackKey('Artist', 'Title')).toBe('artist::title');
+  });
+});
+
+describe('computeLineProgress', () => {
+  it('vale 0 antes del start y 1 a partir del end', () => {
+    const line = { start_ms: 1000, end_ms: 2000 };
+    expect(computeLineProgress(line, 500)).toBe(0);
+    expect(computeLineProgress(line, 1000)).toBe(0);
+    expect(computeLineProgress(line, 2000)).toBe(1);
+    expect(computeLineProgress(line, 5000)).toBe(1);
+  });
+
+  it('interpola linealmente entre start y end', () => {
+    const line = { start_ms: 1000, end_ms: 2000 };
+    expect(computeLineProgress(line, 1100)).toBeCloseTo(0.1);
+    expect(computeLineProgress(line, 1500)).toBeCloseTo(0.5);
+    expect(computeLineProgress(line, 1900)).toBeCloseTo(0.9);
+  });
+
+  it('usa el inicio de la siguiente línea si falta end_ms', () => {
+    const line = { start_ms: 1000, end_ms: null };
+    expect(computeLineProgress(line, 1500, 2000)).toBeCloseTo(0.5);
+    expect(computeLineProgress(line, 1000, 2000)).toBe(0);
+    expect(computeLineProgress(line, 2000, 2000)).toBe(1);
+  });
+
+  it('devuelve 0 si no se puede inferir la duración', () => {
+    const line = { start_ms: 1000, end_ms: null };
+    expect(computeLineProgress(line, 5000, undefined)).toBe(0);
+    // end <= start: duración inválida
+    expect(computeLineProgress({ start_ms: 1000, end_ms: 500 }, 1200)).toBe(0);
   });
 });

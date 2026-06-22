@@ -67,4 +67,35 @@ describe('SyncEngine', () => {
     expect(model.next_lines).toEqual([{ text: 'Primera' }]);
     expect(model.status).toBe('IDLE');
   });
+
+  it('expone current_line_progress interpolado dentro de la línea', () => {
+    const model = engine.getRenderModel(1500);
+    // Línea 2: start 1000, end 2000 → a 1500 va por la mitad.
+    expect(model.current_line.text).toBe('Line 2');
+    expect(model.current_line_progress).toBeCloseTo(0.5);
+  });
+
+  it('progreso 0 al inicio de la línea y ~1 justo antes del final', () => {
+    // A los 1000 empieza la línea 2 → progreso 0.
+    expect(engine.getRenderModel(1000).current_line_progress).toBe(0);
+    // A los 1999 la línea 2 (1000–2000) está a punto de terminar → ~1.
+    expect(engine.getRenderModel(1999).current_line_progress).toBeCloseTo(0.999, 2);
+    // A los 2000 cae en la línea 3 → progreso 0 de esa línea.
+    expect(engine.getRenderModel(2000).current_line_progress).toBe(0);
+  });
+
+  it('sin end_ms estima el progreso con la siguiente línea', () => {
+    const noEnd: TimedLyrics = {
+      source: 'Test',
+      synced: true,
+      lines: [
+        { start_ms: 0, text: 'A' },
+        { start_ms: 2000, text: 'B' },
+      ],
+    };
+    const e = new SyncEngine();
+    e.setLyrics(noEnd);
+    // Línea A: start 0, sin end → usa 2000 (siguiente). A 1000 → 0.5.
+    expect(e.getRenderModel(1000).current_line_progress).toBeCloseTo(0.5);
+  });
 });

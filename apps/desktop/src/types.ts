@@ -85,6 +85,13 @@ export interface RenderModel {
   track_title?: string;
   track_artist?: string;
   status: Status;
+  /**
+   * Avance fraccional (0..1) dentro de la línea actual, para el resaltado
+   * interpolado (karaoke por tiempo). Undefined/0 cuando no aplica (sin
+   * letra, IDLE, o duración desconocida). El modo palabra (A2) lo reemplaza
+   * por saltos exactos por palabra.
+   */
+  current_line_progress?: number;
 }
 
 /** Fuente de audio para reconocimiento. */
