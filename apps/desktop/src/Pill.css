@@ -1,0 +1,48 @@
+/* Pill.css — viñeta colapsada "SING". Ocupa toda la (pequeña) ventana. */
+.pill {
+  width: 100vw;
+  height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  -webkit-app-region: drag; /* el fondo de la pill arrastra la ventana */
+  user-select: none;
+}
+
+.pill-btn {
+  -webkit-app-region: no-drag; /* el botón sí recibe clic */
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 34px;
+  padding: 0 16px;
+  border-radius: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  background: linear-gradient(180deg, rgba(34, 34, 44, 0.96), rgba(18, 18, 24, 0.96));
+  color: #fff;
+  font-weight: 700;
+  font-size: 0.95rem;
+  letter-spacing: 2px;
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
+  transition: transform 0.12s ease, background 0.2s ease, border-color 0.2s ease;
+}
+
+.pill-btn:hover {
+  background: linear-gradient(180deg, rgba(48, 48, 62, 0.98), rgba(26, 26, 34, 0.98));
+  border-color: rgba(120, 170, 255, 0.7);
+  transform: translateY(-1px);
+}
+
+.pill-btn:active {
+  transform: translateY(0);
+}
+
+.pill-icon {
+  color: #7ab0ff;
+  flex: 0 0 auto;
+}
+
+.pill-text {
+  line-height: 1;
+}

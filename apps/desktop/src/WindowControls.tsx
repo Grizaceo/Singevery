@@ -6,10 +6,8 @@ interface WindowControlsProps {
   api: DesktopApi | undefined;
 }
 
-/** Tamaños predefinidos del widget. M coincide con el default de BrowserWindow. */
+/** Único tamaño disponible: L (coincide con el default de BrowserWindow). */
 const PRESETS = [
-  { key: 'S', label: 'S', width: 380, height: 300, title: 'Compacto (380×300)' },
-  { key: 'M', label: 'M', width: 560, height: 420, title: 'Normal (560×420)' },
   { key: 'L', label: 'L', width: 760, height: 560, title: 'Grande (760×560)' },
 ] as const;
 

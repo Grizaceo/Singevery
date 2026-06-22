@@ -1,0 +1,18 @@
+# Normalización de line-endings: el repo es LF (HEAD verificada en LF).
+# El working tree se contaminó con CRLF al editar en Windows/WSL; esto fija
+# la convención durable y permite que los diffs reales sean legibles.
+* text=auto eol=lf
+
+# Binarios: nunca tocar.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.icns binary
+*.pdf binary
+*.zip binary
+*.gz binary
+*.exe binary
+*.dll binary
+*.node binary

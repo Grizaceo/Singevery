@@ -87,13 +87,21 @@ export function RecognitionControls() {
           }
 
           const recordStartedAt = Date.now();
+          // Nivel en vivo (~10 Hz mientras graba): alimenta la pausa del reloj
+          // por silencio en el main y refresca el medidor de la UI.
+          const onLevel = (lv: number): void => {
+            setLevel(lv);
+            void window.api?.reportLevel(lv);
+          };
           const { blob, level } = await recordChunk(
             source,
             CAPTURE_RECORD_MS,
             controller.signal,
             systemSessionRef.current ?? undefined,
+            onLevel,
           );
           setLevel(level);
+          void window.api?.reportLevel(level);
 
           if (blob.size < 4096) {
             if (tracking) {

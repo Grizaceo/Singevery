@@ -93,6 +93,7 @@ export type AudioSource = 'microphone' | 'system';
 /** API expuesta por el preload script al renderer. */
 export interface DesktopApi {
   onRenderModel: (cb: (model: RenderModel) => void) => () => void;
+  onSingCommand: (cb: () => void) => () => void;
   loadLyrics: (title: string, artist: string) => Promise<{ ok: boolean; error?: string }>;
   setRecognitionPhase: (phase: 'LISTENING' | 'IDENTIFYING' | null) => Promise<{ ok: boolean }>;
   identifyAudio: (
@@ -106,6 +107,9 @@ export interface DesktopApi {
     recordStartedAt: number,
   ) => Promise<{ ok: boolean; matched: boolean; changed?: boolean; error?: string }>;
   stopRecognition: () => Promise<{ ok: boolean }>;
+  reportLevel: (level: number) => Promise<{ ok: boolean }>;
+  cacheStats: () => Promise<{ ok: boolean; entries: number; negatives: number; bytes: number }>;
+  cacheClear: () => Promise<{ ok: boolean }>;
 
   // Sync: seek manual + offset crónico
   nudgeSync: (deltaMs: number) => Promise<{ ok: boolean }>;
@@ -118,4 +122,6 @@ export interface DesktopApi {
   close: () => Promise<{ ok: boolean }>;
   setSize: (width: number, height: number) => Promise<{ ok: boolean }>;
   getSize: () => Promise<{ ok: boolean; width: number; height: number }>;
+  setClickThrough: (ignore: boolean) => Promise<{ ok: boolean }>;
+  setCollapsed: (collapsed: boolean) => Promise<{ ok: boolean; collapsed: boolean }>;
 }

@@ -20,3 +20,42 @@
   opacity: 0;
   pointer-events: none;
 }
+
+/* Handle persistente: el único elemento tangible mientras el widget es
+   intangible (click-through). Pasar el cursor por encima reactiva la UI y
+   permite arrastrar la ventana. Siempre visible durante DISPLAYING. */
+.intangible-handle {
+  position: fixed;
+  top: 6px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  height: 20px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(0, 0, 0, 0.4);
+  color: rgba(255, 255, 255, 0.55);
+  font-size: 0.85rem;
+  letter-spacing: 3px;
+  line-height: 1;
+  cursor: grab;
+  opacity: 0.45;
+  pointer-events: auto;
+  -webkit-app-region: drag; /* arrastra la ventana */
+  transition: opacity 0.2s ease, background 0.2s ease, color 0.2s ease;
+}
+
+.intangible-handle:hover {
+  opacity: 1;
+  background: rgba(0, 0, 0, 0.72);
+  color: #fff;
+  border-color: rgba(255, 255, 255, 0.45);
+}
+
+.intangible-handle:active {
+  cursor: grabbing;
+}

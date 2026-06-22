@@ -28,7 +28,14 @@ function pickMimeType(): string {
   return '';
 }
 
-type LevelMeter = { sample: () => void; peak: () => number; close: () => void };
+type LevelMeter = {
+  sample: () => void;
+  /** Pico acumulado durante toda la grabación (0..1). */
+  peak: () => number;
+  /** Pico del último frame muestreado (0..1) — sirve para detectar silencio en vivo. */
+  instant: () => number;
+  close: () => void;
+};
 
 /**
  * Mide el nivel de audio de un stream sin consumirlo (tap de solo lectura vía
@@ -47,15 +54,20 @@ function createLevelMeter(stream: MediaStream): LevelMeter | null {
     source.connect(analyser);
     const buf = new Float32Array(analyser.fftSize);
     let peak = 0;
+    let frame = 0;
     return {
       sample: () => {
         analyser.getFloatTimeDomainData(buf);
+        let f = 0;
         for (let i = 0; i < buf.length; i++) {
           const a = Math.abs(buf[i]);
-          if (a > peak) peak = a;
+          if (a > f) f = a;
         }
+        frame = f;
+        if (f > peak) peak = f;
       },
       peak: () => peak,
+      instant: () => frame,
       close: () => {
         try {
           source.disconnect();
@@ -130,6 +142,7 @@ async function recordWithMediaRecorder(
   durationMs: number,
   signal?: AbortSignal,
   ownsStream = true,
+  onLevel?: (level: number) => void,
 ): Promise<RecordedChunk> {
   const mimeType = pickMimeType();
   const meter = createLevelMeter(stream);
@@ -144,7 +157,12 @@ async function recordWithMediaRecorder(
 
     const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
     const chunks: Blob[] = [];
-    const meterTimer = meter ? window.setInterval(() => meter.sample(), 100) : null;
+    const meterTimer = meter
+      ? window.setInterval(() => {
+          meter.sample();
+          onLevel?.(meter.instant());
+        }, 100)
+      : null;
 
     // Solo detenemos los tracks si este stream nos pertenece. El stream del
     // sistema lo gestiona SystemAudioSession (debe seguir vivo entre ciclos de
@@ -197,6 +215,7 @@ export async function recordChunk(
   durationMs = RECORD_MS,
   signal?: AbortSignal,
   systemSession?: SystemAudioSession,
+  onLevel?: (level: number) => void,
 ): Promise<RecordedChunk> {
   if (source === 'system') {
     const session = systemSession ?? new SystemAudioSession();
@@ -205,14 +224,14 @@ export async function recordChunk(
     try {
       const stream = await session.acquire();
       // El stream del sistema lo gestiona la sesión, no el grabador.
-      return await recordWithMediaRecorder(stream, durationMs, signal, false);
+      return await recordWithMediaRecorder(stream, durationMs, signal, false, onLevel);
     } finally {
       if (ownsSession) session.release();
     }
   }
 
   const stream = await openMicrophoneStream();
-  return await recordWithMediaRecorder(stream, durationMs, signal, true);
+  return await recordWithMediaRecorder(stream, durationMs, signal, true, onLevel);
 }
 
 export function sleep(ms: number, signal?: AbortSignal): Promise<void> {

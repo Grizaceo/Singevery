@@ -16,6 +16,9 @@ import { loadDotEnv } from './services/env';
 import { identifyFromAudio } from './services/audd';
 import { createPersistentOffsetStore, NULL_OFFSET_STORE } from './services/settings';
 import type { OffsetStore } from './services/settings';
+import { FileLyricsCache } from './services/cache/lyricsCache';
+import { LyricsService } from './services/lyrics/lyricsService';
+import { SmtcReader } from './services/smtc/smtcReader';
 import type { RecognitionPhase } from './core/stateStore';
 import { setupContentSecurityPolicy } from './csp';
 
@@ -33,6 +36,8 @@ function configureElectronRuntime(): void {
 
 let mainWindow: BrowserWindow | null = null;
 let stateStore: StateStore | null = null;
+let lyricsCache: FileLyricsCache | null = null;
+let smtcReader: SmtcReader | null = null;
 
 function createWindow(): BrowserWindow {
   // En Linux/WSLg una ventana transparent+frameless con GPU deshabilitada NO
@@ -44,8 +49,8 @@ function createWindow(): BrowserWindow {
   const overlay = !windowed;
 
   const win = new BrowserWindow({
-    width: 560,
-    height: 420,
+    width: 760,
+    height: 560,
     minWidth: 320,
     minHeight: 200,
     title: 'Espejo Teleprompter',
@@ -150,6 +155,24 @@ function registerIpcHandlers(): void {
     return { ok: false, width: 0, height: 0 };
   });
 
+  // Click-through: mientras se muestra la letra, el widget puede volverse
+  // "intangible" para que los clics pasen a la app de detrás (un juego, etc.).
+  // forward:true mantiene los eventos de movimiento llegando al renderer, así
+  // el handle puede detectar el hover y reactivar la interacción.
+  ipcMain.handle(
+    'window:setClickThrough',
+    (_event, ignore: boolean): { ok: boolean } => {
+      if (mainWindow) {
+        if (ignore) {
+          mainWindow.setIgnoreMouseEvents(true, { forward: true });
+        } else {
+          mainWindow.setIgnoreMouseEvents(false);
+        }
+      }
+      return { ok: true };
+    },
+  );
+
   ipcMain.handle(
     'lyrics:load',
     async (_event, title: string, artist: string): Promise<{ ok: boolean; error?: string }> => {
@@ -237,6 +260,23 @@ function registerIpcHandlers(): void {
     return { ok: true };
   });
 
+  // Nivel de audio capturado (0..1): alimenta la pausa del reloj por silencio.
+  ipcMain.handle('recognition:level', (_event, level: number): { ok: boolean } => {
+    stateStore?.reportAudioLevel(level);
+    return { ok: true };
+  });
+
+  // Caché de letras: estadísticas y limpieza (para un futuro panel de settings).
+  ipcMain.handle('cache:stats', (): { ok: boolean; entries: number; negatives: number; bytes: number } => {
+    const s = lyricsCache?.stats() ?? { entries: 0, negatives: 0, bytes: 0 };
+    return { ok: true, ...s };
+  });
+
+  ipcMain.handle('cache:clear', (): { ok: boolean } => {
+    lyricsCache?.clear();
+    return { ok: true };
+  });
+
   // Sync: seek manual + offset crónico
   ipcMain.handle('sync:nudge', (_event, deltaMs: number): { ok: boolean } => {
     stateStore?.nudgePosition(deltaMs);
@@ -275,9 +315,25 @@ function bootstrap(): void {
     console.error('[settings ERROR] No se pudo inicializar el offset persistente:', err);
   }
 
-  stateStore = new StateStore(mainWindow, offsetStore);
+  // Caché local de letras (cache-first): acelera re-escuchas y evita re-romanizar.
+  // Si falla, LyricsService sigue funcionando sin caché (NULL_LYRICS_CACHE).
+  let lyricsService: LyricsService;
+  try {
+    lyricsCache = new FileLyricsCache(path.join(app.getPath('userData'), 'cache'));
+    lyricsService = new LyricsService(lyricsCache);
+  } catch (err) {
+    console.error('[cache ERROR] No se pudo inicializar la caché de letras:', err);
+    lyricsService = new LyricsService();
+  }
+
+  stateStore = new StateStore(mainWindow, offsetStore, lyricsService);
   stateStore.start(100); // 10 Hz
   registerIpcHandlers();
+
+  // Capa b: reproductor del SO (SMTC) como reloj maestro. No-op si no hay
+  // sidecar (env SMTC_SIDECAR) o no es Windows; AudD sigue como fallback.
+  smtcReader = new SmtcReader(stateStore, process.env.SMTC_SIDECAR ?? '');
+  smtcReader.start();
 }
 
 // Solo se permite una instancia del widget.
@@ -322,11 +378,13 @@ if (!gotLock) {
   });
 
   app.on('window-all-closed', () => {
+    smtcReader?.stop();
     stateStore?.stop();
     app.quit();
   });
 
   app.on('before-quit', () => {
+    smtcReader?.stop();
     stateStore?.stop();
   });
 }

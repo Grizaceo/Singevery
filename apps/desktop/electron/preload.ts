@@ -20,11 +20,21 @@ const api = {
     };
   },
 
+  onSingCommand: (cb: () => void): (() => void) => {
+    const listener = (): void => cb();
+    ipcRenderer.on('command:sing', listener);
+    return () => {
+      ipcRenderer.removeListener('command:sing', listener);
+    };
+  },
+
   // Window controls
   minimize: (): Promise<{ ok: boolean }> => ipcRenderer.invoke('window:minimize'),
   close: (): Promise<{ ok: boolean }> => ipcRenderer.invoke('window:close'),
   setSize: (width: number, height: number): Promise<{ ok: boolean }> => ipcRenderer.invoke('window:setSize', width, height),
   getSize: (): Promise<{ ok: boolean; width: number; height: number }> => ipcRenderer.invoke('window:getSize'),
+  setClickThrough: (ignore: boolean): Promise<{ ok: boolean }> => ipcRenderer.invoke('window:setClickThrough', ignore),
+  setCollapsed: (collapsed: boolean): Promise<{ ok: boolean; collapsed: boolean }> => ipcRenderer.invoke('window:setCollapsed', collapsed),
 
   loadLyrics: (title: string, artist: string): Promise<{ ok: boolean; error?: string }> =>
     ipcRenderer.invoke('lyrics:load', title, artist),
@@ -47,6 +57,14 @@ const api = {
     ipcRenderer.invoke('recognition:correct', audio, mimeType, recordStartedAt),
 
   stopRecognition: (): Promise<{ ok: boolean }> => ipcRenderer.invoke('recognition:stop'),
+
+  reportLevel: (level: number): Promise<{ ok: boolean }> =>
+    ipcRenderer.invoke('recognition:level', level),
+
+  // Caché de letras
+  cacheStats: (): Promise<{ ok: boolean; entries: number; negatives: number; bytes: number }> =>
+    ipcRenderer.invoke('cache:stats'),
+  cacheClear: (): Promise<{ ok: boolean }> => ipcRenderer.invoke('cache:clear'),
 
   // Sync: seek manual + offset crónico
   nudgeSync: (deltaMs: number): Promise<{ ok: boolean }> =>

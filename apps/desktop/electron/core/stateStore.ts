@@ -13,8 +13,7 @@ import {
   normalizeTrackKey,
 } from './syncTiming';
 import type { RecognitionPhase } from './syncTiming';
-import { fetchLyricsByMetadata } from '../services/lrclib';
-import { romanizeTimedLyrics } from '../services/romanize';
+import { LyricsService, defaultLyricsService } from '../services/lyrics/lyricsService';
 import { NULL_OFFSET_STORE } from '../services/settings';
 import type { OffsetStore } from '../services/settings';
 import type { RenderModel, Status, TimedLyrics, TrackMatch } from '../../src/types';
@@ -22,6 +21,13 @@ import type { RenderModel, Status, TimedLyrics, TrackMatch } from '../../src/typ
 export type { RecognitionPhase };
 
 const IDLE_MESSAGE = 'Esperando música...';
+
+/** Nivel de audio (0..1) por debajo del cual consideramos silencio.
+ *  Alineado con SILENCE_PEAK de capture.ts. */
+const SILENCE_LEVEL = 0.012;
+/** Silencio sostenido (ms) antes de congelar el reloj (evita pausar por un
+ *  bache puntual de nivel). */
+const SILENCE_HOLD_MS = 400;
 
 export class StateStore {
   private engine: SyncEngine;
@@ -48,12 +54,24 @@ export class StateStore {
   private correctionTargetMs = 0;
   private correctionStartedAt = Date.now();
 
-  private readonly offsetStore: OffsetStore;
+  /** Reloj congelado: cuando la música está en pausa/silencio, la posición no
+   *  avanza con el reloj de pared (evita que la letra "se escape" en una pausa). */
+  private clockPaused = false;
+  /** Momento en que empezó el silencio actual (null = hay señal). */
+  private silentSince: number | null = null;
 
-  constructor(window: BrowserWindow | null, offsetStore: OffsetStore = NULL_OFFSET_STORE) {
+  private readonly offsetStore: OffsetStore;
+  private readonly lyricsService: LyricsService;
+
+  constructor(
+    window: BrowserWindow | null,
+    offsetStore: OffsetStore = NULL_OFFSET_STORE,
+    lyricsService: LyricsService = defaultLyricsService,
+  ) {
     this.window = window;
     this.engine = new SyncEngine();
     this.offsetStore = offsetStore;
+    this.lyricsService = lyricsService;
   }
 
   attachWindow(window: BrowserWindow): void {
@@ -101,25 +119,30 @@ export class StateStore {
     artist: string,
     anchorMs = 0,
     anchorAt = Date.now(),
+    album: string | null = null,
+    durationMs: number | null = null,
   ): Promise<void> {
     const trackKey = normalizeTrackKey(artist, title);
     this.currentTrackKey = trackKey;
     this.lastMatchKey = trackKey;
     this.syncOffsetMs = this.offsetStore.get(trackKey); // offset crónico persistido
     this.correctionTargetMs = 0;
+    // Cargar una pista nueva implica que hay audio sonando: salir de pausa.
+    this.clockPaused = false;
+    this.silentSince = null;
     this.overrideStatus = 'FETCHING_LYRICS';
     this.trackTitle = title;
     this.trackArtist = artist;
 
     try {
-      const raw = await fetchLyricsByMetadata(title, artist);
-      if (!raw) {
+      // El servicio busca (cache-first), parsea y romaniza; devuelve TimedLyrics.
+      const lyrics = await this.lyricsService.getLyrics({ title, artist, album, durationMs });
+      if (!lyrics) {
         this.setLyrics(null, title, artist);
         this.overrideStatus = 'NO_LYRICS';
         return;
       }
 
-      const lyrics = await romanizeTimedLyrics(raw);
       // El crudo anclado se proyecta a "ahora" (el fetch tardó); la posición
       // mostrada = crudo + offset crónico.
       const projected = projectAnchoredPosition(anchorMs, anchorAt);
@@ -208,13 +231,60 @@ export class StateStore {
   }
 
   private currentPosition(now: number = Date.now()): number {
-    const elapsed = Math.max(0, now - this.anchoredAt);
+    // Reloj congelado (pausa/silencio): no acumulamos tiempo de pared.
+    const elapsed = this.clockPaused ? 0 : Math.max(0, now - this.anchoredAt);
     return (
       this.positionMs +
       elapsed +
       this.syncOffsetMs +
       rampedCorrection(this.correctionTargetMs, this.correctionStartedAt, now)
     );
+  }
+
+  /**
+   * Reporta el nivel de audio capturado (0..1). Silencio sostenido congela el
+   * reloj; cuando vuelve la señal lo reanuda desde donde quedó. Es la capa de
+   * pausa "de fallback" (sin reproductor): SMTC, cuando esté, da la pausa
+   * instantánea vía setPlaybackState/setExternalPosition.
+   */
+  reportAudioLevel(level: number, at: number = Date.now()): void {
+    if (level < SILENCE_LEVEL) {
+      if (this.silentSince == null) {
+        this.silentSince = at;
+      } else if (!this.clockPaused && at - this.silentSince >= SILENCE_HOLD_MS) {
+        // Congela en el instante en que EMPEZÓ el silencio (no tras el hold),
+        // para no arrastrar los ~400ms de deadband en la posición congelada.
+        this.pauseClock(this.silentSince);
+      }
+    } else {
+      this.silentSince = null;
+      if (this.clockPaused) this.resumeClock(at);
+    }
+  }
+
+  /** Congela el reloj en la posición mostrada actual. */
+  pauseClock(at: number = Date.now()): void {
+    if (this.clockPaused) return;
+    // Consolida SIEMPRE la posición (incluido el tiempo acumulado) antes de
+    // congelar, no solo la corrección en curso.
+    this.reanchor(this.currentPosition(at), at);
+    this.clockPaused = true;
+  }
+
+  /** Reanuda el reloj desde la posición congelada, sin salto. */
+  resumeClock(at: number = Date.now()): void {
+    if (!this.clockPaused) return;
+    this.reanchor(this.currentPosition(at), at);
+    this.clockPaused = false;
+  }
+
+  isClockPaused(): boolean {
+    return this.clockPaused;
+  }
+
+  /** Posición mostrada (con offset y corrección) en `at`. Público para tests/UI. */
+  getDisplayedPosition(at: number = Date.now()): number {
+    return this.currentPosition(at);
   }
 
   /**
@@ -283,6 +353,62 @@ export class StateStore {
 
   getSyncOffsetMs(): number {
     return this.syncOffsetMs;
+  }
+
+  // ==========================================================================
+  // Fuente externa de posición (SMTC / reproductor del SO) — Capa b.
+  //
+  // El SO es la fuente de verdad del playhead: pausa/seek/skip instantáneos y
+  // sin deriva. Estos métodos los llama el lector de SMTC en el proceso main.
+  // AudD queda como fallback cuando no hay reproductor accesible.
+  // ==========================================================================
+
+  /** Pausa/reanuda el reloj según el estado de reproducción del SO. */
+  setPlaybackState(playing: boolean, at: number = Date.now()): void {
+    if (playing) this.resumeClock(at);
+    else this.pauseClock(at);
+  }
+
+  /**
+   * Posición de alta confianza del reproductor (SMTC): `positionMs` es el
+   * playhead real en `at`. Si no suena, congela. Si suena, reconcilia: ignora
+   * diferencias mínimas (anti-jitter) y, por ser fuente de verdad, ancla firme
+   * cuando el error supera la banda muerta (cubre el seek).
+   */
+  applyExternalPosition(positionMs: number, playing: boolean, at: number = Date.now()): void {
+    if (!playing) {
+      this.pauseClock(at);
+      return;
+    }
+    if (this.clockPaused) this.resumeClock(at);
+    const target = Math.max(0, positionMs) + this.syncOffsetMs;
+    const decision = computeDrift(target, this.currentPosition(at));
+    if (decision.action === 'ignore') return;
+    this.reanchor(target, at);
+  }
+
+  /**
+   * Pista actual reportada por el SO. Si cambió, carga su letra (cache-first);
+   * si es la misma, solo reconcilia la posición. Devuelve true si cambió.
+   */
+  async applyExternalTrack(
+    title: string,
+    artist: string,
+    options: {
+      album?: string | null;
+      durationMs?: number | null;
+      positionMs?: number;
+      at?: number;
+    } = {},
+  ): Promise<boolean> {
+    const { album = null, durationMs = null, positionMs = 0, at = Date.now() } = options;
+    const key = normalizeTrackKey(artist, title);
+    if (this.lastMatchKey === key && this.engine.getLyrics()) {
+      this.applyExternalPosition(positionMs, true, at);
+      return false;
+    }
+    await this.loadLyricsByMetadata(title, artist, positionMs, at, album, durationMs);
+    return true;
   }
 
   private overrideMessage(status: Status): string {
