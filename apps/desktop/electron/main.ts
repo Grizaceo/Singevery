@@ -20,6 +20,7 @@ import { FileLyricsCache } from './services/cache/lyricsCache';
 import { LyricsService } from './services/lyrics/lyricsService';
 import { SmtcReader } from './services/smtc/smtcReader';
 import { resolveSmtcSidecar } from './services/smtc/smtcPath';
+import { WakeWordReader } from './services/wakeword/wakeWordReader';
 import { pillBounds, expandedBounds, PILL_WIDTH, PILL_HEIGHT, type Rect } from './services/windowLayout';
 import type { RecognitionPhase } from './core/stateStore';
 import { setupContentSecurityPolicy } from './csp';
@@ -40,6 +41,7 @@ let mainWindow: BrowserWindow | null = null;
 let stateStore: StateStore | null = null;
 let lyricsCache: FileLyricsCache | null = null;
 let smtcReader: SmtcReader | null = null;
+let wakeWordReader: WakeWordReader | null = null;
 /** Bounds expandidos guardados al colapsar a pill; se restauran al expandir. */
 let savedBounds: Rect | null = null;
 
@@ -393,19 +395,34 @@ function bootstrap(): void {
   const smtcExe = resolveSmtcSidecar(process.env.SMTC_SIDECAR, smtcSidecarRoots());
   smtcReader = new SmtcReader(stateStore, smtcExe);
   smtcReader.start();
+
+  // Palabra wake opt-in (P3.9): si WAKEWORD_SIDECAR apunta a un ejecutable que
+  // existe, lo lanza y dispara command:sing al detectar la palabra. Sin esa
+  // env, es no-op (SING queda vía hotkey y pill).
+  const wakeExe = process.env.WAKEWORD_SIDECAR?.trim() ?? '';
+  wakeWordReader = new WakeWordReader(() => triggerSing(), wakeExe);
+  wakeWordReader.start();
 }
 
 /**
- * Registra el atajo global Ctrl+Alt+S → emite 'command:sing' al renderer
- * (que expande la pill e inicia el reconocimiento). No-op si falla el registro
- * (p. ej. el acelerador ya está tomado por otra app).
+ * Dispara el comando SING: emite 'command:sing' al renderer (que expande la
+ * pill e inicia el reconocimiento) y trae la ventana al frente. Lo usan el
+ * atajo global Ctrl+Alt+S y la palabra wake (sidecar opt-in).
+ */
+function triggerSing(): void {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  if (!mainWindow.isVisible()) mainWindow.show();
+  mainWindow.webContents.send('command:sing');
+  mainWindow.focus();
+}
+
+/**
+ * Registra el atajo global Ctrl+Alt+S → command:sing. No-op si falla el
+ * registro (p. ej. el acelerador ya está tomado por otra app).
  */
 function registerSingShortcut(): void {
   const ok = globalShortcut.register(SING_ACCELERATOR, () => {
-    if (!mainWindow || mainWindow.isDestroyed()) return;
-    if (!mainWindow.isVisible()) mainWindow.show();
-    mainWindow.webContents.send('command:sing');
-    mainWindow.focus();
+    triggerSing();
   });
   if (!ok) {
     console.warn(`[main] no se pudo registrar el atajo ${SING_ACCELERATOR} (quizá ya esté en uso).`);
@@ -471,6 +488,7 @@ if (!gotLock) {
 
   app.on('window-all-closed', () => {
     smtcReader?.stop();
+    wakeWordReader?.stop();
     stateStore?.stop();
     globalShortcut.unregisterAll();
     app.quit();
@@ -478,6 +496,7 @@ if (!gotLock) {
 
   app.on('before-quit', () => {
     smtcReader?.stop();
+    wakeWordReader?.stop();
     stateStore?.stop();
     globalShortcut.unregisterAll();
   });
