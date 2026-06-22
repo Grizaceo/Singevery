@@ -14,8 +14,8 @@ import {
 } from './syncTiming';
 import type { RecognitionPhase } from './syncTiming';
 import { LyricsService, defaultLyricsService } from '../services/lyrics/lyricsService';
-import { NULL_OFFSET_STORE } from '../services/settings';
-import type { OffsetStore } from '../services/settings';
+import { NULL_OFFSET_STORE, NULL_CALIBRATION_STORE } from '../services/settings';
+import type { OffsetStore, CalibrationStore } from '../services/settings';
 import type { RenderModel, Status, TimedLyrics, TrackMatch } from '../../src/types';
 
 export type { RecognitionPhase };
@@ -50,6 +50,11 @@ export class StateStore {
    *  vivo. Positivo = adelanta la letra, negativo = la atrasa. */
   private syncOffsetMs = 0;
 
+  /** Calibración global de latencia (ms, persistida). Compensa el adelanto
+   *  sistemático de AudD por el tiempo de grabación+identificación. Se aplica
+   *  al anclar cada match (adjustMatchPosition). */
+  private calibrationOffsetMs = 0;
+
   /** Corrección suave de deriva en curso: se ramplea de 0 a este target. */
   private correctionTargetMs = 0;
   private correctionStartedAt = Date.now();
@@ -61,17 +66,21 @@ export class StateStore {
   private silentSince: number | null = null;
 
   private readonly offsetStore: OffsetStore;
+  private readonly calibrationStore: CalibrationStore;
   private readonly lyricsService: LyricsService;
 
   constructor(
     window: BrowserWindow | null,
     offsetStore: OffsetStore = NULL_OFFSET_STORE,
     lyricsService: LyricsService = defaultLyricsService,
+    calibrationStore: CalibrationStore = NULL_CALIBRATION_STORE,
   ) {
     this.window = window;
     this.engine = new SyncEngine();
     this.offsetStore = offsetStore;
     this.lyricsService = lyricsService;
+    this.calibrationStore = calibrationStore;
+    this.calibrationOffsetMs = calibrationStore.get();
   }
 
   attachWindow(window: BrowserWindow): void {
@@ -182,7 +191,7 @@ export class StateStore {
 
     const anchor =
       recordStartedAt != null
-        ? adjustMatchPosition(match, recordStartedAt)
+        ? adjustMatchPosition(match, recordStartedAt, this.calibrationOffsetMs)
         : { positionMs: match.position_ms, anchorAt: match.matched_at };
 
     if (this.lastMatchKey === matchKey && this.engine.getLyrics()) {
@@ -353,6 +362,24 @@ export class StateStore {
 
   getSyncOffsetMs(): number {
     return this.syncOffsetMs;
+  }
+
+  /** Calibración global persistida (ms, latencia AudD). */
+  getCalibrationOffsetMs(): number {
+    return this.calibrationOffsetMs;
+  }
+
+  /**
+   * Ajusta la calibración global (ms) y la persiste. Como la calibración se
+   * aplica al anclar cada match (va dentro del crudo), el cambio se refleja
+   * en vivo desplazando la letra `deltaMs` (igual que el offset por pista) y
+   * queda para los próximos matches.
+   */
+  adjustCalibrationOffset(deltaMs: number): void {
+    this.calibrationOffsetMs += deltaMs;
+    this.calibrationStore.set(this.calibrationOffsetMs);
+    // Reflejar en vivo: desplaza la posición mostrada el delta.
+    this.nudgePosition(deltaMs);
   }
 
   // ==========================================================================

@@ -141,11 +141,15 @@ export interface DesktopApi {
   cacheStats: () => Promise<{ ok: boolean; entries: number; negatives: number; bytes: number }>;
   cacheClear: () => Promise<{ ok: boolean }>;
 
-  // Sync: seek manual + offset crónico
+  // Sync: seek manual + offset crónico por pista
   nudgeSync: (deltaMs: number) => Promise<{ ok: boolean }>;
   seekLine: (direction: -1 | 1) => Promise<{ ok: boolean }>;
   adjustSyncOffset: (deltaMs: number) => Promise<{ ok: boolean; offsetMs: number }>;
   getSyncOffset: () => Promise<{ ok: boolean; offsetMs: number }>;
+
+  // Calibración global de latencia (SYNC_OFFSET_MS persistido, P2.8)
+  adjustSyncCalibration: (deltaMs: number) => Promise<{ ok: boolean; offsetMs: number }>;
+  getSyncCalibration: () => Promise<{ ok: boolean; offsetMs: number }>;
 
   // Window controls
   minimize: () => Promise<{ ok: boolean }>;

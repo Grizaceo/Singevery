@@ -2,17 +2,24 @@ import type { TrackMatch } from '../../src/types';
 
 export type RecognitionPhase = 'LISTENING' | 'IDENTIFYING' | null;
 
-/** Compensa latencia de grabación + identificación (ms). */
+/** Compensa latencia de grabación + identificación (ms). Valor por defecto de
+ *  la calibración global; el ajuste persistido vive en settings.ts. */
 export const SYNC_OFFSET_MS = 300;
 
+/**
+ * Ancla el timecode de AudD al instante del match. `syncOffsetMs` es la
+ * calibración global de latencia (por defecto SYNC_OFFSET_MS); se recibe por
+ * parámetro para que el StateStore use el valor persistido (P2.8). Función pura.
+ */
 export function adjustMatchPosition(
   match: TrackMatch,
   recordStartedAt: number,
+  syncOffsetMs: number = SYNC_OFFSET_MS,
 ): { positionMs: number; anchorAt: number } {
   const anchorAt = match.matched_at;
   const elapsed = anchorAt - recordStartedAt;
   return {
-    positionMs: match.position_ms + Math.max(0, elapsed) + SYNC_OFFSET_MS,
+    positionMs: match.position_ms + Math.max(0, elapsed) + syncOffsetMs,
     anchorAt,
   };
 }

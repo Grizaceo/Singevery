@@ -14,6 +14,7 @@ const NUDGE_WHEEL_MS = 1000; // ±1 s por notch de rueda
 export function SyncControls() {
   const [hasLyrics, setHasLyrics] = useState(false);
   const [offsetMs, setOffsetMs] = useState(0);
+  const [calibrationMs, setCalibrationMs] = useState(0);
   const unsubscribeRef = useRef<(() => void) | undefined>(undefined);
 
   // Suscribirse propio al RenderModel para saber si hay letra cargada.
@@ -30,11 +31,14 @@ export function SyncControls() {
     };
   }, []);
 
-  // Leer offset inicial.
+  // Leer offset y calibración iniciales.
   useEffect(() => {
     if (!window.api) return;
     window.api.getSyncOffset().then((r) => {
       if (r.ok) setOffsetMs(r.offsetMs);
+    });
+    window.api.getSyncCalibration().then((r) => {
+      if (r.ok) setCalibrationMs(r.offsetMs);
     });
   }, []);
 
@@ -52,6 +56,12 @@ export function SyncControls() {
     if (!window.api) return;
     const result = await window.api.adjustSyncOffset(deltaMs);
     if (result.ok) setOffsetMs(result.offsetMs);
+  }, []);
+
+  const adjustCalibration = useCallback(async (deltaMs: number) => {
+    if (!window.api) return;
+    const result = await window.api.adjustSyncCalibration(deltaMs);
+    if (result.ok) setCalibrationMs(result.offsetMs);
   }, []);
 
   const handleWheel = useCallback(
@@ -97,12 +107,12 @@ export function SyncControls() {
           className="sync-btn offset-adj"
           onClick={() => void adjustOffset(-100)}
           disabled={!hasLyrics}
-          title="Atrasar letra 100ms"
+          title="Atrasar letra 100ms (esta pista)"
           aria-label="Atrasar letra"
         >
           −
         </button>
-        <span className="sync-offset-label" title="Offset de sincronización">
+        <span className="sync-offset-label" title="Offset de sincronización (esta pista)">
           {offsetMs === 0 ? '0' : `${offsetMs > 0 ? '+' : ''}${offsetMs}`}
         </span>
         <button
@@ -110,8 +120,37 @@ export function SyncControls() {
           className="sync-btn offset-adj"
           onClick={() => void adjustOffset(100)}
           disabled={!hasLyrics}
-          title="Adelantar letra 100ms"
+          title="Adelantar letra 100ms (esta pista)"
           aria-label="Adelantar letra"
+        >
+          +
+        </button>
+      </div>
+
+      <div className="sync-row offset-row calibration-row">
+        <button
+          type="button"
+          className="sync-btn offset-adj"
+          onClick={() => void adjustCalibration(-50)}
+          disabled={!hasLyrics}
+          title="Reducir calibración global 50ms (latencia AudD)"
+          aria-label="Reducir calibración"
+        >
+          −
+        </button>
+        <span
+          className="sync-offset-label calibration-label"
+          title="Calibración global de latencia (SYNC_OFFSET_MS, persistido)"
+        >
+          {calibrationMs === 0 ? '0' : `${calibrationMs > 0 ? '+' : ''}${calibrationMs}`}cal
+        </span>
+        <button
+          type="button"
+          className="sync-btn offset-adj"
+          onClick={() => void adjustCalibration(50)}
+          disabled={!hasLyrics}
+          title="Aumentar calibración global 50ms (latencia AudD)"
+          aria-label="Aumentar calibración"
         >
           +
         </button>

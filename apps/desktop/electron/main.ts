@@ -14,8 +14,8 @@ import * as path from 'path';
 import { StateStore } from './core/stateStore';
 import { loadDotEnv } from './services/env';
 import { identifyFromAudio } from './services/audd';
-import { createPersistentOffsetStore, NULL_OFFSET_STORE } from './services/settings';
-import type { OffsetStore } from './services/settings';
+import { createPersistentSettings, NULL_OFFSET_STORE, NULL_CALIBRATION_STORE } from './services/settings';
+import type { OffsetStore, CalibrationStore } from './services/settings';
 import { FileLyricsCache } from './services/cache/lyricsCache';
 import { LyricsService } from './services/lyrics/lyricsService';
 import { SmtcReader } from './services/smtc/smtcReader';
@@ -341,6 +341,17 @@ function registerIpcHandlers(): void {
   ipcMain.handle('sync:getOffset', (): { ok: boolean; offsetMs: number } => {
     return { ok: true, offsetMs: stateStore?.getSyncOffsetMs() ?? 0 };
   });
+
+  // Calibración global de latencia (SYNC_OFFSET_MS persistido, P2.8).
+  ipcMain.handle('sync:adjustCalibration', (_event, deltaMs: number): { ok: boolean; offsetMs: number } => {
+    if (!stateStore) return { ok: false, offsetMs: 0 };
+    stateStore.adjustCalibrationOffset(deltaMs);
+    return { ok: true, offsetMs: stateStore.getCalibrationOffsetMs() };
+  });
+
+  ipcMain.handle('sync:getCalibration', (): { ok: boolean; offsetMs: number } => {
+    return { ok: true, offsetMs: stateStore?.getCalibrationOffsetMs() ?? 0 };
+  });
 }
 
 function bootstrap(): void {
@@ -351,10 +362,13 @@ function bootstrap(): void {
   mainWindow = createWindow();
 
   let offsetStore: OffsetStore = NULL_OFFSET_STORE;
+  let calibrationStore: CalibrationStore = NULL_CALIBRATION_STORE;
   try {
-    offsetStore = createPersistentOffsetStore();
+    const settings = createPersistentSettings();
+    offsetStore = settings.offsetStore;
+    calibrationStore = settings.calibrationStore;
   } catch (err) {
-    console.error('[settings ERROR] No se pudo inicializar el offset persistente:', err);
+    console.error('[settings ERROR] No se pudo inicializar el ajuste persistente:', err);
   }
 
   // Caché local de letras (cache-first): acelera re-escuchas y evita re-romanizar.
@@ -368,7 +382,7 @@ function bootstrap(): void {
     lyricsService = new LyricsService();
   }
 
-  stateStore = new StateStore(mainWindow, offsetStore, lyricsService);
+  stateStore = new StateStore(mainWindow, offsetStore, lyricsService, calibrationStore);
   stateStore.start(100); // 10 Hz
   registerIpcHandlers();
   registerSingShortcut();

@@ -8,6 +8,7 @@ vi.mock('electron', () => ({
 }));
 
 import { StateStore } from '../electron/core/stateStore';
+import type { CalibrationStore } from '../electron/services/settings';
 
 // StateStore usa Date.now() internamente; controlamos el reloj con fake timers.
 describe('StateStore — pausa del reloj por silencio', () => {
@@ -67,5 +68,48 @@ describe('StateStore — pausa del reloj por silencio', () => {
     s.reportAudioLevel(0, 0); // silencio empieza
     s.reportAudioLevel(0.5, 100); // vuelve señal antes del hold → nunca pausó
     expect(s.isClockPaused()).toBe(false);
+  });
+});
+
+describe('StateStore — calibración global (P2.8)', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(0);
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  function makeCalibration(initial: number): {
+    store: CalibrationStore;
+    state: StateStore;
+  } {
+    let value = initial;
+    const store: CalibrationStore = {
+      get: () => value,
+      set: (v) => {
+        value = v;
+      },
+    };
+    const state = new StateStore(null, undefined, undefined, store);
+    return { store, state };
+  }
+
+  it('carga la calibración inicial desde el store', () => {
+    const { state } = makeCalibration(450);
+    expect(state.getCalibrationOffsetMs()).toBe(450);
+  });
+
+  it('adjustCalibrationOffset desplaza la letra en vivo y persiste', () => {
+    const { store, state } = makeCalibration(300);
+    state.nudgePosition(10_000); // posición 10s
+    expect(state.getDisplayedPosition()).toBe(10_000);
+
+    state.adjustCalibrationOffset(50);
+    // La calibración subió a 350 y se persistió.
+    expect(state.getCalibrationOffsetMs()).toBe(350);
+    expect(store.get()).toBe(350);
+    // La letra se desplazó +50ms (adelantada).
+    expect(state.getDisplayedPosition()).toBe(10_050);
   });
 });

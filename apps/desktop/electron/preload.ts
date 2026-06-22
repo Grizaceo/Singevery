@@ -66,7 +66,7 @@ const api = {
     ipcRenderer.invoke('cache:stats'),
   cacheClear: (): Promise<{ ok: boolean }> => ipcRenderer.invoke('cache:clear'),
 
-  // Sync: seek manual + offset crónico
+  // Sync: seek manual + offset crónico por pista
   nudgeSync: (deltaMs: number): Promise<{ ok: boolean }> =>
     ipcRenderer.invoke('sync:nudge', deltaMs),
   seekLine: (direction: -1 | 1): Promise<{ ok: boolean }> =>
@@ -75,6 +75,12 @@ const api = {
     ipcRenderer.invoke('sync:adjustOffset', deltaMs),
   getSyncOffset: (): Promise<{ ok: boolean; offsetMs: number }> =>
     ipcRenderer.invoke('sync:getOffset'),
+
+  // Calibración global de latencia (SYNC_OFFSET_MS persistido, P2.8)
+  adjustSyncCalibration: (deltaMs: number): Promise<{ ok: boolean; offsetMs: number }> =>
+    ipcRenderer.invoke('sync:adjustCalibration', deltaMs),
+  getSyncCalibration: (): Promise<{ ok: boolean; offsetMs: number }> =>
+    ipcRenderer.invoke('sync:getCalibration'),
 };
 
 contextBridge.exposeInMainWorld('api', api);
