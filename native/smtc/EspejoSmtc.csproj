@@ -11,6 +11,7 @@
     <AssemblyName>espejo-smtc</AssemblyName>
     <SelfContained>false</SelfContained>
     <InvariantGlobalization>true</InvariantGlobalization>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
   </PropertyGroup>
 
 </Project>

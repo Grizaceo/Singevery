@@ -11,7 +11,7 @@ directories:
 # Incluye el sidecar SMTC compilado (native/smtc/dist) en los recursos de la
 # app empaquetada; smtcPath.ts lo autodetecta bajo process.resourcesPath.
 extraResources:
-  - from: ../native/smtc/dist
+  - from: ../../native/smtc/dist
     to: native/smtc/dist
     filter: ['**/*']
 
@@ -25,6 +25,7 @@ files:
   - '!**/node_modules/**/{*.map,*.ts,test.js,test.ts,test.d.ts}'
 
 win:
+  signAndEditExecutable: false
   target:
     - target: nsis
       arch: [x64]

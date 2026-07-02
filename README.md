@@ -8,11 +8,21 @@ Widget de escritorio transparente para **cantar con la letra sincronizada**: rec
 
 App activa: **[`apps/desktop`](apps/desktop)** — Electron + React 19 + TypeScript.
 
+## Descargas
+
+[![Latest release](https://img.shields.io/github/v/release/Grizaceo/Singevery?label=latest)](https://github.com/Grizaceo/Singevery/releases/latest)
+
+Descarga el instalador de Windows desde **[GitHub Releases](https://github.com/Grizaceo/Singevery/releases/latest)** (`Singevery-Setup-x.y.z.exe`).
+
+> **SmartScreen:** el instalador no está firmado con certificado de código. Windows puede mostrar *"Windows protegió tu PC"*. Pulsa **Más información → Ejecutar de todos modos** para continuar.
+
 ## Demo
 
-https://github.com/Grizaceo/Singevery/raw/main/docs/demo.mp4
+![Demo de Singevery](docs/demo.gif)
 
-<video src="https://github.com/Grizaceo/Singevery/raw/main/docs/demo.mp4" controls width="720"></video>
+[▶ Ver video completo (HD)](https://github.com/Grizaceo/Singevery/blob/main/docs/demo.mp4)
+
+> **¿Quieres reproductor MP4 inline en el README?** GitHub no lo permite con archivos del repo (`raw/main/...` sale como enlace). Edita el README en github.com, arrastra [`docs/demo-readme.mp4`](docs/demo-readme.mp4) (~1 MB) al editor y GitHub insertará una URL `user-attachments` que sí se reproduce embebida. Sustituye el GIF por esa URL.
 
 En la grabación:
 
@@ -84,4 +94,4 @@ npm run package       # Instalador Windows (electron-builder)
 
 ## Licencia
 
-Proyecto privado / uso personal — ver historial del repo.
+[MIT](LICENSE) — Copyright © 2026 Gris.

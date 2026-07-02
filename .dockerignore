@@ -1,0 +1,14 @@
+**/node_modules
+**/dist
+**/dist-electron
+**/release
+legacy
+docs/demo.mp4
+docs/demo-readme.mp4
+docs/demo.gif
+docs/demo-poster.jpg
+.git
+.github
+*.md
+!apps/desktop/**/*.md
+!native/**/*.md

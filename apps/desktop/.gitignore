@@ -7,6 +7,7 @@ node_modules/
 dist/
 dist-electron/
 out/
+release/
 build/Release/
 
 # Artefactos de compilación TS que terminan en src/ (tsconfig tiene noEmit,
