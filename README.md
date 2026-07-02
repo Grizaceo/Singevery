@@ -2,22 +2,23 @@
 
 > Teleprompter transparente para cantar: reconoce la canción que suena y muestra la letra sincronizada con karaoke en tiempo real.
 
+**Repositorio:** https://github.com/Grizaceo/Singevery
+
 Widget de escritorio transparente para **cantar con la letra sincronizada**: reconoce la canción que suena, muestra la letra con karaoke (palabra a palabra) y soporta furigana y romaji para japonés, chino y coreano.
 
 App activa: **[`apps/desktop`](apps/desktop)** — Electron + React 19 + TypeScript.
 
 ## Demo
 
-<!-- Sustituye el enlace cuando subas el video -->
-<!-- [![Demo de Singevery](https://img.youtube.com/vi/VIDEO_ID/0.jpg)](https://youtu.be/VIDEO_ID) -->
+https://github.com/Grizaceo/Singevery/raw/main/docs/demo.mp4
 
-Graba tu sesión mostrando:
+<video src="https://github.com/Grizaceo/Singevery/raw/main/docs/demo.mp4" controls width="720"></video>
+
+En la grabación:
 
 1. Pill **SING** o atajo **Ctrl+Alt+S** con música sonando (Spotify / navegador).
 2. Letra sincronizada sobre el escritorio (overlay transparente + click-through).
-3. Modos de lectura (原 / ふ / A) y ajustes (⚙) si aplica.
-
-Sube el video a YouTube o GitHub Releases y enlázalo aquí arriba.
+3. Modos de lectura (原 / ふ / A) y ajustes (⚙).
 
 ## Qué hace
 
