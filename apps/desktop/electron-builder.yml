@@ -1,7 +1,7 @@
 # Configuración de empaquetado con electron-builder.
 # Foco: Windows NSIS (.exe). macOS/Linux se pueden añadir después.
-appId: com.gris.espejo-teleprompter
-productName: Espejo Teleprompter
+appId: com.gris.singevery
+productName: Singevery
 copyright: Copyright © 2026 Gris
 
 directories:
@@ -36,4 +36,4 @@ nsis:
   allowToChangeInstallationDirectory: true
   createDesktopShortcut: true
   createStartMenuShortcut: true
-  shortcutName: Espejo Teleprompter
+  shortcutName: Singevery

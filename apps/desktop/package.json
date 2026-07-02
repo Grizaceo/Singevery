@@ -1,8 +1,8 @@
 {
-  "name": "espejo-teleprompter-desktop",
+  "name": "singevery-desktop",
   "private": true,
   "version": "0.1.0",
-  "description": "Widget de escritorio que reconoce la música que suena y muestra la letra sincronizada para cantar.",
+  "description": "Singevery — widget transparente que reconoce la música y muestra la letra sincronizada para cantar.",
   "author": "Gris",
   "main": "dist-electron/electron/main.js",
   "scripts": {

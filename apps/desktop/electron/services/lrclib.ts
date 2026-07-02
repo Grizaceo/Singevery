@@ -1,7 +1,7 @@
 import type { TimedLyrics } from '../../src/types';
 import { parseLrc, plainTextToLyrics } from './lrcParser';
 
-const USER_AGENT = 'Espejo-Teleprompter/0.1.0';
+const USER_AGENT = 'Singevery/0.1.0';
 const SEARCH_URL = 'https://lrclib.net/api/search';
 
 interface LrcLibResult {

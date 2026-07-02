@@ -31,12 +31,12 @@ Elige una opción:
 - **B) Clonar de GitHub** (⚠️ trae solo lo que esté *pusheado*; hoy los cambios
   locales no están subidos):
   ```powershell
-  git clone https://github.com/Grizaceo/Espejo-teleprompter.git C:\dev\Espejo-teleprompter
+  git clone https://github.com/Grizaceo/Singevery.git C:\dev\Singevery
   ```
 
 ## 2. Configurar el token de AudD
 
-Crea `C:\dev\Espejo-teleprompter\.env` (raíz del repo) con:
+Crea `C:\dev\Singevery\.env` (raíz del repo) con:
 ```
 AUDD_API_TOKEN=tu_token_de_audd
 ```
@@ -44,7 +44,7 @@ AUDD_API_TOKEN=tu_token_de_audd
 
 ## 3. Instalar y correr (dev)
 
-En PowerShell, dentro de `C:\dev\Espejo-teleprompter\apps\desktop`:
+En PowerShell, dentro de `C:\dev\Singevery\apps\desktop`:
 ```powershell
 npm install
 npm run dev:electron:win
@@ -63,7 +63,7 @@ npm run dev:electron:win
 ```powershell
 npm run package
 ```
-Genera el instalador en `apps\desktop\release\Espejo Teleprompter-Setup-0.1.0.exe`
+Genera el instalador en `apps\desktop\release\Singevery-Setup-0.1.0.exe`
 (NSIS x64, según `electron-builder.yml`). Incluye el diccionario de kuromoji para
 que el furigana funcione en la app empaquetada.
 
@@ -96,7 +96,7 @@ La app resuelve la ruta del sidecar en este orden (`smtcPath.ts`):
 
 1. `SMTC_SIDECAR` (ruta explícita, opcional):
    ```powershell
-   $env:SMTC_SIDECAR="C:\dev\Espejo-teleprompter\native\smtc\dist\espejo-smtc.exe"
+   $env:SMTC_SIDECAR="C:\dev\Singevery\native\smtc\dist\espejo-smtc.exe"
    ```
 2. **Autodetección**: sin la env, busca `native/smtc/dist/espejo-smtc.exe` bajo
    el repo. Si compilaste con el script, **no hace falta** configurar nada.

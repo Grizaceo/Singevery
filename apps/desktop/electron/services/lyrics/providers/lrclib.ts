@@ -9,7 +9,7 @@
 
 import type { LyricsProvider, LyricsQuery, RawLyrics } from '../types';
 
-const USER_AGENT = 'Espejo-Teleprompter/0.1.0 (https://github.com/Grizaceo/Espejo-teleprompter)';
+const USER_AGENT = 'Singevery/0.1.0 (https://github.com/Grizaceo/Singevery)';
 const BASE = 'https://lrclib.net/api';
 /** Tolerancia de duración al elegir en /api/search (segundos). */
 const DURATION_TOLERANCE_S = 2;

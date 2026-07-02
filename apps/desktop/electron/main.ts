@@ -83,7 +83,7 @@ function createWindow(): BrowserWindow {
     height: initialBounds.height,
     minWidth: 320,
     minHeight: 200,
-    title: 'Espejo Teleprompter',
+    title: 'Singevery',
     frame: overlay ? false : true,
     transparent: overlay,
     backgroundColor: overlay ? '#00000000' : '#0e0e12',
