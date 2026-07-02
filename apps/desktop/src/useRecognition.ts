@@ -9,6 +9,7 @@ import {
   SILENCE_PEAK,
   SystemAudioSession,
 } from './audio/capture';
+import { blobToWav16kMono } from './audio/wav';
 
 /** Estado y acciones del motor de reconocimiento (capa de renderer).
  *  Un único hook viviendo en App; RecognitionControls lo consume por props. */
@@ -128,12 +129,14 @@ export function useRecognition(): RecognitionState {
             continue;
           }
 
-          const buffer = await blob.arrayBuffer();
+          const wavBlob = await blobToWav16kMono(blob);
+          const buffer = await wavBlob.arrayBuffer();
+          const mimeType = 'audio/wav';
 
           if (tracking) {
             // Corrección silenciosa de deriva. Errores se ignoran (la letra
             // sigue corriendo); un cambio de canción recarga la letra solo.
-            const result = await window.api.correctAudio(buffer, blob.type, recordStartedAt);
+            const result = await window.api.correctAudio(buffer, mimeType, recordStartedAt);
             if (result.ok && result.matched && result.changed) {
               setHint('Nueva canción detectada…');
             } else {
@@ -146,10 +149,13 @@ export function useRecognition(): RecognitionState {
           }
 
           setHint('Identificando canción…');
-          const result = await window.api.identifyAudio(buffer, blob.type, recordStartedAt);
+          const result = await window.api.identifyAudio(buffer, mimeType, recordStartedAt);
 
           if (!result.ok) {
-            const retryable = result.error?.includes('AudD #300');
+            const retryable =
+              result.error?.includes('AudD #300') ||
+              result.error?.includes('Shazam HTTP') ||
+              result.error?.includes('no se reconoció');
             if (retryable) {
               setHint(
                 level < SILENCE_PEAK * 4

@@ -81,6 +81,22 @@ const api = {
     ipcRenderer.invoke('sync:adjustCalibration', deltaMs),
   getSyncCalibration: (): Promise<{ ok: boolean; offsetMs: number }> =>
     ipcRenderer.invoke('sync:getCalibration'),
+
+  getDisplaySettings: (): Promise<{ ok: boolean; display: import('../src/types').DisplaySettings }> =>
+    ipcRenderer.invoke('settings:getDisplay'),
+
+  setDisplaySettings: (
+    partial: Partial<import('../src/types').DisplaySettings>,
+  ): Promise<{ ok: boolean; display: import('../src/types').DisplaySettings }> =>
+    ipcRenderer.invoke('settings:setDisplay', partial),
+
+  getRecognitionProvider: (): Promise<{ ok: boolean; provider: import('../src/types').RecognitionProviderMode }> =>
+    ipcRenderer.invoke('settings:getRecognitionProvider'),
+
+  setRecognitionProvider: (
+    provider: import('../src/types').RecognitionProviderMode,
+  ): Promise<{ ok: boolean; provider: import('../src/types').RecognitionProviderMode }> =>
+    ipcRenderer.invoke('settings:setRecognitionProvider', provider),
 };
 
 contextBridge.exposeInMainWorld('api', api);

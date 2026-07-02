@@ -1,9 +1,5 @@
-/* ResizeGrip.css — grip de redimensionado en la esquina inferior derecha. */
 .resize-grip {
-  position: absolute;
-  bottom: 1px;
-  right: 1px;
-  z-index: 1100;
+  position: relative;
   width: 18px;
   height: 18px;
   display: flex;
@@ -11,7 +7,7 @@
   justify-content: flex-end;
   padding: 2px;
   box-sizing: border-box;
-  color: rgba(255, 255, 255, 0.35);
+  color: var(--chrome-text-muted);
   cursor: nwse-resize;
   pointer-events: auto;
   -webkit-app-region: no-drag !important;
@@ -19,5 +15,5 @@
 }
 
 .resize-grip:hover {
-  color: rgba(255, 255, 255, 0.85);
+  color: #fff;
 }

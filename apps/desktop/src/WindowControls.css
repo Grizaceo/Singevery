@@ -1,12 +1,7 @@
-/* WindowControls.css */
 .window-controls {
-  position: absolute;
-  top: 0.5rem;
-  left: 0.5rem;  /* Cambiado de right a left */
-  z-index: 1000;
   display: flex;
   flex-direction: column;
-  align-items: flex-start;  /* Cambiado de flex-end a flex-start */
+  align-items: flex-start;
   gap: 0.35rem;
   pointer-events: auto;
   -webkit-app-region: no-drag !important;
@@ -18,79 +13,9 @@
   gap: 0.25rem;
 }
 
-.win-btn {
-  width: 28px;
-  height: 28px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 1rem;
-  line-height: 1;
-  border: 1px solid rgba(255, 255, 255, 0.25);
-  border-radius: 4px;
-  background: rgba(0, 0, 0, 0.55);
-  color: #fff;
-  cursor: pointer;
-  transition: background 0.15s, border-color 0.15s, box-shadow 0.15s;
-}
-
-.win-btn:hover:not(:disabled) {
-  background: rgba(0, 0, 0, 0.75);
-  border-color: rgba(255, 255, 255, 0.5);
-}
-
-.win-btn:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
-}
-
-.win-btn.minimize {
-  font-weight: 600;
-}
-
-.win-btn.drag-handle-btn {
-  cursor: grab;
-  -webkit-app-region: drag !important;  /* Este botón arrastra la ventana */
-  width: 40px;
-  letter-spacing: 2px;
-  font-size: 0.9rem;
-  font-weight: 600;
-  color: rgba(255, 255, 255, 0.7);
-}
-
-.win-btn.drag-handle-btn:hover {
-  color: #fff;
-  background: rgba(0, 0, 0, 0.75);
-}
-
-.win-btn.drag-handle-btn:active {
-  cursor: grabbing;
-}
-
-.win-btn.close {
-  font-weight: 700;
-  font-size: 1.2rem;
-}
-
-.win-btn.close:hover:not(:disabled) {
-  border-color: #f87171;
-  background: rgba(248, 113, 113, 0.25);
-  box-shadow: 0 0 8px rgba(248, 113, 113, 0.3);
-}
-
-.preset-row {
-  gap: 0.3rem;
-}
-
 .win-btn.preset {
   width: auto;
   padding: 0 0.55rem;
-  font-size: 0.7rem;
   font-weight: 600;
   text-transform: uppercase;
-}
-
-.win-btn.preset.active {
-  border-color: #60a5fa;
-  box-shadow: 0 0 8px rgba(96, 165, 250, 0.4);
 }

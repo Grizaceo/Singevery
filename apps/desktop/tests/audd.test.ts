@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseAuddTimecode } from '../electron/services/audd';
+import { parseAuddTimecode } from '../electron/services/recognition/auddProvider';
 
 describe('parseAuddTimecode', () => {
   it('parsea segundos numéricos', () => {

@@ -12,6 +12,9 @@ export interface RenderConfig {
   /** Número de líneas de contexto antes y después de la línea actual. */
   windowSize: number;
   mirrorMode: boolean;
+  fontScale: number;
+  opacity: number;
+  alignment: 'left' | 'center' | 'right';
 }
 
 /** Convierte una línea de letra en línea de render (original + lecturas). */
@@ -36,6 +39,9 @@ export class SyncEngine {
   public renderConfig: RenderConfig = {
     windowSize: 2,
     mirrorMode: false,
+    fontScale: 1.0,
+    opacity: 1.0,
+    alignment: 'center',
   };
 
   setLyrics(lyrics: TimedLyrics | null): void {
@@ -49,7 +55,13 @@ export class SyncEngine {
   getRenderModel(positionMs: number, status: Status = 'DISPLAYING'): RenderModel {
     const lyrics = this.currentLyrics;
     if (!lyrics || !lyrics.lines || lyrics.lines.length === 0) {
-      return { ...NO_LYRICS_MODEL, mirror_mode: this.renderConfig.mirrorMode };
+      return {
+        ...NO_LYRICS_MODEL,
+        mirror_mode: this.renderConfig.mirrorMode,
+        font_scale: this.renderConfig.fontScale,
+        opacity: this.renderConfig.opacity,
+        alignment: this.renderConfig.alignment,
+      };
     }
 
     const lines = lyrics.lines;
@@ -83,9 +95,9 @@ export class SyncEngine {
           previous_lines: [],
           current_line: { text: '...' },
           next_lines: [toRenderLine(lines[0])],
-          font_scale: 1.0,
-          opacity: 1.0,
-          alignment: 'center',
+          font_scale: this.renderConfig.fontScale,
+          opacity: this.renderConfig.opacity,
+          alignment: this.renderConfig.alignment,
           mirror_mode: this.renderConfig.mirrorMode,
           status: 'IDLE',
         };
@@ -140,9 +152,9 @@ export class SyncEngine {
       previous_lines: previousLines,
       current_line: currentLine,
       next_lines: nextLines,
-      font_scale: 1.0,
-      opacity: 1.0,
-      alignment: 'center',
+      font_scale: this.renderConfig.fontScale,
+      opacity: this.renderConfig.opacity,
+      alignment: this.renderConfig.alignment,
       mirror_mode: this.renderConfig.mirrorMode,
       status,
       current_line_progress: progress,

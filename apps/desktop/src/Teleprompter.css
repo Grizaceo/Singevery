@@ -1,11 +1,4 @@
 /* Teleprompter.css — adaptado para ventana Electron transparente */
-body {
-    background-color: transparent;
-    color: white;
-    font-family: 'Inter', system-ui, sans-serif;
-    margin: 0;
-    overflow: hidden;
-}
 
 .teleprompter-container {
     display: flex;

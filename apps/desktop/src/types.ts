@@ -87,6 +87,17 @@ export interface RenderLine {
 /** Modo de lectura elegido por el usuario (estado del renderer, persistido). */
 export type ReadingMode = 'original' | 'furigana' | 'romaji' | 'furigana_romaji';
 
+export type TextAlignment = 'left' | 'center' | 'right';
+
+export type RecognitionProviderMode = 'auto' | 'shazam' | 'audd';
+
+export interface DisplaySettings {
+  opacity: number;
+  fontScale: number;
+  alignment: TextAlignment;
+  mirrorMode: boolean;
+}
+
 /** Estado que el main envía al renderer por IPC ~10 veces por segundo. */
 export interface RenderModel {
   previous_lines: RenderLine[];
@@ -150,6 +161,16 @@ export interface DesktopApi {
   // Calibración global de latencia (SYNC_OFFSET_MS persistido, P2.8)
   adjustSyncCalibration: (deltaMs: number) => Promise<{ ok: boolean; offsetMs: number }>;
   getSyncCalibration: () => Promise<{ ok: boolean; offsetMs: number }>;
+
+  // Ajustes de visualización y reconocimiento (persistidos)
+  getDisplaySettings: () => Promise<{ ok: boolean; display: DisplaySettings }>;
+  setDisplaySettings: (
+    partial: Partial<DisplaySettings>,
+  ) => Promise<{ ok: boolean; display: DisplaySettings }>;
+  getRecognitionProvider: () => Promise<{ ok: boolean; provider: RecognitionProviderMode }>;
+  setRecognitionProvider: (
+    provider: RecognitionProviderMode,
+  ) => Promise<{ ok: boolean; provider: RecognitionProviderMode }>;
 
   // Window controls
   minimize: () => Promise<{ ok: boolean }>;

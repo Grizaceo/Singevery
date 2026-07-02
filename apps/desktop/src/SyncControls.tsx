@@ -1,37 +1,22 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import type { RenderModel, Status } from './types';
+import { useCallback, useEffect, useState } from 'react';
+import type { Status } from './types';
+import { useRenderModel } from './renderModelContext';
 import './SyncControls.css';
 
-/** Estados donde tiene sentido mostrar los controles de sincronización. */
 const SYNCABLE_STATUSES: Set<Status> = new Set([
   'DISPLAYING',
   'FETCHING_LYRICS',
   'NO_LYRICS',
 ]);
 
-const NUDGE_WHEEL_MS = 1000; // ±1 s por notch de rueda
+const NUDGE_WHEEL_MS = 1000;
 
 export function SyncControls() {
-  const [hasLyrics, setHasLyrics] = useState(false);
+  const model = useRenderModel();
+  const hasLyrics = SYNCABLE_STATUSES.has(model.status);
   const [offsetMs, setOffsetMs] = useState(0);
   const [calibrationMs, setCalibrationMs] = useState(0);
-  const unsubscribeRef = useRef<(() => void) | undefined>(undefined);
 
-  // Suscribirse propio al RenderModel para saber si hay letra cargada.
-  useEffect(() => {
-    if (!window.api) return;
-
-    const unsubscribe = window.api.onRenderModel((model: RenderModel) => {
-      setHasLyrics(SYNCABLE_STATUSES.has(model.status));
-    });
-    unsubscribeRef.current = unsubscribe;
-
-    return () => {
-      unsubscribe();
-    };
-  }, []);
-
-  // Leer offset y calibración iniciales.
   useEffect(() => {
     if (!window.api) return;
     window.api.getSyncOffset().then((r) => {
@@ -67,7 +52,6 @@ export function SyncControls() {
   const handleWheel = useCallback(
     (e: React.WheelEvent) => {
       e.preventDefault?.();
-      // deltaY < 0 (scroll up) = adelantar (+); deltaY > 0 (scroll down) = retroceder (−)
       const delta = e.deltaY < 0 ? NUDGE_WHEEL_MS : -NUDGE_WHEEL_MS;
       void nudgeSync(delta);
     },
@@ -81,7 +65,7 @@ export function SyncControls() {
       <div className="sync-row">
         <button
           type="button"
-          className="sync-btn seek"
+          className="chrome-button sync-btn seek"
           onClick={() => void seekLine(-1)}
           disabled={!hasLyrics}
           title="Retroceder una línea"
@@ -91,7 +75,7 @@ export function SyncControls() {
         </button>
         <button
           type="button"
-          className="sync-btn seek"
+          className="chrome-button sync-btn seek"
           onClick={() => void seekLine(1)}
           disabled={!hasLyrics}
           title="Adelantar una línea"
@@ -104,7 +88,7 @@ export function SyncControls() {
       <div className="sync-row offset-row">
         <button
           type="button"
-          className="sync-btn offset-adj"
+          className="chrome-button sync-btn offset-adj"
           onClick={() => void adjustOffset(-100)}
           disabled={!hasLyrics}
           title="Atrasar letra 100ms (esta pista)"
@@ -117,7 +101,7 @@ export function SyncControls() {
         </span>
         <button
           type="button"
-          className="sync-btn offset-adj"
+          className="chrome-button sync-btn offset-adj"
           onClick={() => void adjustOffset(100)}
           disabled={!hasLyrics}
           title="Adelantar letra 100ms (esta pista)"
@@ -130,26 +114,23 @@ export function SyncControls() {
       <div className="sync-row offset-row calibration-row">
         <button
           type="button"
-          className="sync-btn offset-adj"
+          className="chrome-button sync-btn offset-adj"
           onClick={() => void adjustCalibration(-50)}
           disabled={!hasLyrics}
-          title="Reducir calibración global 50ms (latencia AudD)"
+          title="Reducir calibración global 50ms"
           aria-label="Reducir calibración"
         >
           −
         </button>
-        <span
-          className="sync-offset-label calibration-label"
-          title="Calibración global de latencia (SYNC_OFFSET_MS, persistido)"
-        >
+        <span className="sync-offset-label calibration-label" title="Calibración global de latencia">
           {calibrationMs === 0 ? '0' : `${calibrationMs > 0 ? '+' : ''}${calibrationMs}`}cal
         </span>
         <button
           type="button"
-          className="sync-btn offset-adj"
+          className="chrome-button sync-btn offset-adj"
           onClick={() => void adjustCalibration(50)}
           disabled={!hasLyrics}
-          title="Aumentar calibración global 50ms (latencia AudD)"
+          title="Aumentar calibración global 50ms"
           aria-label="Aumentar calibración"
         >
           +

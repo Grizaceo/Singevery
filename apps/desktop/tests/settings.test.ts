@@ -64,4 +64,26 @@ describe('settings persistente (P2.8)', () => {
   it('NULL_OFFSET_STORE siempre devuelve 0', () => {
     expect(NULL_OFFSET_STORE.get('x::y')).toBe(0);
   });
+
+  it('persiste ajustes de display y proveedor de reconocimiento', () => {
+    const s1 = createPersistentSettings();
+    s1.displayStore.set({ opacity: 0.8, fontScale: 1.2, alignment: 'left', mirrorMode: true });
+    s1.recognitionProviderStore.set('shazam');
+
+    const s2 = createPersistentSettings();
+    expect(s2.displayStore.get()).toEqual({
+      opacity: 0.8,
+      fontScale: 1.2,
+      alignment: 'left',
+      mirrorMode: true,
+    });
+    expect(s2.recognitionProviderStore.get()).toBe('shazam');
+  });
+
+  it('persiste bounds de ventana', () => {
+    const s1 = createPersistentSettings();
+    s1.windowBoundsStore.set({ x: 100, y: 80, width: 800, height: 600 });
+    const s2 = createPersistentSettings();
+    expect(s2.windowBoundsStore.get()).toEqual({ x: 100, y: 80, width: 800, height: 600 });
+  });
 });

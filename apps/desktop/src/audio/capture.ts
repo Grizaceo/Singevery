@@ -258,3 +258,5 @@ export function sleep(ms: number, signal?: AbortSignal): Promise<void> {
 export const CAPTURE_RECORD_MS = RECORD_MS;
 export const CAPTURE_PAUSE_MS = PAUSE_MS;
 export const CAPTURE_RESYNC_PAUSE_MS = RESYNC_PAUSE_MS;
+
+export { blobToWav16kMono } from './wav';

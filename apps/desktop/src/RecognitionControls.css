@@ -1,59 +1,30 @@
 .recognition-controls {
-  position: absolute;
-  bottom: 1rem;
-  left: 1rem;
-  z-index: 1000;
   display: flex;
-  flex-direction: column;
-  align-items: flex-start;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
   gap: 0.35rem;
-  max-width: 220px;
+  max-width: min(420px, 100%);
   pointer-events: auto;
   -webkit-app-region: no-drag !important;
 }
 
-.recognition-controls button {
-  width: 100%;
-  padding: 0.35rem 0.65rem;
+.recognition-controls .chrome-button {
   font-size: 0.7rem;
-  border: 1px solid rgba(255, 255, 255, 0.3);
-  border-radius: 4px;
-  background: rgba(0, 0, 0, 0.55);
-  color: #fff;
-  cursor: pointer;
   white-space: nowrap;
 }
 
-.recognition-controls button:hover:not(:disabled) {
-  border-color: rgba(255, 255, 255, 0.6);
-  background: rgba(0, 0, 0, 0.75);
-}
-
-.recognition-controls button:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
-}
-
-.recognition-controls button.active {
-  border-color: #60a5fa;
-  box-shadow: 0 0 8px rgba(96, 165, 250, 0.4);
-}
-
-.recognition-controls button.stop {
-  border-color: #f87171;
+.recognition-controls .chrome-button.stop {
+  border-color: var(--chrome-danger);
   color: #fecaca;
 }
 
 .recognition-error {
-  width: 100%;
-  text-align: left;
   font-size: 0.65rem;
-  color: #f87171;
+  color: var(--chrome-danger);
 }
 
 .recognition-hint {
-  width: 100%;
-  text-align: left;
   font-size: 0.65rem;
   color: #93c5fd;
 }
@@ -62,10 +33,10 @@
   font-size: 0.7rem;
   letter-spacing: 1px;
   color: #4ade80;
-  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.8);
+  text-shadow: var(--chrome-shadow-text);
   font-family: 'Inter', monospace;
 }
 
 .level-meter.silent {
-  color: #f87171;
+  color: var(--chrome-danger);
 }

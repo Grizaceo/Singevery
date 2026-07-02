@@ -26,7 +26,7 @@ export function ReadingControls({ mode, onChange, hasAnnotations = false }: Prop
             key={opt.key}
             type="button"
             className={[
-              'reading-btn',
+              'chrome-button reading-btn',
               mode === opt.key ? 'active' : '',
               unavailable ? 'unavailable' : '',
             ].filter(Boolean).join(' ')}

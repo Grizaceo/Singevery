@@ -1,0 +1,27 @@
+.chrome-bar-grow {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Controles integrados en barras: quitar posicionamiento absoluto heredado */
+.chrome-bar-top .window-controls,
+.chrome-bar-top .reading-controls,
+.chrome-bar-bottom .recognition-controls,
+.chrome-bar-bottom .sync-controls,
+.chrome-bar-bottom .resize-grip {
+  position: static;
+  inset: auto;
+}
+
+.chrome-bar-top .window-controls-row,
+.chrome-bar-bottom .sync-row {
+  margin: 0;
+}
+
+.chrome-bar-bottom .recognition-hint,
+.chrome-bar-bottom .recognition-error {
+  max-width: 280px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

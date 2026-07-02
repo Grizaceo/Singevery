@@ -36,25 +36,27 @@ export function RecognitionControls({ recognition }: RecognitionControlsProps) {
     <div className="recognition-controls">
       <button
         type="button"
-        className={activeSource === 'system' ? 'active' : ''}
+        className={`chrome-button${activeSource === 'system' ? ' active' : ''}`}
         onClick={() => void start('system')}
         disabled={activeSource !== null}
         title="Captura el audio que suena en el sistema (altavoces)"
+        aria-label="Capturar audio del sistema"
       >
-        Audio sistema
+        Sistema
       </button>
       <button
         type="button"
-        className={activeSource === 'microphone' ? 'active' : ''}
+        className={`chrome-button${activeSource === 'microphone' ? ' active' : ''}`}
         onClick={() => void start('microphone')}
         disabled={activeSource !== null}
         title="Captura audio desde el micrófono"
+        aria-label="Capturar micrófono"
       >
-        Micrófono
+        Mic
       </button>
       {activeSource && (
-        <button type="button" className="stop" onClick={() => void stop()}>
-          Detener
+        <button type="button" className="chrome-button stop" onClick={() => void stop()} aria-label="Detener reconocimiento">
+          Stop
         </button>
       )}
       {activeSource && <LevelMeter level={level} />}

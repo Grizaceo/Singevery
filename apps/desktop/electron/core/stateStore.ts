@@ -14,8 +14,8 @@ import {
 } from './syncTiming';
 import type { RecognitionPhase } from './syncTiming';
 import { LyricsService, defaultLyricsService } from '../services/lyrics/lyricsService';
-import { NULL_OFFSET_STORE, NULL_CALIBRATION_STORE } from '../services/settings';
-import type { OffsetStore, CalibrationStore } from '../services/settings';
+import { NULL_OFFSET_STORE, NULL_CALIBRATION_STORE, NULL_DISPLAY_STORE } from '../services/settings';
+import type { OffsetStore, CalibrationStore, DisplayStore } from '../services/settings';
 import type { RenderModel, Status, TimedLyrics, TrackMatch } from '../../src/types';
 
 export type { RecognitionPhase };
@@ -67,6 +67,7 @@ export class StateStore {
 
   private readonly offsetStore: OffsetStore;
   private readonly calibrationStore: CalibrationStore;
+  private readonly displayStore: DisplayStore;
   private readonly lyricsService: LyricsService;
 
   constructor(
@@ -74,13 +75,25 @@ export class StateStore {
     offsetStore: OffsetStore = NULL_OFFSET_STORE,
     lyricsService: LyricsService = defaultLyricsService,
     calibrationStore: CalibrationStore = NULL_CALIBRATION_STORE,
+    displayStore: DisplayStore = NULL_DISPLAY_STORE,
   ) {
     this.window = window;
     this.engine = new SyncEngine();
     this.offsetStore = offsetStore;
     this.lyricsService = lyricsService;
     this.calibrationStore = calibrationStore;
+    this.displayStore = displayStore;
     this.calibrationOffsetMs = calibrationStore.get();
+    this.applyDisplaySettings();
+  }
+
+  /** Sincroniza ajustes visuales persistidos con el SyncEngine. */
+  applyDisplaySettings(): void {
+    const d = this.displayStore.get();
+    this.engine.renderConfig.fontScale = d.fontScale;
+    this.engine.renderConfig.opacity = d.opacity;
+    this.engine.renderConfig.alignment = d.alignment;
+    this.engine.renderConfig.mirrorMode = d.mirrorMode;
   }
 
   attachWindow(window: BrowserWindow): void {
@@ -466,14 +479,15 @@ export class StateStore {
   }
 
   private buildBaseModel(status: Status, currentLine: string): RenderModel {
+    const d = this.displayStore.get();
     return {
       previous_lines: [],
       current_line: { text: currentLine },
       next_lines: [],
-      font_scale: 1.0,
-      opacity: 1.0,
-      alignment: 'center',
-      mirror_mode: this.engine.renderConfig.mirrorMode,
+      font_scale: d.fontScale,
+      opacity: d.opacity,
+      alignment: d.alignment,
+      mirror_mode: d.mirrorMode,
       track_title: this.trackTitle,
       track_artist: this.trackArtist,
       status,

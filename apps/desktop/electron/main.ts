@@ -13,9 +13,20 @@ import { app, BrowserWindow, ipcMain, shell, session, desktopCapturer, globalSho
 import * as path from 'path';
 import { StateStore } from './core/stateStore';
 import { loadDotEnv } from './services/env';
-import { identifyFromAudio } from './services/audd';
-import { createPersistentSettings, NULL_OFFSET_STORE, NULL_CALIBRATION_STORE } from './services/settings';
-import type { OffsetStore, CalibrationStore } from './services/settings';
+import {
+  createPersistentSettings,
+  NULL_OFFSET_STORE,
+  NULL_CALIBRATION_STORE,
+  NULL_DISPLAY_STORE,
+  NULL_RECOGNITION_PROVIDER_STORE,
+  isWindowBoundsValid,
+  type AppSettings,
+  type OffsetStore,
+  type CalibrationStore,
+  type DisplayStore,
+  type RecognitionProviderStore,
+} from './services/settings';
+import { RecognitionService } from './services/recognition/recognitionService';
 import { FileLyricsCache } from './services/cache/lyricsCache';
 import { LyricsService } from './services/lyrics/lyricsService';
 import { SmtcReader } from './services/smtc/smtcReader';
@@ -26,7 +37,7 @@ import type { RecognitionPhase } from './core/stateStore';
 import { setupContentSecurityPolicy } from './csp';
 
 const isDev = process.env.NODE_ENV === 'development' || !!process.env.VITE_DEV_SERVER_URL;
-const devServerUrl = process.env.VITE_DEV_SERVER_URL ?? 'http://localhost:5174';
+const devServerUrl = process.env.VITE_DEV_SERVER_URL ?? 'http://localhost:5173';
 
 /** Debe llamarse antes de app.whenReady(). */
 function configureElectronRuntime(): void {
@@ -42,8 +53,11 @@ let stateStore: StateStore | null = null;
 let lyricsCache: FileLyricsCache | null = null;
 let smtcReader: SmtcReader | null = null;
 let wakeWordReader: WakeWordReader | null = null;
+let recognitionService: RecognitionService | null = null;
+let appSettings: AppSettings | null = null;
 /** Bounds expandidos guardados al colapsar a pill; se restauran al expandir. */
 let savedBounds: Rect | null = null;
+let boundsSaveTimer: NodeJS.Timeout | null = null;
 
 /** Tamaño expandido por defecto (coincide con createWindow). */
 const EXPANDED_WIDTH = 760;
@@ -52,17 +66,21 @@ const EXPANDED_HEIGHT = 560;
 const SING_ACCELERATOR = 'Ctrl+Alt+S';
 
 function createWindow(): BrowserWindow {
-  // En Linux/WSLg una ventana transparent+frameless con GPU deshabilitada NO
-  // compositiona y queda totalmente invisible (aunque el contenido renderice).
-  // Por eso en Linux usamos modo "ventana" opaca, con bordes y en la barra de
-  // tareas: visible y manejable. En Windows/macOS mantenemos el overlay
-  // transparente sin bordes (donde sí funciona). Forzable con ESPEJO_WINDOWED=1.
   const windowed = process.platform === 'linux' || process.env.ESPEJO_WINDOWED === '1';
   const overlay = !windowed;
 
+  const saved = appSettings?.windowBoundsStore.get() ?? null;
+  const displays = screen.getAllDisplays().map((d) => d.bounds);
+  const initialBounds =
+    saved && isWindowBoundsValid(saved, displays)
+      ? saved
+      : expandedBounds(screen.getPrimaryDisplay().workArea, EXPANDED_WIDTH, EXPANDED_HEIGHT);
+
   const win = new BrowserWindow({
-    width: 760,
-    height: 560,
+    x: initialBounds.x,
+    y: initialBounds.y,
+    width: initialBounds.width,
+    height: initialBounds.height,
     minWidth: 320,
     minHeight: 200,
     title: 'Espejo Teleprompter',
@@ -105,7 +123,25 @@ function createWindow(): BrowserWindow {
     win.loadFile(path.join(__dirname, '..', '..', 'dist', 'index.html'));
   }
 
+  attachWindowBoundsPersistence(win);
+
   return win;
+}
+
+/** Persiste posición/tamaño expandido (debounced) al mover o redimensionar. */
+function attachWindowBoundsPersistence(win: BrowserWindow): void {
+  const scheduleSave = (): void => {
+    if (boundsSaveTimer) clearTimeout(boundsSaveTimer);
+    boundsSaveTimer = setTimeout(() => {
+      if (!appSettings || win.isDestroyed()) return;
+      const b = win.getBounds();
+      if (b.width === PILL_WIDTH && b.height === PILL_HEIGHT) return;
+      appSettings.windowBoundsStore.set(b);
+    }, 400);
+  };
+
+  win.on('move', scheduleSave);
+  win.on('resize', scheduleSave);
 }
 
 function setupMediaPermissions(): void {
@@ -208,8 +244,8 @@ function registerIpcHandlers(): void {
           mainWindow.setBounds(savedBounds);
           savedBounds = null;
         } else {
-          // Sin bounds guardados (expand sin colapsar previo): centrar tamaño por defecto.
-          const wa = screen.getPrimaryDisplay().workArea;
+          const cur = mainWindow.getBounds();
+          const wa = screen.getDisplayMatching(cur).workArea;
           mainWindow.setBounds(expandedBounds(wa, EXPANDED_WIDTH, EXPANDED_HEIGHT));
         }
       }
@@ -255,7 +291,7 @@ function registerIpcHandlers(): void {
 
       try {
         stateStore.setRecognitionPhase('IDENTIFYING');
-        const match = await identifyFromAudio(Buffer.from(audio), mimeType);
+        const match = await recognitionService!.identify(Buffer.from(audio), mimeType);
         if (!match) {
           stateStore.setRecognitionPhase('LISTENING');
           return { ok: true, matched: false };
@@ -288,7 +324,7 @@ function registerIpcHandlers(): void {
         return { ok: false, matched: false, error: 'StateStore no inicializado' };
       }
       try {
-        const match = await identifyFromAudio(Buffer.from(audio), mimeType);
+        const match = await recognitionService!.identify(Buffer.from(audio), mimeType);
         if (!match) return { ok: true, matched: false };
         const changed = await stateStore.applyMatch(match, recordStartedAt);
         return { ok: true, matched: true, changed };
@@ -354,6 +390,35 @@ function registerIpcHandlers(): void {
   ipcMain.handle('sync:getCalibration', (): { ok: boolean; offsetMs: number } => {
     return { ok: true, offsetMs: stateStore?.getCalibrationOffsetMs() ?? 0 };
   });
+
+  ipcMain.handle('settings:getDisplay', (): { ok: boolean; display: ReturnType<DisplayStore['get']> } => {
+    const display = appSettings?.displayStore.get() ?? NULL_DISPLAY_STORE.get();
+    return { ok: true, display };
+  });
+
+  ipcMain.handle(
+    'settings:setDisplay',
+    (_event, partial: Partial<ReturnType<DisplayStore['get']>>): { ok: boolean; display: ReturnType<DisplayStore['get']> } => {
+      if (!appSettings) return { ok: false, display: NULL_DISPLAY_STORE.get() };
+      appSettings.displayStore.set(partial);
+      stateStore?.applyDisplaySettings();
+      return { ok: true, display: appSettings.displayStore.get() };
+    },
+  );
+
+  ipcMain.handle('settings:getRecognitionProvider', (): { ok: boolean; provider: ReturnType<RecognitionProviderStore['get']> } => {
+    const provider = appSettings?.recognitionProviderStore.get() ?? NULL_RECOGNITION_PROVIDER_STORE.get();
+    return { ok: true, provider };
+  });
+
+  ipcMain.handle(
+    'settings:setRecognitionProvider',
+    (_event, provider: ReturnType<RecognitionProviderStore['get']>): { ok: boolean; provider: ReturnType<RecognitionProviderStore['get']> } => {
+      if (!appSettings) return { ok: false, provider: NULL_RECOGNITION_PROVIDER_STORE.get() };
+      appSettings.recognitionProviderStore.set(provider);
+      return { ok: true, provider: appSettings.recognitionProviderStore.get() };
+    },
+  );
 }
 
 function bootstrap(): void {
@@ -361,17 +426,26 @@ function bootstrap(): void {
   setupContentSecurityPolicy(session.defaultSession);
   setupMediaPermissions();
   setupSystemAudioCapture();
-  mainWindow = createWindow();
 
   let offsetStore: OffsetStore = NULL_OFFSET_STORE;
   let calibrationStore: CalibrationStore = NULL_CALIBRATION_STORE;
+  let displayStore: DisplayStore = NULL_DISPLAY_STORE;
   try {
-    const settings = createPersistentSettings();
-    offsetStore = settings.offsetStore;
-    calibrationStore = settings.calibrationStore;
+    appSettings = createPersistentSettings();
+    offsetStore = appSettings.offsetStore;
+    calibrationStore = appSettings.calibrationStore;
+    displayStore = appSettings.displayStore;
+    recognitionService = new RecognitionService({
+      getProviderMode: () => appSettings!.recognitionProviderStore.get(),
+    });
   } catch (err) {
     console.error('[settings ERROR] No se pudo inicializar el ajuste persistente:', err);
+    recognitionService = new RecognitionService({
+      getProviderMode: () => NULL_RECOGNITION_PROVIDER_STORE.get(),
+    });
   }
+
+  mainWindow = createWindow();
 
   // Caché local de letras (cache-first): acelera re-escuchas y evita re-romanizar.
   // Si falla, LyricsService sigue funcionando sin caché (NULL_LYRICS_CACHE).
@@ -384,7 +458,7 @@ function bootstrap(): void {
     lyricsService = new LyricsService();
   }
 
-  stateStore = new StateStore(mainWindow, offsetStore, lyricsService, calibrationStore);
+  stateStore = new StateStore(mainWindow, offsetStore, lyricsService, calibrationStore, displayStore);
   stateStore.start(100); // 10 Hz
   registerIpcHandlers();
   registerSingShortcut();

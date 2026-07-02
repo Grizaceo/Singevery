@@ -4,31 +4,21 @@ import './WindowControls.css';
 
 interface WindowControlsProps {
   api: DesktopApi | undefined;
-  /** Colapsa la ventana a la viñeta (pill). Opcional: solo en modo widget. */
   onCollapse?: () => void;
+  /** Modo compacto para la barra superior (sin presets de tamaño). */
+  compact?: boolean;
 }
 
-/** Único tamaño disponible: L (coincide con el default de BrowserWindow). */
-const PRESETS = [
-  { key: 'L', label: 'L', width: 760, height: 560, title: 'Grande (760×560)' },
-] as const;
+export function WindowControls({ api, onCollapse, compact = false }: WindowControlsProps) {
+  const [activePreset, setActivePreset] = useState<'L' | null>(null);
 
-type PresetKey = (typeof PRESETS)[number]['key'];
-
-export function WindowControls({ api, onCollapse }: WindowControlsProps) {
-  const [activePreset, setActivePreset] = useState<PresetKey | null>(null);
-
-  // Leer tamaño inicial para resaltar el preset que coincida (si hay alguno).
   useEffect(() => {
-    if (!api?.getSize) return;
+    if (!api?.getSize || compact) return;
     api.getSize().then((result) => {
       if (!result.ok) return;
-      const match = PRESETS.find(
-        (p) => p.width === result.width && p.height === result.height,
-      );
-      setActivePreset(match ? match.key : null);
+      if (result.width === 760 && result.height === 560) setActivePreset('L');
     });
-  }, [api]);
+  }, [api, compact]);
 
   const handleMinimize = useCallback(async () => {
     if (!api?.minimize) return;
@@ -40,16 +30,11 @@ export function WindowControls({ api, onCollapse }: WindowControlsProps) {
     await api.close();
   }, [api]);
 
-  const applyPreset = useCallback(
-    async (key: PresetKey) => {
-      if (!api?.setSize) return;
-      const preset = PRESETS.find((p) => p.key === key);
-      if (!preset) return;
-      const result = await api.setSize(preset.width, preset.height);
-      if (result.ok) setActivePreset(key);
-    },
-    [api],
-  );
+  const applyPresetL = useCallback(async () => {
+    if (!api?.setSize) return;
+    const result = await api.setSize(760, 560);
+    if (result.ok) setActivePreset('L');
+  }, [api]);
 
   if (!api) return null;
 
@@ -58,7 +43,7 @@ export function WindowControls({ api, onCollapse }: WindowControlsProps) {
       <div className="window-controls-row">
         <button
           type="button"
-          className="win-btn minimize"
+          className="chrome-button win-btn minimize"
           onClick={handleMinimize}
           title="Minimizar"
           aria-label="Minimizar"
@@ -67,15 +52,7 @@ export function WindowControls({ api, onCollapse }: WindowControlsProps) {
         </button>
         <button
           type="button"
-          className="win-btn drag-handle-btn"
-          title="Arrastrar para mover"
-          aria-label="Arrastrar para mover"
-        >
-          ⋮⋮
-        </button>
-        <button
-          type="button"
-          className="win-btn close"
+          className="chrome-button win-btn close danger"
           onClick={handleClose}
           title="Cerrar"
           aria-label="Cerrar"
@@ -85,7 +62,7 @@ export function WindowControls({ api, onCollapse }: WindowControlsProps) {
         {onCollapse && (
           <button
             type="button"
-            className="win-btn collapse"
+            className="chrome-button win-btn collapse"
             onClick={onCollapse}
             title="Colapsar a viñeta (SING)"
             aria-label="Colapsar a viñeta"
@@ -93,21 +70,17 @@ export function WindowControls({ api, onCollapse }: WindowControlsProps) {
             ◧
           </button>
         )}
-      </div>
-
-      <div className="window-controls-row preset-row">
-        {PRESETS.map((preset) => (
+        {!compact && (
           <button
-            key={preset.key}
             type="button"
-            className={`win-btn preset${activePreset === preset.key ? ' active' : ''}`}
-            onClick={() => void applyPreset(preset.key)}
-            title={preset.title}
-            aria-label={preset.title}
+            className={`chrome-button win-btn preset${activePreset === 'L' ? ' active' : ''}`}
+            onClick={() => void applyPresetL()}
+            title="Grande (760×560)"
+            aria-label="Tamaño grande"
           >
-            {preset.label}
+            L
           </button>
-        ))}
+        )}
       </div>
     </div>
   );

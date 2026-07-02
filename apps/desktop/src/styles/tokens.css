@@ -1,0 +1,101 @@
+/* Design tokens compartidos por la chrome del overlay transparente. */
+:root {
+  --chrome-surface: rgba(0, 0, 0, 0.55);
+  --chrome-surface-hover: rgba(0, 0, 0, 0.72);
+  --chrome-border: rgba(255, 255, 255, 0.18);
+  --chrome-border-active: rgba(255, 255, 255, 0.45);
+  --chrome-text: rgba(255, 255, 255, 0.92);
+  --chrome-text-muted: rgba(255, 255, 255, 0.55);
+  --chrome-accent: #60a5fa;
+  --chrome-danger: #f87171;
+  --chrome-btn-size: 28px;
+  --chrome-radius: 6px;
+  --chrome-bar-gap: 6px;
+  --chrome-bar-padding: 6px 10px;
+  --chrome-shadow-text: 0 1px 3px rgba(0, 0, 0, 0.85), 0 0 8px rgba(0, 0, 0, 0.6);
+}
+
+.chrome-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: var(--chrome-btn-size);
+  height: var(--chrome-btn-size);
+  padding: 0 8px;
+  border: 1px solid var(--chrome-border);
+  border-radius: var(--chrome-radius);
+  background: var(--chrome-surface);
+  color: var(--chrome-text);
+  font-size: 0.75rem;
+  line-height: 1;
+  cursor: pointer;
+  -webkit-app-region: no-drag !important;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+
+.chrome-button:hover:not(:disabled) {
+  background: var(--chrome-surface-hover);
+  border-color: var(--chrome-border-active);
+}
+
+.chrome-button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.chrome-button.active {
+  border-color: var(--chrome-accent);
+  color: var(--chrome-accent);
+}
+
+.chrome-button.danger {
+  color: var(--chrome-danger);
+}
+
+.chrome-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--chrome-bar-gap);
+  padding: var(--chrome-bar-padding);
+  border-radius: calc(var(--chrome-radius) + 2px);
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(4px);
+  -webkit-app-region: no-drag !important;
+}
+
+.chrome-bar-top {
+  position: fixed;
+  top: 8px;
+  left: 8px;
+  right: 8px;
+  z-index: 1000;
+  justify-content: space-between;
+}
+
+.chrome-bar-bottom {
+  position: fixed;
+  bottom: 8px;
+  left: 8px;
+  right: 8px;
+  z-index: 1000;
+  justify-content: space-between;
+  flex-wrap: wrap;
+}
+
+.chrome-bar-group {
+  display: flex;
+  align-items: center;
+  gap: var(--chrome-bar-gap);
+  flex-wrap: wrap;
+}
+
+.chrome-drag-handle {
+  letter-spacing: 3px;
+  cursor: grab;
+  -webkit-app-region: drag !important;
+}
+
+.chrome-drag-handle:active {
+  cursor: grabbing;
+}
