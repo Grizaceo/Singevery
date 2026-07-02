@@ -47,12 +47,12 @@ AUDD_API_TOKEN=tu_token_de_audd
 En PowerShell, dentro de `C:\dev\Singevery\apps\desktop`:
 ```powershell
 npm install
-npm run dev:electron:win
+npm run dev:electron
 ```
 
-- `dev:electron:win` es como `dev:electron` **pero sin** `ELECTRON_DISABLE_GPU=1`.
-  En Windows la ventana transparente **necesita GPU**; con esa flag se vería
-  negra. (El script de WSL la mantiene porque allá evita errores de GPU.)
+- `npm run dev:electron` en Windows usa **GPU habilitada** (overlay transparente).
+  No uses scripts viejos con `ELECTRON_DISABLE_GPU=1` — la ventana quedaría negra.
+- Si tras **Ctrl+C** no vuelve a abrir: `npm run dev:kill` y luego `npm run dev:electron`.
 - Al abrir, click en **"Audio sistema"**: el handler de Electron concede pantalla
   + `loopback` automáticamente y empieza a capturar lo que suena.
 - El **medidor de nivel** (▰▰▰▱▱) muestra si llega señal. Si está en rojo/▱▱▱▱▱:
@@ -104,7 +104,7 @@ La app resuelve la ruta del sidecar en este orden (`smtcPath.ts`):
 
 ### Smoke test
 
-Con el sidecar compilado y la app corriendo (`npm run dev:electron:win`),
+Con el sidecar compilado y la app corriendo (`npm run dev:electron`),
 reproduce algo en Spotify o en el navegador: play/pausa/seek/skip deben seguir
 al instante sin deriva, y la metadata dispara el prefetch de la letra a la
 caché. Mira la consola del main: `[smtc]` indica estado; si dice "sidecar no
@@ -114,7 +114,8 @@ encontrado", revisa la ruta o compílalo.
 
 | Síntoma | Causa / solución |
 |---|---|
-| Ventana negra (sin transparencia) | Estás usando GPU deshabilitada. Usa `dev:electron:win` (sin `ELECTRON_DISABLE_GPU`). |
+| No abre tras Ctrl+C / exit code 1 | Proceso colgado: `npm run dev:kill` y `npm run dev:electron`. |
+| Ventana negra (sin transparencia) | GPU deshabilitada (`ELECTRON_DISABLE_GPU=1`). Usa `npm run dev:electron` en Windows. |
 | "No se capturó audio del sistema" | El loopback necesita algo **sonando**. Reproduce música y sube el volumen. |
 | Medidor en silencio (▱▱▱▱▱ rojo) | Volumen del sistema bajo o nada reproduciéndose. |
 | "AudD #900/#901" | Falta token o cuota agotada → revisa `.env`. |

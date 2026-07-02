@@ -116,6 +116,12 @@ function createWindow(): BrowserWindow {
 
   if (isDev) {
     win.loadURL(devServerUrl);
+    win.webContents.on('did-fail-load', (_event, errorCode, errorDescription) => {
+      console.error(
+        `[main] No se pudo cargar ${devServerUrl} (${errorCode}: ${errorDescription}). ` +
+          '¿Vite está corriendo? Prueba npm run dev:kill && npm run dev:electron',
+      );
+    });
     if (process.env.OPEN_DEVTOOLS === '1') {
       win.webContents.openDevTools({ mode: 'detach' });
     }
@@ -519,26 +525,27 @@ function smtcSidecarRoots(): string[] {
   ].filter((r): r is string => typeof r === 'string' && r.length > 0);
 }
 
-// Solo se permite una instancia del widget.
-const gotLock = app.requestSingleInstanceLock();
+// Solo una instancia en producción. En dev omitimos el lock (reinicios tras Ctrl+C).
+const gotLock = isDev ? true : app.requestSingleInstanceLock();
 if (!gotLock) {
+  console.error(
+    '[main] Singevery ya está en ejecución. Cierra la otra ventana o ejecuta: npm run dev:kill',
+  );
   app.quit();
 } else {
   configureElectronRuntime();
 
-  // Si se lanza una segunda instancia (p. ej. `npm run dev:electron` otra vez),
-  // ésta se cierra por el single-instance lock y aquí resucitamos la ventana
-  // existente. En WSLg una ventana transparente/always-on-top puede quedar
-  // "perdida" (invisible/sin foco), así que la mostramos, centramos y subimos.
-  app.on('second-instance', () => {
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      if (mainWindow.isMinimized()) mainWindow.restore();
-      if (!mainWindow.isVisible()) mainWindow.show();
-      mainWindow.center();
-      mainWindow.setAlwaysOnTop(true);
-      mainWindow.focus();
-    }
-  });
+  if (!isDev) {
+    app.on('second-instance', () => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        if (mainWindow.isMinimized()) mainWindow.restore();
+        if (!mainWindow.isVisible()) mainWindow.show();
+        mainWindow.center();
+        mainWindow.setAlwaysOnTop(true);
+        mainWindow.focus();
+      }
+    });
+  }
 
   process.on('uncaughtException', (err) => {
     console.error('[main ERROR] uncaughtException:', err);

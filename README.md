@@ -40,8 +40,9 @@ legacy/           Código archivado (Python/kiosk) — no se mantiene
 ```bash
 cd apps/desktop
 npm install
-npm run dev:electron:win   # Windows (overlay transparente)
-# npm run dev:electron     # Linux/WSL (modo ventana opaca)
+npm run dev:electron      # Windows: GPU on · Linux: GPU off (auto)
+npm run dev:electron:win  # Windows explícito
+npm run dev:kill          # Si no abre tras Ctrl+C: mata Electron + puerto 5173
 ```
 
 ### Windows (recomendado)
