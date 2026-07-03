@@ -1,6 +1,7 @@
 /* Teleprompter.css — adaptado para ventana Electron transparente */
 
 .teleprompter-container {
+    --lyrics-color: #ffffff;
     display: flex;
     flex-direction: column;
     justify-content: center;
@@ -20,16 +21,20 @@
     width: 100%;
     text-align: center;
     font-weight: 300;
-    color: rgba(255, 255, 255, 0.55);
+    color: color-mix(in srgb, var(--lyrics-color) 55%, transparent);
     font-size: 0.85rem;
     text-shadow: 0 2px 8px rgba(0, 0, 0, 0.9);
     -webkit-app-region: no-drag !important;
     pointer-events: auto;
-    transition: opacity 0.4s ease;
+    transition: opacity 0.4s ease, color 0.4s ease;
 }
 
 .idle-footer.is-hidden {
     opacity: 0;
+}
+
+.teleprompter-container.vignette-light .idle-footer {
+    text-shadow: 0 1px 4px rgba(255, 255, 255, 0.65);
 }
 
 /* Header superior-centrado: título, artista y estado. Discreto, no compite
@@ -58,8 +63,9 @@
 .track-header-title {
     font-size: 0.82rem;
     font-weight: 600;
-    color: rgba(255, 255, 255, 0.9);
+    color: color-mix(in srgb, var(--lyrics-color) 90%, transparent);
     text-shadow: 0 1px 6px rgba(0, 0, 0, 0.9);
+    transition: color 0.4s ease;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -69,8 +75,9 @@
 .track-header-artist {
     font-size: 0.7rem;
     font-weight: 400;
-    color: rgba(255, 255, 255, 0.55);
+    color: color-mix(in srgb, var(--lyrics-color) 55%, transparent);
     text-shadow: 0 1px 6px rgba(0, 0, 0, 0.9);
+    transition: color 0.4s ease;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -79,10 +86,17 @@
 
 .track-header-status {
     font-size: 0.6rem;
-    color: rgba(255, 255, 255, 0.4);
+    color: color-mix(in srgb, var(--lyrics-color) 40%, transparent);
     text-transform: uppercase;
     letter-spacing: 0.06em;
     margin-top: 0.1rem;
+    transition: color 0.4s ease;
+}
+
+.teleprompter-container.vignette-light .track-header-title,
+.teleprompter-container.vignette-light .track-header-artist,
+.teleprompter-container.vignette-light .track-header-status {
+    text-shadow: 0 1px 4px rgba(255, 255, 255, 0.55);
 }
 
 /* Panel de letras: backdrop translúcido y suave para legibilidad sobre
@@ -102,8 +116,18 @@
         rgba(0, 0, 0, 0.28) 55%,
         rgba(0, 0, 0, 0) 100%
     );
+    transition: background 0.4s ease;
     -webkit-app-region: no-drag !important;
     pointer-events: auto;
+}
+
+.teleprompter-container.vignette-light .lyrics-panel {
+    background: radial-gradient(
+        ellipse at center,
+        rgba(255, 255, 255, 0.38) 0%,
+        rgba(255, 255, 255, 0.22) 55%,
+        rgba(255, 255, 255, 0) 100%
+    );
 }
 
 .lyrics-display {
@@ -122,20 +146,22 @@
     display: flex;
     flex-direction: column;
     gap: 0.3rem;
-    color: rgba(255, 255, 255, 0.32);
+    color: color-mix(in srgb, var(--lyrics-color) 32%, transparent);
     font-weight: 300;
     line-height: 1.25;
     text-shadow: 0 2px 6px rgba(0, 0, 0, 0.85);
+    transition: color 0.4s ease;
     -webkit-app-region: no-drag !important;
     pointer-events: auto;
 }
 
 /* Nivel 2 — subtítulo adyacente: claramente legible, sin robar protagonismo. */
 .lyrics-adjacent {
-    color: rgba(255, 255, 255, 0.72);
+    color: color-mix(in srgb, var(--lyrics-color) 72%, transparent);
     font-weight: 400;
     line-height: 1.3;
     text-shadow: 0 2px 8px rgba(0, 0, 0, 0.9);
+    transition: color 0.4s ease;
     margin: 0.15rem 0;
     -webkit-app-region: no-drag !important;
     pointer-events: auto;
@@ -144,14 +170,26 @@
 /* Nivel 1 — línea actual: protagonista, brillante y con peso. */
 .lyrics-current {
     font-weight: 700;
-    color: #fff;
+    color: var(--lyrics-color);
     line-height: 1.18;
     text-shadow:
-        0 0 12px rgba(255, 255, 255, 0.45),
+        0 0 12px color-mix(in srgb, var(--lyrics-color) 45%, transparent),
         0 2px 14px rgba(0, 0, 0, 0.95); /* Glow + sombra para legibilidad sobre cualquier fondo */
+    transition: color 0.4s ease, text-shadow 0.4s ease;
     margin: 0.4rem 0;
     -webkit-app-region: no-drag !important;
     pointer-events: auto;
+}
+
+.teleprompter-container.vignette-light .lyrics-far,
+.teleprompter-container.vignette-light .lyrics-adjacent {
+    text-shadow: 0 1px 5px rgba(255, 255, 255, 0.5);
+}
+
+.teleprompter-container.vignette-light .lyrics-current {
+    text-shadow:
+        0 0 8px rgba(255, 255, 255, 0.55),
+        0 1px 8px rgba(0, 0, 0, 0.12);
 }
 
 .lyrics-far p,
@@ -172,8 +210,13 @@ ruby > rt {
    se atenúa, la pendiente se mantiene brillante — metáfora de teleprompter,
    leer lo que viene. Aplica a texto plano y a segmentos de furigana. */
 .line-spoken {
-    color: rgba(255, 255, 255, 0.42);
+    color: color-mix(in srgb, var(--lyrics-color) 42%, transparent);
     text-shadow: 0 2px 10px rgba(0, 0, 0, 0.7);
+    transition: color 0.4s ease;
+}
+
+.teleprompter-container.vignette-light .line-spoken {
+    text-shadow: 0 1px 4px rgba(255, 255, 255, 0.45);
 }
 
 ruby.line-spoken > rt {
@@ -185,8 +228,9 @@ ruby.line-spoken > rt {
     font-size: 0.4em;
     font-weight: 400;
     letter-spacing: 0.02em;
-    color: rgba(255, 255, 255, 0.7);
+    color: color-mix(in srgb, var(--lyrics-color) 70%, transparent);
     text-shadow: 0 2px 8px rgba(0, 0, 0, 0.9);
+    transition: color 0.4s ease;
     margin-top: 0.35rem !important;
 }
 
@@ -194,7 +238,13 @@ ruby.line-spoken > rt {
     font-size: 0.38em;
     font-weight: 400;
     font-style: italic;
-    color: rgba(200, 220, 255, 0.85);
+    color: color-mix(in srgb, var(--lyrics-color) 85%, #c8dcff);
     text-shadow: 0 2px 8px rgba(0, 0, 0, 0.9);
+    transition: color 0.4s ease;
     margin-top: 0.25rem !important;
+}
+
+.teleprompter-container.vignette-light .line-romaji,
+.teleprompter-container.vignette-light .line-translation {
+    text-shadow: 0 1px 4px rgba(255, 255, 255, 0.45);
 }

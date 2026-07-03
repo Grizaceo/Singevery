@@ -110,6 +110,7 @@ export interface ReadingSettings {
 }
 
 export type TextAlignment = 'left' | 'center' | 'right';
+export type TextColorMode = 'manual' | 'auto';
 
 export type RecognitionProviderMode = 'auto' | 'shazam' | 'audd';
 
@@ -118,6 +119,8 @@ export interface DisplaySettings {
   fontScale: number;
   alignment: TextAlignment;
   mirrorMode: boolean;
+  textColor: string;
+  textColorMode: TextColorMode;
 }
 
 export interface RemoteStatus {
@@ -140,6 +143,10 @@ export interface RenderModel {
   opacity: number;
   alignment: "left" | "center" | "right";
   mirror_mode: boolean;
+  /** Color efectivo de la letra (manual o resuelto por auto-contraste). */
+  text_color: string;
+  /** true = viñeta clara (texto oscuro sobre fondo claro). */
+  text_vignette_light?: boolean;
 
   track_title?: string;
   track_artist?: string;

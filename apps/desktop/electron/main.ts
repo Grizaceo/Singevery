@@ -47,6 +47,7 @@ import {
 import type { RecognitionPhase } from './core/stateStore';
 import { setupContentSecurityPolicy } from './csp';
 import { createRemoteServer, type RemoteServer } from './services/remote/remoteServer';
+import { AutoContrastService } from './services/autoContrast';
 
 const isDev = process.env.NODE_ENV === 'development' || !!process.env.VITE_DEV_SERVER_URL;
 const devServerUrl = process.env.VITE_DEV_SERVER_URL ?? 'http://localhost:5173';
@@ -67,6 +68,7 @@ let smtcReader: SmtcReader | null = null;
 let wakeWordReader: WakeWordReader | null = null;
 let recognitionService: RecognitionService | null = null;
 let remoteServer: RemoteServer | null = null;
+let autoContrast: AutoContrastService | null = null;
 let appSettings: AppSettings | null = null;
 /** Bounds expandidos guardados al colapsar a pill; se restauran al expandir. */
 let savedBounds: Rect | null = null;
@@ -462,6 +464,7 @@ function registerIpcHandlers(): void {
       if (!appSettings) return { ok: false, display: NULL_DISPLAY_STORE.get() };
       appSettings.displayStore.set(partial);
       stateStore?.applyDisplaySettings();
+      autoContrast?.sync();
       return { ok: true, display: appSettings.displayStore.get() };
     },
   );
@@ -707,6 +710,16 @@ function bootstrap(): void {
   );
   stateStore.applyReadingSettings();
   stateStore.start(100); // 10 Hz
+
+  if (appSettings) {
+    autoContrast = new AutoContrastService(
+      () => mainWindow,
+      appSettings.displayStore,
+      stateStore,
+    );
+    autoContrast.sync();
+  }
+
   registerIpcHandlers();
   registerSingShortcut();
 
@@ -817,6 +830,7 @@ if (!gotLock) {
     smtcReader?.stop();
     wakeWordReader?.stop();
     remoteServer?.stop();
+    autoContrast?.dispose();
     stateStore?.stop();
     globalShortcut.unregisterAll();
     app.quit();

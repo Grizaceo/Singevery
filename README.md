@@ -63,6 +63,20 @@ La app detecta el script del texto y genera lecturas **sin destruir la letra ori
 
 Las etiquetas se adaptan al idioma de la canción (p. ej. 原/ふ/A en japonés, Orig/Ruby/A en el resto).
 
+## Color de letra
+
+En **Ajustes (⚙) → Color de letra** puedes personalizar cómo se ve el texto del teleprompter:
+
+| Opción | Descripción |
+|--------|-------------|
+| **Presets** | Blanco, amarillo, cian, verde, rosa, negro |
+| **Color personalizado** | Selector libre (`#hex`) |
+| **Ajuste automático (experimental)** | Mide el brillo del fondo bajo el widget y elige texto claro u oscuro para mantener contraste |
+
+El color elegido se aplica a toda la jerarquía visual (línea actual, adyacentes, lejanas, karaoke cantado, romaji y traducción). En modo automático se **conserva tu color preferido** mientras contraste con el fondo; si no, cae a blanco u oscuro puro.
+
+> **Experimental:** el ajuste automático captura una miniatura de pantalla cada ~3 s (procesada en memoria, sin almacenar ni enviar). Puede producir un ligero parpadeo en Windows. Mientras está activo, el widget no aparece en grabaciones ni en compartir pantalla (`setContentProtection`).
+
 ## Traducción
 
 Traducción **lazy por lote**: al activar **T**, se traducen todas las líneas de la canción en una sola petición y el resultado se cachea en disco.
@@ -124,12 +138,12 @@ Guía completa: [`apps/desktop/WINDOWS.md`](apps/desktop/WINDOWS.md).
 | **Shazam** | Solo cliente no oficial |
 | **AudD** | Requiere `AUDD_API_TOKEN` en `.env` |
 
-Selector en **Ajustes (⚙)** del widget. También ahí: opacidad, fuente, traducción (DeepL/Google) y pinyin con/sin tonos.
+Selector en **Ajustes (⚙)** del widget. También ahí: opacidad, **color de letra**, fuente, traducción (DeepL/Google) y pinyin con/sin tonos.
 
 ## Scripts útiles
 
 ```bash
-npm test              # Vitest (147+ tests)
+npm test              # Vitest (151 tests)
 npm run build         # Build producción
 npm run package       # Instalador Windows (electron-builder)
 ```

@@ -21,12 +21,15 @@ export interface CalibrationStore {
 }
 
 export type TextAlignment = 'left' | 'center' | 'right';
+export type TextColorMode = 'manual' | 'auto';
 
 export interface DisplaySettings {
   opacity: number;
   fontScale: number;
   alignment: TextAlignment;
   mirrorMode: boolean;
+  textColor: string;
+  textColorMode: TextColorMode;
 }
 
 export interface DisplayStore {
@@ -86,6 +89,8 @@ export const DEFAULT_DISPLAY_SETTINGS: DisplaySettings = {
   fontScale: 1.0,
   alignment: 'center',
   mirrorMode: false,
+  textColor: '#ffffff',
+  textColorMode: 'manual',
 };
 
 export const DEFAULT_RECOGNITION_PROVIDER: RecognitionProviderMode = 'auto';
@@ -168,6 +173,16 @@ function clampFontScale(value: number): number {
   return Math.min(2, Math.max(0.6, value));
 }
 
+function normalizeHexColor(value: unknown, fallback: string): string {
+  if (typeof value !== 'string') return fallback;
+  const match = value.trim().match(/^#([0-9a-fA-F]{6})$/);
+  return match ? `#${match[1].toLowerCase()}` : fallback;
+}
+
+function normalizeTextColorMode(value: unknown): TextColorMode {
+  return value === 'auto' ? 'auto' : 'manual';
+}
+
 function normalizeDisplay(raw?: Partial<DisplaySettings>): DisplaySettings {
   return {
     opacity: clampOpacity(typeof raw?.opacity === 'number' ? raw.opacity : DEFAULT_DISPLAY_SETTINGS.opacity),
@@ -177,6 +192,8 @@ function normalizeDisplay(raw?: Partial<DisplaySettings>): DisplaySettings {
         ? raw.alignment
         : DEFAULT_DISPLAY_SETTINGS.alignment,
     mirrorMode: !!raw?.mirrorMode,
+    textColor: normalizeHexColor(raw?.textColor, DEFAULT_DISPLAY_SETTINGS.textColor),
+    textColorMode: normalizeTextColorMode(raw?.textColorMode),
   };
 }
 

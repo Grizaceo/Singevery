@@ -24,8 +24,11 @@ export const Teleprompter = React.memo(function Teleprompter({
     transform: model.mirror_mode ? 'scaleX(-1)' : 'none',
     opacity: ghost ? 0.35 : model.opacity,
     textAlign: model.alignment,
-    transition: 'opacity 0.4s ease',
+    transition: 'opacity 0.4s ease, color 0.4s ease',
+    ['--lyrics-color' as string]: model.text_color ?? '#ffffff',
   };
+
+  const vignetteClass = model.text_vignette_light ? ' vignette-light' : '';
 
   const currentSize = `${4 * model.font_scale}rem`;
   const adjacentSize = `${2.1 * model.font_scale}rem`;
@@ -36,7 +39,7 @@ export const Teleprompter = React.memo(function Teleprompter({
   const nextTiers = splitNextTiers(model.next_lines);
 
   return (
-    <div className="teleprompter-container" style={containerStyle}>
+    <div className={`teleprompter-container${vignetteClass}`} style={containerStyle}>
       <TrackHeader model={model} chromeHidden={chromeHidden} />
 
       {!isIdle && (

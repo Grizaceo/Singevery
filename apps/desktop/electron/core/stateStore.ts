@@ -24,6 +24,18 @@ export type { RecognitionPhase };
 
 const IDLE_MESSAGE = 'Esperando música...';
 
+/** Umbral de luminancia relativa: por debajo = color de texto "oscuro". */
+function isColorDark(hex: string): boolean {
+  const match = hex.match(/^#([0-9a-fA-F]{6})$/);
+  if (!match) return false;
+  const n = parseInt(match[1], 16);
+  const r = ((n >> 16) & 0xff) / 255;
+  const g = ((n >> 8) & 0xff) / 255;
+  const b = (n & 0xff) / 255;
+  const lum = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  return lum < 0.45;
+}
+
 /** Nivel de audio (0..1) por debajo del cual consideramos silencio.
  *  Alineado con SILENCE_PEAK de capture.ts. */
 const SILENCE_LEVEL = 0.012;
@@ -76,6 +88,10 @@ export class StateStore {
   /** Retransmisión opcional del RenderModel al servidor LAN (modo TV). */
   private remoteBroadcast: ((model: RenderModel) => void) | null = null;
 
+  /** Color resuelto por auto-contraste (null = usar manual). */
+  private autoContrastColor: string | null = null;
+  private autoLightBackground = false;
+
   constructor(
     window: BrowserWindow | null,
     offsetStore: OffsetStore = NULL_OFFSET_STORE,
@@ -110,6 +126,35 @@ export class StateStore {
     this.engine.renderConfig.opacity = d.opacity;
     this.engine.renderConfig.alignment = d.alignment;
     this.engine.renderConfig.mirrorMode = d.mirrorMode;
+    if (d.textColorMode !== 'auto') {
+      this.clearAutoContrast();
+    }
+  }
+
+  /** Actualiza el color efectivo desde el servicio de auto-contraste. */
+  setAutoContrast(color: string, lightBackground: boolean): void {
+    this.autoContrastColor = color;
+    this.autoLightBackground = lightBackground;
+  }
+
+  /** Limpia el override de auto-contraste (vuelve al color manual). */
+  clearAutoContrast(): void {
+    this.autoContrastColor = null;
+    this.autoLightBackground = false;
+  }
+
+  private resolveTextAppearance(): Pick<RenderModel, 'text_color' | 'text_vignette_light'> {
+    const d = this.displayStore.get();
+    if (d.textColorMode === 'auto') {
+      return {
+        text_color: this.autoContrastColor ?? '#ffffff',
+        text_vignette_light: this.autoContrastColor ? this.autoLightBackground : false,
+      };
+    }
+    return {
+      text_color: d.textColor,
+      text_vignette_light: isColorDark(d.textColor),
+    };
   }
 
   attachWindow(window: BrowserWindow): void {
@@ -549,6 +594,7 @@ export class StateStore {
       opacity: d.opacity,
       alignment: d.alignment,
       mirror_mode: d.mirrorMode,
+      ...this.resolveTextAppearance(),
       track_title: this.trackTitle,
       track_artist: this.trackArtist,
       status,
@@ -570,6 +616,7 @@ export class StateStore {
     const model = this.engine.getRenderModel(this.currentPosition(), 'DISPLAYING');
     const full: RenderModel = {
       ...model,
+      ...this.resolveTextAppearance(),
       track_title: this.trackTitle,
       track_artist: this.trackArtist,
     };

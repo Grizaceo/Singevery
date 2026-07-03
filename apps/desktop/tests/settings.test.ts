@@ -76,6 +76,8 @@ describe('settings persistente (P2.8)', () => {
       fontScale: 1.2,
       alignment: 'left',
       mirrorMode: true,
+      textColor: '#ffffff',
+      textColorMode: 'manual',
     });
     expect(s2.recognitionProviderStore.get()).toBe('shazam');
   });
@@ -85,6 +87,15 @@ describe('settings persistente (P2.8)', () => {
     s1.windowBoundsStore.set({ x: 100, y: 80, width: 800, height: 600 });
     const s2 = createPersistentSettings();
     expect(s2.windowBoundsStore.get()).toEqual({ x: 100, y: 80, width: 800, height: 600 });
+  });
+
+  it('persiste color de letra y modo auto-contraste', () => {
+    const s1 = createPersistentSettings();
+    s1.displayStore.set({ textColor: '#fde047', textColorMode: 'auto' });
+
+    const s2 = createPersistentSettings();
+    expect(s2.displayStore.get().textColor).toBe('#fde047');
+    expect(s2.displayStore.get().textColorMode).toBe('auto');
   });
 
   it('persiste ajuste de modo TV remoto', () => {

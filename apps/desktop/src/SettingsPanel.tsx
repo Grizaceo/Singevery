@@ -20,12 +20,23 @@ const TRANSLATION_PROVIDERS: { value: TranslationSettings['provider']; label: st
   { value: 'google', label: 'Google Translate v2' },
 ];
 
+const TEXT_COLOR_PRESETS: { value: string; label: string }[] = [
+  { value: '#ffffff', label: 'Blanco' },
+  { value: '#fde047', label: 'Amarillo' },
+  { value: '#22d3ee', label: 'Cian' },
+  { value: '#4ade80', label: 'Verde' },
+  { value: '#f472b6', label: 'Rosa' },
+  { value: '#111114', label: 'Negro' },
+];
+
 export function SettingsPanel({ open, onClose }: SettingsPanelProps) {
   const [display, setDisplay] = useState<DisplaySettings>({
     opacity: 1,
     fontScale: 1,
     alignment: 'center',
     mirrorMode: false,
+    textColor: '#ffffff',
+    textColorMode: 'manual',
   });
   const [provider, setProvider] = useState<RecognitionProviderMode>('auto');
   const [translation, setTranslation] = useState<TranslationSettings>({
@@ -191,6 +202,50 @@ export function SettingsPanel({ open, onClose }: SettingsPanelProps) {
             />
             Modo espejo (invertir horizontalmente)
           </label>
+        </section>
+
+        <section className="settings-section">
+          <span className="settings-label">Color de letra</span>
+          <div className="settings-color-row">
+            {TEXT_COLOR_PRESETS.map((preset) => (
+              <button
+                key={preset.value}
+                type="button"
+                className={`settings-color-swatch${display.textColor === preset.value ? ' active' : ''}`}
+                title={preset.label}
+                aria-label={preset.label}
+                onClick={() => void patchDisplay({ textColor: preset.value })}
+              >
+                <span style={{ backgroundColor: preset.value }} />
+              </button>
+            ))}
+            <label className="settings-color-picker" title="Color personalizado">
+              <input
+                type="color"
+                value={display.textColor}
+                onChange={(e) => void patchDisplay({ textColor: e.target.value.toLowerCase() })}
+              />
+            </label>
+          </div>
+          <label className="settings-check">
+            <input
+              type="checkbox"
+              checked={display.textColorMode === 'auto'}
+              onChange={(e) =>
+                void patchDisplay({ textColorMode: e.target.checked ? 'auto' : 'manual' })
+              }
+            />
+            Ajuste automático según el fondo (experimental)
+          </label>
+          {display.textColorMode === 'auto' && (
+            <p className="settings-hint">
+              Mantiene tu color mientras contraste con el fondo; si no, cambia a claro/oscuro.
+              Analiza el brillo de la pantalla bajo el widget cada pocos segundos; la imagen se
+              procesa localmente y se descarta. Experimental: la captura puede producir un ligero
+              parpadeo, y el widget no aparece en grabaciones/compartir pantalla mientras esté
+              activo.
+            </p>
+          )}
         </section>
 
         <section className="settings-section">

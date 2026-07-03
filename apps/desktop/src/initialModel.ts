@@ -13,5 +13,7 @@ export const INITIAL_RENDER_MODEL: RenderModel = {
   opacity: 1.0,
   alignment: "center",
   mirror_mode: false,
+  text_color: "#ffffff",
+  text_vignette_light: false,
   status: "IDLE",
 };

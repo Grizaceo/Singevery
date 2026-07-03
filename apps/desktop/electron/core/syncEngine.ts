@@ -38,6 +38,8 @@ const NO_LYRICS_MODEL: RenderModel = {
   opacity: 1.0,
   alignment: 'center',
   mirror_mode: false,
+  text_color: '#ffffff',
+  text_vignette_light: false,
 };
 
 export class SyncEngine {
@@ -106,6 +108,8 @@ export class SyncEngine {
           opacity: this.renderConfig.opacity,
           alignment: this.renderConfig.alignment,
           mirror_mode: this.renderConfig.mirrorMode,
+          text_color: '#ffffff',
+          text_vignette_light: false,
           status: 'IDLE',
         };
       }
@@ -163,6 +167,8 @@ export class SyncEngine {
       opacity: this.renderConfig.opacity,
       alignment: this.renderConfig.alignment,
       mirror_mode: this.renderConfig.mirrorMode,
+      text_color: '#ffffff',
+      text_vignette_light: false,
       status,
       current_line_progress: progress,
       current_word_index: wordIndex >= 0 ? wordIndex : undefined,
