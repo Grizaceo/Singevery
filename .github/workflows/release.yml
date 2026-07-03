@@ -44,4 +44,7 @@ jobs:
         with:
           draft: false
           generate_release_notes: true
-          files: apps/desktop/release/Singevery-Setup-*.exe
+          files: |
+            apps/desktop/release/Singevery-Setup-*.exe
+            docs/demo-readme.mp4
+            docs/demo.mp4

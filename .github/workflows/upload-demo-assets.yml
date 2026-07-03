@@ -1,0 +1,42 @@
+name: Upload demo assets
+
+# Adjunta los MP4 de demo a la release más reciente para que el README
+# pueda embeber el video con releases/download/... (GitHub no reproduce
+# MP4 inline desde raw/main).
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'docs/demo-readme.mp4'
+      - 'docs/demo.mp4'
+      - '.github/workflows/upload-demo-assets.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  upload:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Resolve latest release tag
+        id: tag
+        run: |
+          TAG=$(gh release list --repo "${{ github.repository }}" --limit 1 --json tagName --jq '.[0].tagName')
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Upload demo videos to release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag.outputs.tag }}
+          files: |
+            docs/demo-readme.mp4
+            docs/demo.mp4
+          fail_on_unmatched_files: true
+          draft: false
+          make_latest: false

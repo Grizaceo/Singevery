@@ -18,11 +18,23 @@ Descarga el instalador de Windows desde **[GitHub Releases](https://github.com/G
 
 ## Demo
 
-![Demo de Singevery](docs/demo.gif)
+<p align="center">
+  <video
+    src="https://github.com/Grizaceo/Singevery/releases/download/v0.1.0/demo-readme.mp4"
+    poster="docs/demo-poster.jpg"
+    controls
+    muted
+    autoplay
+    loop
+    playsinline
+    width="760">
+    <a href="https://github.com/Grizaceo/Singevery/releases/download/v0.1.0/demo-readme.mp4">
+      <img src="docs/demo-poster.jpg" alt="Demo de Singevery" width="760" />
+    </a>
+  </video>
+</p>
 
-[▶ Ver video completo (HD)](https://github.com/Grizaceo/Singevery/blob/main/docs/demo.mp4)
-
-> **¿Quieres reproductor MP4 inline en el README?** GitHub no lo permite con archivos del repo (`raw/main/...` sale como enlace). Edita el README en github.com, arrastra [`docs/demo-readme.mp4`](docs/demo-readme.mp4) (~1 MB) al editor y GitHub insertará una URL `user-attachments` que sí se reproduce embebida. Sustituye el GIF por esa URL.
+[▶ Ver video completo (HD)](https://github.com/Grizaceo/Singevery/releases/download/v0.1.0/demo.mp4)
 
 En la grabación:
 
