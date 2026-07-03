@@ -5,6 +5,7 @@ import * as path from 'path';
 import { FileLyricsCache } from '../electron/services/cache/lyricsCache';
 import type { CacheMeta } from '../electron/services/lyrics/types';
 import type { TimedLyrics } from '../src/types';
+import { ANNOTATIONS_VERSION } from '../electron/services/romanize';
 
 const lyrics = (text: string): TimedLyrics => ({
   lines: [{ start_ms: 0, text }],
@@ -72,6 +73,22 @@ describe('FileLyricsCache', () => {
     expect(await c.get('b')).toBeNull(); // 'b' (menor score) fue expulsada
     expect((await c.get('a'))?.lines[0].text).toBe('A');
     expect((await c.get('c'))?.lines[0].text).toBe('C');
+  });
+
+  it('persiste annotationsVersion en el índice', async () => {
+    const c = new FileLyricsCache(dir);
+    const annotated: TimedLyrics = {
+      lines: [{ start_ms: 0, text: 'Привет', romaji: 'Privet' }],
+      source: 'lrclib',
+      synced: true,
+      annotationsVersion: ANNOTATIONS_VERSION,
+    };
+    await c.put('k1', annotated, meta('K1'));
+    const idx = JSON.parse(fs.readFileSync(path.join(dir, 'index.json'), 'utf8')) as {
+      entries: { k1: { annotationsVersion?: number } };
+    };
+    expect(idx.entries.k1.annotationsVersion).toBe(ANNOTATIONS_VERSION);
+    c.flush();
   });
 
   it('clear vacía todo', async () => {

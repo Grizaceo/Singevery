@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import type { DisplaySettings, RecognitionProviderMode } from './types';
+import type { DisplaySettings, ReadingSettings, RecognitionProviderMode, TranslationSettings } from './types';
 import './SettingsPanel.css';
 
 interface SettingsPanelProps {
@@ -13,6 +13,11 @@ const PROVIDER_OPTIONS: { value: RecognitionProviderMode; label: string; hint: s
   { value: 'audd', label: 'AudD', hint: 'Requiere AUDD_API_TOKEN' },
 ];
 
+const TRANSLATION_PROVIDERS: { value: TranslationSettings['provider']; label: string }[] = [
+  { value: 'deepl', label: 'DeepL' },
+  { value: 'google', label: 'Google Translate v2' },
+];
+
 export function SettingsPanel({ open, onClose }: SettingsPanelProps) {
   const [display, setDisplay] = useState<DisplaySettings>({
     opacity: 1,
@@ -21,6 +26,12 @@ export function SettingsPanel({ open, onClose }: SettingsPanelProps) {
     mirrorMode: false,
   });
   const [provider, setProvider] = useState<RecognitionProviderMode>('auto');
+  const [translation, setTranslation] = useState<TranslationSettings>({
+    provider: 'deepl',
+    apiKey: '',
+    targetLang: 'es',
+  });
+  const [reading, setReading] = useState<ReadingSettings>({ pinyinToneType: 'none' });
 
   useEffect(() => {
     if (!open || !window.api) return;
@@ -29,6 +40,12 @@ export function SettingsPanel({ open, onClose }: SettingsPanelProps) {
     });
     void window.api.getRecognitionProvider().then((r) => {
       if (r.ok) setProvider(r.provider);
+    });
+    void window.api.getTranslationSettings().then((r) => {
+      if (r.ok) setTranslation(r.translation);
+    });
+    void window.api.getReadingSettings().then((r) => {
+      if (r.ok) setReading(r.reading);
     });
   }, [open]);
 
@@ -46,6 +63,28 @@ export function SettingsPanel({ open, onClose }: SettingsPanelProps) {
     const result = await window.api.setRecognitionProvider(value);
     if (result.ok) setProvider(result.provider);
   }, []);
+
+  const patchTranslation = useCallback(
+    async (partial: Partial<TranslationSettings>) => {
+      if (!window.api) return;
+      const next = { ...translation, ...partial };
+      setTranslation(next);
+      const result = await window.api.setTranslationSettings(partial);
+      if (result.ok) setTranslation(result.translation);
+    },
+    [translation],
+  );
+
+  const patchReading = useCallback(
+    async (partial: Partial<ReadingSettings>) => {
+      if (!window.api) return;
+      const next = { ...reading, ...partial };
+      setReading(next);
+      const result = await window.api.setReadingSettings(partial);
+      if (result.ok) setReading(result.reading);
+    },
+    [reading],
+  );
 
   if (!open || !window.api) return null;
 
@@ -118,6 +157,57 @@ export function SettingsPanel({ open, onClose }: SettingsPanelProps) {
               onChange={(e) => void patchDisplay({ mirrorMode: e.target.checked })}
             />
             Modo espejo (invertir horizontalmente)
+          </label>
+        </section>
+
+        <section className="settings-section">
+          <span className="settings-label">Traducción</span>
+          <div className="settings-provider-list">
+            {TRANSLATION_PROVIDERS.map((opt) => (
+              <button
+                key={opt.value}
+                type="button"
+                className={`settings-provider-btn${translation.provider === opt.value ? ' active' : ''}`}
+                onClick={() => void patchTranslation({ provider: opt.value })}
+              >
+                <strong>{opt.label}</strong>
+              </button>
+            ))}
+          </div>
+          <label className="settings-label" htmlFor="translation-key">
+            API key
+          </label>
+          <input
+            id="translation-key"
+            className="settings-text-input"
+            type="password"
+            value={translation.apiKey}
+            placeholder={translation.provider === 'deepl' ? 'DeepL auth key' : 'Google API key'}
+            onChange={(e) => void patchTranslation({ apiKey: e.target.value })}
+          />
+          <label className="settings-label" htmlFor="translation-lang">
+            Idioma destino (ej. es, en, ja)
+          </label>
+          <input
+            id="translation-lang"
+            className="settings-text-input"
+            type="text"
+            value={translation.targetLang}
+            onChange={(e) => void patchTranslation({ targetLang: e.target.value })}
+          />
+        </section>
+
+        <section className="settings-section">
+          <span className="settings-label">Pinyin (chino)</span>
+          <label className="settings-check">
+            <input
+              type="checkbox"
+              checked={reading.pinyinToneType === 'symbol'}
+              onChange={(e) =>
+                void patchReading({ pinyinToneType: e.target.checked ? 'symbol' : 'none' })
+              }
+            />
+            Mostrar tonos en pinyin (nǐ hǎo vs ni hao)
           </label>
         </section>
 

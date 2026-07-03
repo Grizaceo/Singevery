@@ -36,7 +36,7 @@ export interface TrackMatch {
   matched_at: number; // timestamp local (ms desde epoch) del match
 }
 
-/** Segmento de furigana: texto base + lectura en kana (rt) opcional. */
+/** Segmento ruby: texto base + lectura encima (rt) opcional. */
 export interface FuriganaSegment {
   base: string;
   rt?: string;
@@ -55,12 +55,16 @@ export interface LyricWord {
 export interface LyricLine {
   start_ms: number;
   end_ms?: number | null;
-  /** Texto original (kanji/kana, hangul, etc). Nunca se destruye. */
+  /** Texto original (kanji/kana, hangul, cirílico, etc). Nunca se destruye. */
   text: string;
-  /** Lectura para ruby (furigana japonés). Solo si aporta sobre `text`. */
+  /** Segmentos ruby: lectura encima del texto (furigana JP, pinyin ZH, etc.). */
   furigana?: FuriganaSegment[];
-  /** Romanización latina (hepburn JP / pinyin ZH / translit KO). */
+  /** Romanización latina (hepburn JP / pinyin ZH / RR KO / latín sobre cirílico). */
   romaji?: string;
+  /** Texto en hiragana (modo kana, solo japonés). */
+  kana?: string;
+  /** Traducción al idioma destino configurado por el usuario. */
+  translation?: string;
   /**
    * Timestamps por palabra (Enhanced LRC, marcadores <mm:ss.xx> inline).
    * Cuando existe, el resaltado avanza por palabra en vez de por tiempo lineal.
@@ -73,6 +77,10 @@ export interface TimedLyrics {
   lines: LyricLine[];
   source: string; // ej: "lrclib", "musixmatch"
   synced: boolean;
+  /** Versión del pipeline de anotaciones (furigana, kana, ruby multi-idioma). */
+  annotationsVersion?: number;
+  /** Idioma destino de las traducciones cacheadas en `lines[].translation`. */
+  translationLang?: string;
 }
 
 /** Una línea lista para mostrar: original + ayudas de lectura. */
@@ -80,12 +88,26 @@ export interface RenderLine {
   text: string;
   furigana?: FuriganaSegment[];
   romaji?: string;
+  kana?: string;
+  translation?: string;
   /** Palabras con timestamp (A2). Solo se usa para el resaltado por palabra. */
   words?: LyricWord[];
 }
 
 /** Modo de lectura elegido por el usuario (estado del renderer, persistido). */
-export type ReadingMode = 'original' | 'furigana' | 'romaji' | 'furigana_romaji';
+export type ReadingMode = 'original' | 'furigana' | 'romaji' | 'furigana_romaji' | 'kana';
+
+export type TranslationProvider = 'deepl' | 'google';
+
+export interface TranslationSettings {
+  provider: TranslationProvider;
+  apiKey: string;
+  targetLang: string;
+}
+
+export interface ReadingSettings {
+  pinyinToneType: 'none' | 'symbol';
+}
 
 export type TextAlignment = 'left' | 'center' | 'right';
 
@@ -171,6 +193,18 @@ export interface DesktopApi {
   setRecognitionProvider: (
     provider: RecognitionProviderMode,
   ) => Promise<{ ok: boolean; provider: RecognitionProviderMode }>;
+
+  getTranslationSettings: () => Promise<{ ok: boolean; translation: TranslationSettings }>;
+  setTranslationSettings: (
+    partial: Partial<TranslationSettings>,
+  ) => Promise<{ ok: boolean; translation: TranslationSettings }>;
+
+  getReadingSettings: () => Promise<{ ok: boolean; reading: ReadingSettings }>;
+  setReadingSettings: (
+    partial: Partial<ReadingSettings>,
+  ) => Promise<{ ok: boolean; reading: ReadingSettings }>;
+
+  requestTranslation: () => Promise<{ ok: boolean; error?: string }>;
 
   // Window controls
   close: () => Promise<{ ok: boolean }>;

@@ -19,7 +19,14 @@ export interface RenderConfig {
 
 /** Convierte una línea de letra en línea de render (original + lecturas). */
 function toRenderLine(line: LyricLine): RenderLine {
-  return { text: line.text, furigana: line.furigana, romaji: line.romaji, words: line.words };
+  return {
+    text: line.text,
+    furigana: line.furigana,
+    romaji: line.romaji,
+    kana: line.kana,
+    translation: line.translation,
+    words: line.words,
+  };
 }
 
 const NO_LYRICS_MODEL: RenderModel = {

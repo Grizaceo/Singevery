@@ -97,3 +97,15 @@
 .settings-provider-btn strong {
   font-size: 0.82rem;
 }
+
+.settings-text-input {
+  width: 100%;
+  box-sizing: border-box;
+  margin-bottom: 8px;
+  padding: 7px 9px;
+  border: 1px solid var(--chrome-border);
+  border-radius: var(--chrome-radius);
+  background: var(--chrome-surface);
+  color: var(--chrome-text);
+  font-size: 0.82rem;
+}

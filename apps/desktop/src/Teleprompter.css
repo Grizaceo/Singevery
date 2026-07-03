@@ -189,3 +189,12 @@ ruby.line-spoken > rt {
     text-shadow: 0 2px 8px rgba(0, 0, 0, 0.9);
     margin-top: 0.35rem !important;
 }
+
+.line-translation {
+    font-size: 0.38em;
+    font-weight: 400;
+    font-style: italic;
+    color: rgba(200, 220, 255, 0.85);
+    text-shadow: 0 2px 8px rgba(0, 0, 0, 0.9);
+    margin-top: 0.25rem !important;
+}

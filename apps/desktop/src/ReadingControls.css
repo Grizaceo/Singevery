@@ -1,3 +1,9 @@
+.reading-controls-wrap {
+  position: relative;
+  pointer-events: auto;
+  -webkit-app-region: no-drag !important;
+}
+
 .reading-controls {
   display: flex;
   gap: 0.25rem;
@@ -14,4 +20,71 @@
   border-color: var(--chrome-border);
   background: var(--chrome-surface);
   color: var(--chrome-text-muted);
+}
+
+.reading-btn.loading {
+  opacity: 0.6;
+  cursor: wait;
+}
+
+.reading-help-popover {
+  position: absolute;
+  top: calc(100% + 0.35rem);
+  right: 0;
+  z-index: 20;
+  min-width: 16rem;
+  max-width: 22rem;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid var(--chrome-border);
+  border-radius: 0.5rem;
+  background: rgba(18, 18, 22, 0.96);
+  color: var(--chrome-text);
+  font-size: 0.78rem;
+  line-height: 1.35;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+}
+
+.reading-help-popover ul {
+  margin: 0.45rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.reading-help-popover li {
+  display: grid;
+  grid-template-columns: 5.5rem 1fr;
+  gap: 0.35rem;
+  margin-bottom: 0.35rem;
+}
+
+.reading-help-label {
+  color: var(--chrome-text-muted);
+}
+
+.reading-help-sample ruby rt {
+  font-size: 0.65em;
+}
+
+.reading-help-link {
+  margin: 0.5rem 0 0;
+  font-size: 0.72rem;
+}
+
+.reading-help-link a {
+  color: #8ec5ff;
+}
+
+.reading-help-error {
+  margin: 0.45rem 0 0;
+  color: #ffb4b4;
+  font-size: 0.72rem;
+}
+
+.reading-help-settings-link {
+  background: none;
+  border: none;
+  color: #8ec5ff;
+  cursor: pointer;
+  padding: 0;
+  text-decoration: underline;
 }

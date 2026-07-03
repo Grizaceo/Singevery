@@ -18,6 +18,7 @@ import { gzipSync, gunzipSync } from 'zlib';
 import { createHash } from 'crypto';
 import type { CacheMeta, LyricsCache } from '../lyrics/types';
 import type { TimedLyrics } from '../../../src/types';
+import { ANNOTATIONS_VERSION } from '../romanize';
 
 const SCHEMA_VERSION = 1;
 const INDEX_FILE = 'index.json';
@@ -33,6 +34,9 @@ export interface CacheEntry {
   synced: boolean;
   hasFurigana: boolean;
   hasRomaji: boolean;
+  hasKana: boolean;
+  annotationsVersion?: number;
+  translationLang?: string;
   lyricsFile: string; // ruta relativa sharded, '' si es entrada negativa
   bytes: number; // tamaño del payload gzip (para el cap por espacio)
   firstHeardAt: number;
@@ -75,6 +79,9 @@ function hasFuriganaIn(lyrics: TimedLyrics): boolean {
 }
 function hasRomajiIn(lyrics: TimedLyrics): boolean {
   return lyrics.lines.some((l) => l.romaji != null && l.romaji !== '');
+}
+function hasKanaIn(lyrics: TimedLyrics): boolean {
+  return lyrics.lines.some((l) => l.kana != null && l.kana !== '');
 }
 
 export class FileLyricsCache implements LyricsCache {
@@ -207,6 +214,8 @@ export class FileLyricsCache implements LyricsCache {
       synced: false,
       hasFurigana: false,
       hasRomaji: false,
+      hasKana: false,
+      annotationsVersion: 0,
       lyricsFile: '',
       bytes: 0,
       firstHeardAt: existing?.firstHeardAt ?? now,
@@ -248,6 +257,9 @@ export class FileLyricsCache implements LyricsCache {
       synced: lyrics.synced,
       hasFurigana: hasFuriganaIn(lyrics),
       hasRomaji: hasRomajiIn(lyrics),
+      hasKana: hasKanaIn(lyrics),
+      annotationsVersion: lyrics.annotationsVersion ?? ANNOTATIONS_VERSION,
+      translationLang: lyrics.translationLang,
       lyricsFile: rel,
       bytes,
       firstHeardAt: existing?.firstHeardAt ?? now,

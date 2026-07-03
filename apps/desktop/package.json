@@ -27,7 +27,9 @@
     "package": "npm run build && electron-builder --config electron-builder.yml"
   },
   "dependencies": {
+    "cyrillic-to-translit-js": "^3.2.1",
     "electron-store": "^10.0.0",
+    "es-hangul": "^2.3.8",
     "kuroshiro": "^1.2.0",
     "kuroshiro-analyzer-kuromoji": "^1.1.0",
     "pinyin-pro": "^3.27.0",

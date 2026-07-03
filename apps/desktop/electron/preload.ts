@@ -98,6 +98,25 @@ const api = {
     provider: import('../src/types').RecognitionProviderMode,
   ): Promise<{ ok: boolean; provider: import('../src/types').RecognitionProviderMode }> =>
     ipcRenderer.invoke('settings:setRecognitionProvider', provider),
+
+  getTranslationSettings: (): Promise<{ ok: boolean; translation: import('../src/types').TranslationSettings }> =>
+    ipcRenderer.invoke('settings:getTranslation'),
+
+  setTranslationSettings: (
+    partial: Partial<import('../src/types').TranslationSettings>,
+  ): Promise<{ ok: boolean; translation: import('../src/types').TranslationSettings }> =>
+    ipcRenderer.invoke('settings:setTranslation', partial),
+
+  getReadingSettings: (): Promise<{ ok: boolean; reading: import('../src/types').ReadingSettings }> =>
+    ipcRenderer.invoke('settings:getReading'),
+
+  setReadingSettings: (
+    partial: Partial<import('../src/types').ReadingSettings>,
+  ): Promise<{ ok: boolean; reading: import('../src/types').ReadingSettings }> =>
+    ipcRenderer.invoke('settings:setReading', partial),
+
+  requestTranslation: (): Promise<{ ok: boolean; error?: string }> =>
+    ipcRenderer.invoke('lyrics:translate'),
 };
 
 contextBridge.exposeInMainWorld('api', api);

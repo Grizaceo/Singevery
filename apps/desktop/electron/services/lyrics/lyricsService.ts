@@ -10,11 +10,11 @@
 // ============================================================================
 
 import type { TimedLyrics } from '../../../src/types';
-import type { LyricsCache, LyricsProvider, LyricsQuery, RawLyrics } from './types';
+import type { LyricsCache, LyricsProvider, LyricsQuery, RawLyrics, CacheMeta } from './types';
 import { NULL_LYRICS_CACHE } from './types';
 import { providerChain } from './providers';
 import { parseLrc, plainTextToLyrics } from '../lrcParser';
-import { romanizeTimedLyrics } from '../romanize';
+import { romanizeTimedLyrics, needsReannotation, stripReadings } from '../romanize';
 import { normalizeTrackKey } from '../../core/syncTiming';
 
 function normalizeRaw(raw: RawLyrics): TimedLyrics | null {
@@ -46,7 +46,19 @@ export class LyricsService {
     const key = normalizeTrackKey(query.artist, query.title);
 
     const cached = await this.cache.get(key);
-    if (cached) return cached;
+    if (cached) {
+      if (needsReannotation(cached)) {
+        const reannotated = await romanizeTimedLyrics(stripReadings(cached));
+        await this.cache.put(key, reannotated, {
+          title: query.title,
+          artist: query.artist,
+          album: query.album ?? null,
+          durationMs: query.durationMs ?? null,
+        });
+        return reannotated;
+      }
+      return cached;
+    }
     if (this.cache.isNegative(key)) return null;
 
     const existing = this.inflight.get(key);
@@ -83,6 +95,11 @@ export class LyricsService {
       durationMs: query.durationMs ?? null,
     });
     return lyrics;
+  }
+
+  /** Actualiza letras ya cacheadas (p. ej. tras traducir). */
+  async updateCachedLyrics(key: string, lyrics: TimedLyrics, meta: CacheMeta): Promise<void> {
+    await this.cache.put(key, lyrics, meta);
   }
 }
 

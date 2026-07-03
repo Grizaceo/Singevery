@@ -6,6 +6,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { app } from 'electron';
 import type { RecognitionProviderMode } from './recognition/provider';
+import type { ReadingSettings, TranslationSettings } from '../../src/types';
 
 /** Almacén de offsets por pista. El StateStore depende de esta interfaz. */
 export interface OffsetStore {
@@ -38,6 +39,16 @@ export interface RecognitionProviderStore {
   set(mode: RecognitionProviderMode): void;
 }
 
+export interface TranslationStore {
+  get(): TranslationSettings;
+  set(partial: Partial<TranslationSettings>): void;
+}
+
+export interface ReadingStore {
+  get(): ReadingSettings;
+  set(partial: Partial<ReadingSettings>): void;
+}
+
 export interface WindowBounds {
   x: number;
   y: number;
@@ -55,6 +66,8 @@ export interface AppSettings {
   calibrationStore: CalibrationStore;
   displayStore: DisplayStore;
   recognitionProviderStore: RecognitionProviderStore;
+  translationStore: TranslationStore;
+  readingStore: ReadingStore;
   windowBoundsStore: WindowBoundsStore;
 }
 
@@ -66,6 +79,16 @@ export const DEFAULT_DISPLAY_SETTINGS: DisplaySettings = {
 };
 
 export const DEFAULT_RECOGNITION_PROVIDER: RecognitionProviderMode = 'auto';
+
+export const DEFAULT_TRANSLATION_SETTINGS: TranslationSettings = {
+  provider: 'deepl',
+  apiKey: '',
+  targetLang: 'es',
+};
+
+export const DEFAULT_READING_SETTINGS: ReadingSettings = {
+  pinyinToneType: 'none',
+};
 
 /** Implementación en memoria (no persiste). Útil como fallback y en tests. */
 export const NULL_OFFSET_STORE: OffsetStore = {
@@ -90,6 +113,16 @@ export const NULL_RECOGNITION_PROVIDER_STORE: RecognitionProviderStore = {
   set: () => {},
 };
 
+export const NULL_TRANSLATION_STORE: TranslationStore = {
+  get: () => ({ ...DEFAULT_TRANSLATION_SETTINGS }),
+  set: () => {},
+};
+
+export const NULL_READING_STORE: ReadingStore = {
+  get: () => ({ ...DEFAULT_READING_SETTINGS }),
+  set: () => {},
+};
+
 export const NULL_WINDOW_BOUNDS_STORE: WindowBoundsStore = {
   get: () => null,
   set: () => {},
@@ -102,6 +135,8 @@ interface SettingsShape {
   calibrationOffsetMs?: number;
   display?: Partial<DisplaySettings>;
   recognitionProvider?: RecognitionProviderMode;
+  translation?: Partial<TranslationSettings>;
+  reading?: Partial<ReadingSettings>;
   windowBounds?: WindowBounds | null;
 }
 
@@ -128,6 +163,23 @@ function normalizeDisplay(raw?: Partial<DisplaySettings>): DisplaySettings {
 function normalizeRecognitionProvider(value: unknown): RecognitionProviderMode {
   if (value === 'shazam' || value === 'audd' || value === 'auto') return value;
   return DEFAULT_RECOGNITION_PROVIDER;
+}
+
+function normalizeTranslationSettings(raw?: Partial<TranslationSettings>): TranslationSettings {
+  return {
+    provider: raw?.provider === 'google' ? 'google' : 'deepl',
+    apiKey: typeof raw?.apiKey === 'string' ? raw.apiKey : DEFAULT_TRANSLATION_SETTINGS.apiKey,
+    targetLang:
+      typeof raw?.targetLang === 'string' && raw.targetLang.trim()
+        ? raw.targetLang.trim().toLowerCase()
+        : DEFAULT_TRANSLATION_SETTINGS.targetLang,
+  };
+}
+
+function normalizeReadingSettings(raw?: Partial<ReadingSettings>): ReadingSettings {
+  return {
+    pinyinToneType: raw?.pinyinToneType === 'symbol' ? 'symbol' : 'none',
+  };
 }
 
 function normalizeWindowBounds(raw: unknown): WindowBounds | null {
@@ -161,6 +213,8 @@ export function createPersistentSettings(): AppSettings {
   let calibrationOffsetMs = DEFAULT_CALIBRATION_OFFSET_MS;
   let display = { ...DEFAULT_DISPLAY_SETTINGS };
   let recognitionProvider: RecognitionProviderMode = DEFAULT_RECOGNITION_PROVIDER;
+  let translation = { ...DEFAULT_TRANSLATION_SETTINGS };
+  let reading = { ...DEFAULT_READING_SETTINGS };
   let windowBounds: WindowBounds | null = null;
 
   try {
@@ -174,6 +228,8 @@ export function createPersistentSettings(): AppSettings {
       }
       display = normalizeDisplay(parsed.display);
       recognitionProvider = normalizeRecognitionProvider(parsed.recognitionProvider);
+      translation = normalizeTranslationSettings(parsed.translation);
+      reading = normalizeReadingSettings(parsed.reading);
       windowBounds = normalizeWindowBounds(parsed.windowBounds);
     }
   } catch (err) {
@@ -187,6 +243,8 @@ export function createPersistentSettings(): AppSettings {
         calibrationOffsetMs,
         display,
         recognitionProvider,
+        translation,
+        reading,
         windowBounds,
       };
       fs.writeFileSync(file, JSON.stringify(payload, null, 2), 'utf8');
@@ -231,6 +289,22 @@ export function createPersistentSettings(): AppSettings {
     },
   };
 
+  const translationStore: TranslationStore = {
+    get: () => ({ ...translation }),
+    set: (partial) => {
+      translation = normalizeTranslationSettings({ ...translation, ...partial });
+      persist();
+    },
+  };
+
+  const readingStore: ReadingStore = {
+    get: () => ({ ...reading }),
+    set: (partial) => {
+      reading = normalizeReadingSettings({ ...reading, ...partial });
+      persist();
+    },
+  };
+
   const windowBoundsStore: WindowBoundsStore = {
     get: () => (windowBounds ? { ...windowBounds } : null),
     set: (bounds) => {
@@ -244,6 +318,8 @@ export function createPersistentSettings(): AppSettings {
     calibrationStore,
     displayStore,
     recognitionProviderStore,
+    translationStore,
+    readingStore,
     windowBoundsStore,
   };
 }

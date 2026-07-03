@@ -8,6 +8,7 @@ import '../Teleprompter.css';
 interface Props {
   model: RenderModel;
   readingMode: ReadingMode;
+  showTranslation?: boolean;
   chromeHidden?: boolean;
   ghost?: boolean;
 }
@@ -15,6 +16,7 @@ interface Props {
 export const Teleprompter = React.memo(function Teleprompter({
   model,
   readingMode,
+  showTranslation = false,
   chromeHidden = false,
   ghost = false,
 }: Props) {
@@ -60,6 +62,7 @@ export const Teleprompter = React.memo(function Teleprompter({
                 progress={model.current_line_progress}
                 wordIndex={model.current_word_index}
                 wordProgress={model.current_word_progress}
+                showTranslation={showTranslation}
               />
             </div>
 

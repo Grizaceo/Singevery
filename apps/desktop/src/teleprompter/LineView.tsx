@@ -12,6 +12,7 @@ interface LineViewProps {
   progress?: number;
   wordIndex?: number;
   wordProgress?: number;
+  showTranslation?: boolean;
 }
 
 /** Render seguro de una línea según el modo de lectura. */
@@ -22,13 +23,27 @@ export const LineView = React.memo(function LineView({
   progress,
   wordIndex,
   wordProgress,
+  showTranslation = false,
 }: LineViewProps) {
   const hasFurigana = !!line.furigana && line.furigana.length > 0;
   const hasRomaji = !!line.romaji;
+  const hasKana = !!line.kana;
   const highlight = tier === 'current' && progress != null && progress > 0;
   const frac = progress ?? 0;
   const useWords =
     tier === 'current' && !!line.words && line.words.length > 0 && wordIndex != null;
+
+  if (mode === 'kana') {
+    const text = hasKana ? line.kana! : line.text;
+    if (!highlight) return <p className="line-main">{text}</p>;
+    const [spoken, rest] = splitAtFraction(text, frac);
+    return (
+      <p className="line-main">
+        {spoken && <span className="line-spoken">{spoken}</span>}
+        {rest}
+      </p>
+    );
+  }
 
   if (mode === 'romaji') {
     const text = hasRomaji ? line.romaji! : line.text;
@@ -44,6 +59,8 @@ export const LineView = React.memo(function LineView({
 
   const showRuby = (mode === 'furigana' || mode === 'furigana_romaji') && hasFurigana;
   const showRomajiBelow = mode === 'furigana_romaji' && hasRomaji && tier === 'current';
+  const showTranslationBelow =
+    showTranslation && tier === 'current' && !!line.translation && line.translation.trim();
 
   let mainContent: React.ReactNode;
   if (showRuby) {
@@ -107,6 +124,9 @@ export const LineView = React.memo(function LineView({
     <>
       <p className="line-main">{mainContent}</p>
       {showRomajiBelow && <p className="line-romaji">{line.romaji}</p>}
+      {showTranslationBelow && (
+        <p className="line-translation">Traducción: {line.translation}</p>
+      )}
     </>
   );
 });

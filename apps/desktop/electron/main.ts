@@ -19,11 +19,15 @@ import {
   NULL_CALIBRATION_STORE,
   NULL_DISPLAY_STORE,
   NULL_RECOGNITION_PROVIDER_STORE,
+  NULL_TRANSLATION_STORE,
+  NULL_READING_STORE,
   type AppSettings,
   type OffsetStore,
   type CalibrationStore,
   type DisplayStore,
   type RecognitionProviderStore,
+  type TranslationStore,
+  type ReadingStore,
 } from './services/settings';
 import { RecognitionService } from './services/recognition/recognitionService';
 import { FileLyricsCache } from './services/cache/lyricsCache';
@@ -473,6 +477,40 @@ function registerIpcHandlers(): void {
       return { ok: true, provider: appSettings.recognitionProviderStore.get() };
     },
   );
+
+  ipcMain.handle('settings:getTranslation', (): { ok: boolean; translation: ReturnType<TranslationStore['get']> } => {
+    const translation = appSettings?.translationStore.get() ?? NULL_TRANSLATION_STORE.get();
+    return { ok: true, translation };
+  });
+
+  ipcMain.handle(
+    'settings:setTranslation',
+    (_event, partial: Partial<ReturnType<TranslationStore['get']>>): { ok: boolean; translation: ReturnType<TranslationStore['get']> } => {
+      if (!appSettings) return { ok: false, translation: NULL_TRANSLATION_STORE.get() };
+      appSettings.translationStore.set(partial);
+      return { ok: true, translation: appSettings.translationStore.get() };
+    },
+  );
+
+  ipcMain.handle('settings:getReading', (): { ok: boolean; reading: ReturnType<ReadingStore['get']> } => {
+    const reading = appSettings?.readingStore.get() ?? NULL_READING_STORE.get();
+    return { ok: true, reading };
+  });
+
+  ipcMain.handle(
+    'settings:setReading',
+    (_event, partial: Partial<ReturnType<ReadingStore['get']>>): { ok: boolean; reading: ReturnType<ReadingStore['get']> } => {
+      if (!appSettings) return { ok: false, reading: NULL_READING_STORE.get() };
+      appSettings.readingStore.set(partial);
+      stateStore?.applyReadingSettings();
+      return { ok: true, reading: appSettings.readingStore.get() };
+    },
+  );
+
+  ipcMain.handle('lyrics:translate', async (): Promise<{ ok: boolean; error?: string }> => {
+    if (!stateStore) return { ok: false, error: 'App no inicializada' };
+    return stateStore.requestTranslation();
+  });
 }
 
 function bootstrap(): void {
@@ -512,7 +550,16 @@ function bootstrap(): void {
     lyricsService = new LyricsService();
   }
 
-  stateStore = new StateStore(mainWindow, offsetStore, lyricsService, calibrationStore, displayStore);
+  stateStore = new StateStore(
+    mainWindow,
+    offsetStore,
+    lyricsService,
+    calibrationStore,
+    displayStore,
+    appSettings?.translationStore ?? NULL_TRANSLATION_STORE,
+    appSettings?.readingStore ?? NULL_READING_STORE,
+  );
+  stateStore.applyReadingSettings();
   stateStore.start(100); // 10 Hz
   registerIpcHandlers();
   registerSingShortcut();

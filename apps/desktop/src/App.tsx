@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Teleprompter } from './teleprompter/Teleprompter';
 import { DebugLyricsInput } from './DebugLyricsInput';
 import { ChromeTopBar } from './ChromeTopBar';
@@ -7,8 +7,10 @@ import { SettingsPanel } from './SettingsPanel';
 import { Pill } from './Pill';
 import { WidgetHandle } from './WidgetHandle';
 import { useReadingMode } from './useReadingMode';
+import { useTranslationToggle } from './useTranslationToggle';
 import { useRecognition } from './useRecognition';
 import { RenderModelProvider, useRenderModel } from './renderModelContext';
+import { detectScriptFromLines } from './scriptDetect';
 import './App.css';
 
 declare global {
@@ -22,6 +24,7 @@ const CHROME_IDLE_MS = 2800;
 function AppContent() {
   const model = useRenderModel();
   const [readingMode, setReadingMode] = useReadingMode();
+  const [showTranslation, setShowTranslation, translationState] = useTranslationToggle();
   const [chromeVisible, setChromeVisible] = useState(true);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(true);
@@ -119,8 +122,17 @@ function AppContent() {
   const hasAnnotations =
     model.status === 'DISPLAYING' &&
     [...model.previous_lines, model.current_line, ...model.next_lines].some(
-      (l) => l.furigana != null || l.romaji != null,
+      (l) => l.furigana != null || l.romaji != null || l.kana != null,
     );
+
+  const scriptHint = useMemo(() => {
+    if (model.status !== 'DISPLAYING') return 'latin' as const;
+    return detectScriptFromLines([
+      ...model.previous_lines.map((l) => l.text),
+      model.current_line.text,
+      ...model.next_lines.map((l) => l.text),
+    ]);
+  }, [model]);
 
   if (collapsed) {
     return <Pill onSing={handleSing} />;
@@ -128,7 +140,13 @@ function AppContent() {
 
   return (
     <>
-      <Teleprompter model={model} readingMode={readingMode} chromeHidden={chromeHidden} ghost={ghost} />
+      <Teleprompter
+        model={model}
+        readingMode={readingMode}
+        showTranslation={showTranslation}
+        chromeHidden={chromeHidden}
+        ghost={ghost}
+      />
       <WidgetHandle
         api={window.api}
         ghost={ghost}
@@ -142,6 +160,11 @@ function AppContent() {
           readingMode={readingMode}
           onReadingModeChange={setReadingMode}
           hasAnnotations={hasAnnotations}
+          scriptHint={scriptHint}
+          showTranslation={showTranslation}
+          onTranslationChange={setShowTranslation}
+          translationLoading={translationState.loading}
+          translationError={translationState.error}
           onCollapse={handleCollapse}
           onOpenSettings={() => setSettingsOpen(true)}
         />

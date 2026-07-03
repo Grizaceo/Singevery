@@ -14,8 +14,10 @@ import {
 } from './syncTiming';
 import type { RecognitionPhase } from './syncTiming';
 import { LyricsService, defaultLyricsService } from '../services/lyrics/lyricsService';
-import { NULL_OFFSET_STORE, NULL_CALIBRATION_STORE, NULL_DISPLAY_STORE } from '../services/settings';
-import type { OffsetStore, CalibrationStore, DisplayStore } from '../services/settings';
+import { NULL_OFFSET_STORE, NULL_CALIBRATION_STORE, NULL_DISPLAY_STORE, NULL_TRANSLATION_STORE, NULL_READING_STORE } from '../services/settings';
+import type { OffsetStore, CalibrationStore, DisplayStore, TranslationStore, ReadingStore } from '../services/settings';
+import { setPinyinToneType } from '../services/romanize';
+import { translateLines } from '../services/translate';
 import type { RenderModel, Status, TimedLyrics, TrackMatch } from '../../src/types';
 
 export type { RecognitionPhase };
@@ -68,6 +70,8 @@ export class StateStore {
   private readonly offsetStore: OffsetStore;
   private readonly calibrationStore: CalibrationStore;
   private readonly displayStore: DisplayStore;
+  private readonly translationStore: TranslationStore;
+  private readonly readingStore: ReadingStore;
   private readonly lyricsService: LyricsService;
 
   constructor(
@@ -76,6 +80,8 @@ export class StateStore {
     lyricsService: LyricsService = defaultLyricsService,
     calibrationStore: CalibrationStore = NULL_CALIBRATION_STORE,
     displayStore: DisplayStore = NULL_DISPLAY_STORE,
+    translationStore: TranslationStore = NULL_TRANSLATION_STORE,
+    readingStore: ReadingStore = NULL_READING_STORE,
   ) {
     this.window = window;
     this.engine = new SyncEngine();
@@ -83,8 +89,16 @@ export class StateStore {
     this.lyricsService = lyricsService;
     this.calibrationStore = calibrationStore;
     this.displayStore = displayStore;
+    this.translationStore = translationStore;
+    this.readingStore = readingStore;
     this.calibrationOffsetMs = calibrationStore.get();
     this.applyDisplaySettings();
+    this.applyReadingSettings();
+  }
+
+  /** Sincroniza ajustes de lectura (pinyin con/sin tonos) con romanize.ts. */
+  applyReadingSettings(): void {
+    setPinyinToneType(this.readingStore.get().pinyinToneType);
   }
 
   /** Sincroniza ajustes visuales persistidos con el SyncEngine. */
@@ -116,6 +130,46 @@ export class StateStore {
     this.engine.setLyrics(lyrics);
     this.trackTitle = title;
     this.trackArtist = artist;
+  }
+
+  /** Traduce la letra actual al idioma destino y actualiza caché. */
+  async requestTranslation(): Promise<{ ok: boolean; error?: string }> {
+    const lyrics = this.engine.getLyrics();
+    if (!lyrics || !this.currentTrackKey) {
+      return { ok: false, error: 'No hay letra cargada' };
+    }
+
+    const config = this.translationStore.get();
+    const targetLang = config.targetLang;
+    const alreadyDone =
+      lyrics.translationLang === targetLang && lyrics.lines.every((l) => l.translation != null);
+    if (alreadyDone) return { ok: true };
+
+    const result = await translateLines(
+      lyrics.lines.map((l) => l.text),
+      config,
+    );
+    if (!result.ok || !result.translations) {
+      return { ok: false, error: result.error ?? 'Error de traducción' };
+    }
+
+    const updated: TimedLyrics = {
+      ...lyrics,
+      translationLang: targetLang,
+      lines: lyrics.lines.map((line, i) => ({
+        ...line,
+        translation: result.translations![i],
+      })),
+    };
+
+    this.setLyrics(updated, this.trackTitle, this.trackArtist);
+    await this.lyricsService.updateCachedLyrics(this.currentTrackKey, updated, {
+      title: this.trackTitle ?? '',
+      artist: this.trackArtist ?? '',
+      album: null,
+      durationMs: null,
+    });
+    return { ok: true };
   }
 
   /**

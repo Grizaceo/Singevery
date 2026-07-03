@@ -2,6 +2,7 @@ import { WindowControls } from './WindowControls';
 import { ReadingControls } from './ReadingControls';
 import type { ReadingMode } from './types';
 import type { DesktopApi } from './types';
+import type { ScriptHint } from './scriptDetect';
 import './ChromeBars.css';
 
 interface ChromeTopBarProps {
@@ -9,6 +10,11 @@ interface ChromeTopBarProps {
   readingMode: ReadingMode;
   onReadingModeChange: (mode: ReadingMode) => void;
   hasAnnotations: boolean;
+  scriptHint?: ScriptHint;
+  showTranslation?: boolean;
+  onTranslationChange?: (enabled: boolean) => void;
+  translationLoading?: boolean;
+  translationError?: string | null;
   onCollapse?: () => void;
   onOpenSettings: () => void;
 }
@@ -18,6 +24,11 @@ export function ChromeTopBar({
   readingMode,
   onReadingModeChange,
   hasAnnotations,
+  scriptHint,
+  showTranslation,
+  onTranslationChange,
+  translationLoading,
+  translationError,
   onCollapse,
   onOpenSettings,
 }: ChromeTopBarProps) {
@@ -27,7 +38,17 @@ export function ChromeTopBar({
         <WindowControls api={api} onCollapse={onCollapse} compact />
       </div>
       <div className="chrome-bar-group">
-        <ReadingControls mode={readingMode} onChange={onReadingModeChange} hasAnnotations={hasAnnotations} />
+        <ReadingControls
+          mode={readingMode}
+          onChange={onReadingModeChange}
+          hasAnnotations={hasAnnotations}
+          scriptHint={scriptHint}
+          showTranslation={showTranslation}
+          onTranslationChange={onTranslationChange}
+          translationLoading={translationLoading}
+          translationError={translationError}
+          onOpenSettings={onOpenSettings}
+        />
         <button
           type="button"
           className="chrome-button"

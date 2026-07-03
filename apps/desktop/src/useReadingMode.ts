@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import type { ReadingMode } from './types';
 
 const STORAGE_KEY = 'espejo.readingMode';
-const VALID: ReadingMode[] = ['original', 'furigana', 'romaji', 'furigana_romaji'];
+const VALID: ReadingMode[] = ['original', 'furigana', 'romaji', 'furigana_romaji', 'kana'];
 
 // Por defecto el modo más útil para rapear en japonés: kanji con furigana y
 // romaji debajo.
