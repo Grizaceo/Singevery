@@ -150,20 +150,6 @@ function normalizeWindowBounds(raw: unknown): WindowBounds | null {
   };
 }
 
-/** Valida que los bounds intersecten algún display (multi-monitor). */
-export function isWindowBoundsValid(
-  bounds: WindowBounds,
-  displays: Array<{ x: number; y: number; width: number; height: number }>,
-): boolean {
-  const right = bounds.x + bounds.width;
-  const bottom = bounds.y + bounds.height;
-  return displays.some((d) => {
-    const dRight = d.x + d.width;
-    const dBottom = d.y + d.height;
-    return bounds.x < dRight && right > d.x && bounds.y < dBottom && bottom > d.y;
-  });
-}
-
 /**
  * Crea los almacenes persistentes respaldados en espejo-settings.json.
  * Sincrónico: llamar tras `app.whenReady()`.

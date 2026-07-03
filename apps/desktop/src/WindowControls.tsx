@@ -20,11 +20,6 @@ export function WindowControls({ api, onCollapse, compact = false }: WindowContr
     });
   }, [api, compact]);
 
-  const handleMinimize = useCallback(async () => {
-    if (!api?.minimize) return;
-    await api.minimize();
-  }, [api]);
-
   const handleClose = useCallback(async () => {
     if (!api?.close) return;
     await api.close();
@@ -41,24 +36,6 @@ export function WindowControls({ api, onCollapse, compact = false }: WindowContr
   return (
     <div className="window-controls">
       <div className="window-controls-row">
-        <button
-          type="button"
-          className="chrome-button win-btn minimize"
-          onClick={handleMinimize}
-          title="Minimizar"
-          aria-label="Minimizar"
-        >
-          −
-        </button>
-        <button
-          type="button"
-          className="chrome-button win-btn close danger"
-          onClick={handleClose}
-          title="Cerrar"
-          aria-label="Cerrar"
-        >
-          ×
-        </button>
         {onCollapse && (
           <button
             type="button"
@@ -70,6 +47,15 @@ export function WindowControls({ api, onCollapse, compact = false }: WindowContr
             ◧
           </button>
         )}
+        <button
+          type="button"
+          className="chrome-button win-btn close danger"
+          onClick={handleClose}
+          title="Cerrar"
+          aria-label="Cerrar"
+        >
+          ×
+        </button>
         {!compact && (
           <button
             type="button"

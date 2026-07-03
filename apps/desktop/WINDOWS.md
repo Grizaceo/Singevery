@@ -58,6 +58,26 @@ npm run dev:electron
 - El **medidor de nivel** (▰▰▰▱▱) muestra si llega señal. Si está en rojo/▱▱▱▱▱:
   sube el volumen de Windows o reproduce música.
 
+## 3.5. Accesos directos del Escritorio (recomendado)
+
+Para no abrir PowerShell cada vez, hay dos lanzadores en `apps/desktop/scripts`:
+
+- **`launch.cmd`** — compila (`npm run build`) y abre la app en modo producción.
+  Acepta `--skip-build` para abrir sin recompilar.
+- **`launch-dev.cmd`** — abre en modo desarrollo (Vite + Electron, hot-reload).
+
+Ambos hacen `npm install` automáticamente si falta `node_modules`.
+
+Para crear (o regenerar) los accesos directos **Singevery** y **Singevery (dev)**
+en el Escritorio:
+
+```powershell
+cd apps\desktop
+powershell -ExecutionPolicy Bypass -File scripts\create-shortcuts.ps1
+```
+
+También existe `npm start` (equivale a compilar + abrir en producción).
+
 ## 4. Empaquetar un .exe (opcional)
 
 ```powershell

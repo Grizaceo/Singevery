@@ -24,9 +24,6 @@ export function ChromeTopBar({
   return (
     <div className="chrome-bar chrome-bar-top">
       <div className="chrome-bar-group">
-        <span className="chrome-button chrome-drag-handle" title="Arrastrar ventana" aria-label="Arrastrar">
-          ⋮⋮
-        </span>
         <WindowControls api={api} onCollapse={onCollapse} compact />
       </div>
       <div className="chrome-bar-group">

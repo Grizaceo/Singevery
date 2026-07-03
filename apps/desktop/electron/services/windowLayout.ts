@@ -47,3 +47,50 @@ export function expandedBounds(
     height,
   };
 }
+
+/** Valida que los bounds intersecten algún display (multi-monitor). */
+export function isWindowBoundsValid(
+  bounds: Rect,
+  displays: Array<{ x: number; y: number; width: number; height: number }>,
+): boolean {
+  const right = bounds.x + bounds.width;
+  const bottom = bounds.y + bounds.height;
+  return displays.some((d) => {
+    const dRight = d.x + d.width;
+    const dBottom = d.y + d.height;
+    return bounds.x < dRight && right > d.x && bounds.y < dBottom && bottom > d.y;
+  });
+}
+
+/** El centro de la ventana debe caer dentro de algún display (evita monitores apagados). */
+export function isWindowBoundsVisible(
+  bounds: Rect,
+  displays: Array<{ x: number; y: number; width: number; height: number }>,
+): boolean {
+  if (!isWindowBoundsValid(bounds, displays)) return false;
+  const cx = bounds.x + bounds.width / 2;
+  const cy = bounds.y + bounds.height / 2;
+  return displays.some((d) => {
+    const right = d.x + d.width;
+    const bottom = d.y + d.height;
+    return cx >= d.x && cx < right && cy >= d.y && cy < bottom;
+  });
+}
+
+/**
+ * Resuelve bounds iniciales: usa saved si visible; si no, centrado en workArea.
+ * En dev ignora saved (siempre monitor primario) para evitar ventanas perdidas.
+ */
+export function resolveInitialWindowBounds(
+  saved: Rect | null,
+  displays: Array<{ x: number; y: number; width: number; height: number }>,
+  primaryWorkArea: Rect,
+  defaultWidth: number,
+  defaultHeight: number,
+  devMode = false,
+): Rect {
+  if (!devMode && saved && isWindowBoundsVisible(saved, displays)) {
+    return saved;
+  }
+  return expandedBounds(primaryWorkArea, defaultWidth, defaultHeight);
+}

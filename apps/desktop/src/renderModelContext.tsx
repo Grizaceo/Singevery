@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components -- context provider + hook pattern */
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
 import { INITIAL_RENDER_MODEL } from './initialModel';
 import type { RenderModel } from './types';

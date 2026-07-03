@@ -173,10 +173,11 @@ export interface DesktopApi {
   ) => Promise<{ ok: boolean; provider: RecognitionProviderMode }>;
 
   // Window controls
-  minimize: () => Promise<{ ok: boolean }>;
   close: () => Promise<{ ok: boolean }>;
   setSize: (width: number, height: number) => Promise<{ ok: boolean }>;
   getSize: () => Promise<{ ok: boolean; width: number; height: number }>;
+  getPosition: () => Promise<{ ok: boolean; x: number; y: number }>;
+  setPosition: (x: number, y: number) => Promise<{ ok: boolean }>;
   setClickThrough: (ignore: boolean) => Promise<{ ok: boolean }>;
   setCollapsed: (collapsed: boolean) => Promise<{ ok: boolean; collapsed: boolean }>;
 }

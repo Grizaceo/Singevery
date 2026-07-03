@@ -5,6 +5,7 @@ import { ChromeTopBar } from './ChromeTopBar';
 import { ChromeBottomBar } from './ChromeBottomBar';
 import { SettingsPanel } from './SettingsPanel';
 import { Pill } from './Pill';
+import { WidgetHandle } from './WidgetHandle';
 import { useReadingMode } from './useReadingMode';
 import { useRecognition } from './useRecognition';
 import { RenderModelProvider, useRenderModel } from './renderModelContext';
@@ -24,6 +25,8 @@ function AppContent() {
   const [chromeVisible, setChromeVisible] = useState(true);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(true);
+  const [ghost, setGhost] = useState(false);
+  const [handleHovered, setHandleHovered] = useState(false);
   const hideTimerRef = useRef<number | undefined>(undefined);
   const prevTrackRef = useRef<string | undefined>(undefined);
 
@@ -56,27 +59,43 @@ function AppContent() {
   const handleCollapse = useCallback(() => {
     setCollapsed(true);
     setSettingsOpen(false);
+    setGhost(false);
   }, []);
 
   const isDisplaying = model.status === 'DISPLAYING';
 
   const reveal = useCallback(() => {
+    if (ghost) return;
     setChromeVisible(true);
     window.clearTimeout(hideTimerRef.current);
     hideTimerRef.current = window.setTimeout(() => setChromeVisible(false), CHROME_IDLE_MS);
+  }, [ghost]);
+
+  const toggleGhost = useCallback(() => {
+    setGhost((prev) => {
+      const next = !prev;
+      if (next) {
+        window.clearTimeout(hideTimerRef.current);
+        setChromeVisible(false);
+      } else {
+        setChromeVisible(true);
+        hideTimerRef.current = window.setTimeout(() => setChromeVisible(false), CHROME_IDLE_MS);
+      }
+      return next;
+    });
   }, []);
 
   useEffect(() => {
-    if (!isDisplaying) return;
+    if (!isDisplaying || ghost) return;
     hideTimerRef.current = window.setTimeout(() => setChromeVisible(false), CHROME_IDLE_MS);
     return () => {
       window.clearTimeout(hideTimerRef.current);
       setChromeVisible(true);
     };
-  }, [isDisplaying]);
+  }, [isDisplaying, ghost]);
 
   useEffect(() => {
-    if (!isDisplaying || !chromeVisible) return;
+    if (!isDisplaying || !chromeVisible || ghost) return;
     const onActivity = () => reveal();
     window.addEventListener('mousemove', onActivity);
     window.addEventListener('mousedown', onActivity);
@@ -88,13 +107,14 @@ function AppContent() {
       window.removeEventListener('wheel', onActivity);
       window.removeEventListener('keydown', onActivity);
     };
-  }, [isDisplaying, chromeVisible, reveal]);
+  }, [isDisplaying, chromeVisible, ghost, reveal]);
 
-  const chromeHidden = isDisplaying && !chromeVisible;
+  const chromeHidden = ghost || (isDisplaying && !chromeVisible);
 
   useEffect(() => {
-    window.api?.setClickThrough?.(chromeHidden && !settingsOpen);
-  }, [chromeHidden, settingsOpen]);
+    const clickThrough = !settingsOpen && (ghost ? !handleHovered : chromeHidden);
+    window.api?.setClickThrough?.(clickThrough);
+  }, [ghost, handleHovered, chromeHidden, settingsOpen]);
 
   const hasAnnotations =
     model.status === 'DISPLAYING' &&
@@ -108,22 +128,14 @@ function AppContent() {
 
   return (
     <>
-      <Teleprompter model={model} readingMode={readingMode} chromeHidden={chromeHidden} />
-      {isDisplaying && (
-        <div
-          className="intangible-handle"
-          title="Arrastra para mover · clic derecho para ver las opciones"
-          aria-label="Mover widget y mostrar controles"
-          onMouseEnter={reveal}
-          onMouseMove={reveal}
-          onContextMenu={(e) => {
-            e.preventDefault();
-            reveal();
-          }}
-        >
-          ⋮⋮
-        </div>
-      )}
+      <Teleprompter model={model} readingMode={readingMode} chromeHidden={chromeHidden} ghost={ghost} />
+      <WidgetHandle
+        api={window.api}
+        ghost={ghost}
+        onToggleGhost={toggleGhost}
+        onReveal={reveal}
+        onHoverChange={setHandleHovered}
+      />
       <div className={`app-chrome${chromeHidden ? ' chrome-hidden' : ''}`}>
         <ChromeTopBar
           api={window.api}

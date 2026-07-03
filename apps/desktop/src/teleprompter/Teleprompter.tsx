@@ -9,17 +9,20 @@ interface Props {
   model: RenderModel;
   readingMode: ReadingMode;
   chromeHidden?: boolean;
+  ghost?: boolean;
 }
 
 export const Teleprompter = React.memo(function Teleprompter({
   model,
   readingMode,
   chromeHidden = false,
+  ghost = false,
 }: Props) {
   const containerStyle: React.CSSProperties = {
     transform: model.mirror_mode ? 'scaleX(-1)' : 'none',
-    opacity: model.opacity,
+    opacity: ghost ? 0.35 : model.opacity,
     textAlign: model.alignment,
+    transition: 'opacity 0.4s ease',
   };
 
   const currentSize = `${4 * model.font_scale}rem`;

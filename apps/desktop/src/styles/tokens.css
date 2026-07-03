@@ -90,12 +90,3 @@
   flex-wrap: wrap;
 }
 
-.chrome-drag-handle {
-  letter-spacing: 3px;
-  cursor: grab;
-  -webkit-app-region: drag !important;
-}
-
-.chrome-drag-handle:active {
-  cursor: grabbing;
-}

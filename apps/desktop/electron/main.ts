@@ -19,7 +19,6 @@ import {
   NULL_CALIBRATION_STORE,
   NULL_DISPLAY_STORE,
   NULL_RECOGNITION_PROVIDER_STORE,
-  isWindowBoundsValid,
   type AppSettings,
   type OffsetStore,
   type CalibrationStore,
@@ -32,7 +31,15 @@ import { LyricsService } from './services/lyrics/lyricsService';
 import { SmtcReader } from './services/smtc/smtcReader';
 import { resolveSmtcSidecar } from './services/smtc/smtcPath';
 import { WakeWordReader } from './services/wakeword/wakeWordReader';
-import { pillBounds, expandedBounds, PILL_WIDTH, PILL_HEIGHT, type Rect } from './services/windowLayout';
+import {
+  pillBounds,
+  expandedBounds,
+  resolveInitialWindowBounds,
+  isWindowBoundsVisible,
+  PILL_WIDTH,
+  PILL_HEIGHT,
+  type Rect,
+} from './services/windowLayout';
 import type { RecognitionPhase } from './core/stateStore';
 import { setupContentSecurityPolicy } from './csp';
 
@@ -70,11 +77,29 @@ function createWindow(): BrowserWindow {
   const overlay = !windowed;
 
   const saved = appSettings?.windowBoundsStore.get() ?? null;
+  const primary = screen.getPrimaryDisplay();
   const displays = screen.getAllDisplays().map((d) => d.bounds);
-  const initialBounds =
-    saved && isWindowBoundsValid(saved, displays)
-      ? saved
-      : expandedBounds(screen.getPrimaryDisplay().workArea, EXPANDED_WIDTH, EXPANDED_HEIGHT);
+  const initialBounds = resolveInitialWindowBounds(
+    saved,
+    displays,
+    primary.workArea,
+    EXPANDED_WIDTH,
+    EXPANDED_HEIGHT,
+    isDev,
+  );
+
+  if (saved && !isWindowBoundsVisible(saved, displays)) {
+    appSettings?.windowBoundsStore.set(null);
+    if (isDev) {
+      console.warn('[main] windowBounds guardados fuera de pantalla; reseteados:', saved);
+    }
+  } else if (isDev && saved) {
+    console.log('[main] Dev: ignorando windowBounds guardados, centrando en monitor primario');
+  }
+
+  if (isDev) {
+    console.log(`[main] Ventana en x=${initialBounds.x} y=${initialBounds.y} ${initialBounds.width}x${initialBounds.height}`);
+  }
 
   const win = new BrowserWindow({
     x: initialBounds.x,
@@ -103,10 +128,20 @@ function createWindow(): BrowserWindow {
   // Clicks con -webkit-app-region: drag no llegan al renderer; el botón de
   // cierre (×) que vendrá en Fase 5 usará IPC, no problemas de captura aquí.
 
+  const showFallback = setTimeout(() => {
+    if (!win.isDestroyed() && !win.isVisible()) {
+      console.warn('[main] ready-to-show no disparó; forzando show()');
+      win.show();
+      win.focus();
+    }
+  }, 3000);
+
   win.once('ready-to-show', () => {
+    clearTimeout(showFallback);
     win.show();
     win.focus();
   });
+  win.once('closed', () => clearTimeout(showFallback));
 
   // Abrir links externos en el navegador, no dentro del widget.
   win.webContents.setWindowOpenHandler(({ url }) => {
@@ -178,11 +213,6 @@ function setupSystemAudioCapture(): void {
 
 function registerIpcHandlers(): void {
   // Window controls
-  ipcMain.handle('window:minimize', (): { ok: boolean } => {
-    mainWindow?.minimize();
-    return { ok: true };
-  });
-
   ipcMain.handle('window:close', (): { ok: boolean } => {
     mainWindow?.close();
     return { ok: true };
@@ -208,6 +238,24 @@ function registerIpcHandlers(): void {
     }
     return { ok: false, width: 0, height: 0 };
   });
+
+  ipcMain.handle('window:getPosition', (): { ok: boolean; x: number; y: number } => {
+    if (mainWindow) {
+      const [x, y] = mainWindow.getPosition();
+      return { ok: true, x, y };
+    }
+    return { ok: false, x: 0, y: 0 };
+  });
+
+  ipcMain.handle(
+    'window:setPosition',
+    (_event, x: number, y: number): { ok: boolean } => {
+      if (mainWindow) {
+        mainWindow.setPosition(Math.round(x), Math.round(y));
+      }
+      return { ok: true };
+    },
+  );
 
   // Click-through: mientras se muestra la letra, el widget puede volverse
   // "intangible" para que los clics pasen a la app de detrás (un juego, etc.).

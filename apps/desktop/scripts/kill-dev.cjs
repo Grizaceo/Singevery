@@ -1,6 +1,8 @@
 /**
  * Libera procesos de desarrollo colgados (Electron + puerto Vite 5173).
  * Uso: npm run dev:kill
+ *
+ * En Windows solo mata procesos node en el puerto (evita intentar matar svchost).
  */
 const { execSync, spawnSync } = require('child_process');
 
@@ -12,27 +14,29 @@ function log(msg) {
 }
 
 function killPortWin(port) {
+  const ps = [
+    `$p=${port}`,
+    '$conns=Get-NetTCPConnection -LocalPort $p -State Listen -ErrorAction SilentlyContinue',
+    'foreach ($c in $conns) {',
+    '  $proc=Get-Process -Id $c.OwningProcess -ErrorAction SilentlyContinue',
+    '  if ($proc -and $proc.ProcessName -eq "node") {',
+    '    Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue',
+    '    Write-Output "killed:$($proc.Id)"',
+    '  }',
+    '}',
+  ].join('; ');
+
   try {
-    const out = execSync(
-      `netstat -ano | findstr :${port} | findstr LISTENING`,
-      { encoding: 'utf8', stdio: ['pipe', 'pipe', 'ignore'] },
-    );
-    const pids = new Set();
+    const out = execSync(`powershell -NoProfile -Command "${ps}"`, {
+      encoding: 'utf8',
+      stdio: ['pipe', 'pipe', 'ignore'],
+    });
     for (const line of out.split('\n')) {
-      const parts = line.trim().split(/\s+/);
-      const pid = parts[parts.length - 1];
-      if (pid && /^\d+$/.test(pid)) pids.add(pid);
-    }
-    for (const pid of pids) {
-      try {
-        execSync(`taskkill /F /PID ${pid}`, { stdio: 'ignore' });
-        log(`[dev:kill] Puerto ${port}: proceso ${pid} terminado`);
-      } catch {
-        /* noop */
-      }
+      const m = line.trim().match(/^killed:(\d+)$/);
+      if (m) log(`[dev:kill] Puerto ${port}: node ${m[1]} terminado`);
     }
   } catch {
-    /* puerto libre */
+    /* puerto libre o sin permisos */
   }
 }
 

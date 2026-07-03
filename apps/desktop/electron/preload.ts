@@ -29,10 +29,11 @@ const api = {
   },
 
   // Window controls
-  minimize: (): Promise<{ ok: boolean }> => ipcRenderer.invoke('window:minimize'),
   close: (): Promise<{ ok: boolean }> => ipcRenderer.invoke('window:close'),
   setSize: (width: number, height: number): Promise<{ ok: boolean }> => ipcRenderer.invoke('window:setSize', width, height),
   getSize: (): Promise<{ ok: boolean; width: number; height: number }> => ipcRenderer.invoke('window:getSize'),
+  getPosition: (): Promise<{ ok: boolean; x: number; y: number }> => ipcRenderer.invoke('window:getPosition'),
+  setPosition: (x: number, y: number): Promise<{ ok: boolean }> => ipcRenderer.invoke('window:setPosition', x, y),
   setClickThrough: (ignore: boolean): Promise<{ ok: boolean }> => ipcRenderer.invoke('window:setClickThrough', ignore),
   setCollapsed: (collapsed: boolean): Promise<{ ok: boolean; collapsed: boolean }> => ipcRenderer.invoke('window:setCollapsed', collapsed),
 

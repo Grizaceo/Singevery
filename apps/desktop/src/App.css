@@ -21,10 +21,10 @@
   pointer-events: none;
 }
 
-/* Handle persistente: el único elemento tangible mientras el widget es
-   intangible (click-through). Pasar el cursor por encima reactiva la UI y
-   permite arrastrar la ventana. Siempre visible durante DISPLAYING. */
-.intangible-handle {
+/* Handle central único: siempre visible en modo expandido. Permite arrastrar
+   la ventana (drag por IPC), revelar la chrome al hover y alternar modo
+   fantasma con doble click. */
+.widget-handle {
   position: fixed;
   top: 6px;
   left: 50%;
@@ -45,17 +45,27 @@
   cursor: grab;
   opacity: 0.45;
   pointer-events: auto;
-  -webkit-app-region: drag; /* arrastra la ventana */
+  -webkit-app-region: no-drag;
+  user-select: none;
+  touch-action: none;
   transition: opacity 0.2s ease, background 0.2s ease, color 0.2s ease;
 }
 
-.intangible-handle:hover {
+.widget-handle:hover {
   opacity: 1;
   background: rgba(0, 0, 0, 0.72);
   color: #fff;
   border-color: rgba(255, 255, 255, 0.45);
 }
 
-.intangible-handle:active {
+.widget-handle:active {
   cursor: grabbing;
+}
+
+.widget-handle.ghost {
+  opacity: 0.25;
+}
+
+.widget-handle.ghost:hover {
+  opacity: 0.85;
 }
