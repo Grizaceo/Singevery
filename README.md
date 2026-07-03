@@ -19,22 +19,10 @@ Descarga el instalador de Windows desde **[GitHub Releases](https://github.com/G
 ## Demo
 
 <p align="center">
-  <video
-    src="https://github.com/Grizaceo/Singevery/releases/download/v0.1.0/demo-readme.mp4"
-    poster="docs/demo-poster.jpg"
-    controls
-    muted
-    autoplay
-    loop
-    playsinline
-    width="760">
-    <a href="https://github.com/Grizaceo/Singevery/releases/download/v0.1.0/demo-readme.mp4">
-      <img src="docs/demo-poster.jpg" alt="Demo de Singevery" width="760" />
-    </a>
-  </video>
+  <img src="docs/demo.gif" alt="Demo de Singevery — reconocimiento, letra sincronizada y modos de lectura" width="760" />
 </p>
 
-[▶ Ver video completo (HD)](https://github.com/Grizaceo/Singevery/releases/download/v0.1.0/demo.mp4)
+[▶ Ver video (MP4)](https://github.com/Grizaceo/Singevery/releases/download/v0.1.0/demo-readme.mp4) · [HD](https://github.com/Grizaceo/Singevery/releases/download/v0.1.0/demo.mp4)
 
 En la grabación:
 

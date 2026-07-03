@@ -24,7 +24,9 @@
    - `npm ci` in `apps/desktop`
    - `dotnet publish` for the SMTC sidecar
    - `npm run package` → NSIS installer
-   - Uploads `Singevery-Setup-X.Y.Z.exe` plus `docs/demo-readme.mp4` and `docs/demo.mp4` to [GitHub Releases](https://github.com/Grizaceo/Singevery/releases) (the README embeds the short demo from the release CDN).
+   - Uploads `Singevery-Setup-X.Y.Z.exe` plus `docs/demo-readme.mp4` and `docs/demo.mp4` to [GitHub Releases](https://github.com/Grizaceo/Singevery/releases) (linked from the README; the inline demo is the GIF in `docs/demo.gif`).
+
+The README embeds **`docs/demo.gif`** inline (GitHub does not play MP4 from release URLs without downloading). For a native MP4 player in the README, edit it once on github.com and drag `docs/demo-readme.mp4` into the editor — GitHub uploads it to `user-attachments` and inserts a playable URL.
 
 If you add or replace demo videos on an **existing** release without cutting a new tag, run the **Upload demo assets** workflow (`Actions → Upload demo assets → Run workflow`) or push a change under `docs/demo-readme.mp4`.
 

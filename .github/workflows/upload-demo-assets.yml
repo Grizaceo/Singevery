@@ -1,8 +1,7 @@
 name: Upload demo assets
 
-# Adjunta los MP4 de demo a la release más reciente para que el README
-# pueda embeber el video con releases/download/... (GitHub no reproduce
-# MP4 inline desde raw/main).
+# Adjunta los MP4 de demo a la release más reciente (enlaces del README).
+# GitHub no reproduce MP4 inline desde releases/download; el README usa docs/demo.gif.
 on:
   workflow_dispatch:
   push:
