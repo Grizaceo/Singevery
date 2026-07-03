@@ -4,7 +4,7 @@
 
 **Repositorio:** https://github.com/Grizaceo/Singevery
 
-Widget de escritorio transparente para **cantar con la letra sincronizada**: reconoce la canción que suena, muestra la letra con karaoke (palabra a palabra) y soporta furigana y romaji para japonés, chino y coreano.
+Widget de escritorio transparente para **cantar con la letra sincronizada**: reconoce la canción que suena, muestra la letra con karaoke (palabra a palabra) y ofrece **ayudas de lectura por idioma** (furigana, romaji, ruby, romanización) más **traducción línea a línea** opcional.
 
 App activa: **[`apps/desktop`](apps/desktop)** — Electron + React 19 + TypeScript.
 
@@ -28,7 +28,7 @@ En la grabación:
 
 1. Pill **SING** o atajo **Ctrl+Alt+S** con música sonando (Spotify / navegador).
 2. Letra sincronizada sobre el escritorio (overlay transparente + click-through).
-3. Modos de lectura (原 / ふ / A) y ajustes (⚙).
+3. Modos de lectura (原 / ふ / か / A / T) y ajustes (⚙).
 
 ## Qué hace
 
@@ -36,6 +36,46 @@ En la grabación:
 - **Sincroniza la letra** en tiempo real con resaltado karaoke y corrección de deriva.
 - **Overlay transparente** sobre el escritorio: modo pill (SING), click-through mientras cantas, arrastrable.
 - **Windows:** integración con el reproductor del SO vía SMTC (Spotify, navegador, etc.) como reloj maestro cuando está disponible.
+
+## Ayudas de lectura (cantar en idiomas que no lees)
+
+La app detecta el script del texto y genera lecturas **sin destruir la letra original**. El render `<ruby>` sirve igual para furigana japonés que para pinyin o romanización sobre cirílico.
+
+| Idioma / script | Qué genera |
+|-----------------|------------|
+| **Japonés** | Furigana (kana sobre kanji), romaji Hepburn, modo **kana** (todo en hiragana) |
+| **Coreano** | Romanización Revisada + ruby por palabra |
+| **Chino** | Pinyin por carácter + ruby (tonos opcionales en Ajustes) |
+| **Cirílico** (ruso, etc.) | Romanización latina por palabra + ruby (el “romaji” del cirílico) |
+| **Otros** | Transliteración latina + ruby por token cuando hay espacios |
+
+### Modos en el widget
+
+| Control | Función |
+|---------|---------|
+| **原 / Orig** | Texto original |
+| **ふ / Ruby** | Lectura encima (furigana, pinyin, romanización…) |
+| **か** | Solo hiragana (japonés; ideal si aún no lees kanji/katakana) |
+| **A** | Romanización latina |
+| **ふ+A / R+A** | Ruby + romanización debajo de la línea actual |
+| **T** | Traducción de la línea actual |
+| **?** | Ayuda con ejemplos por idioma (+ enlace a [Tofugu Hiragana](https://www.tofugu.com/japanese/learn-hiragana/) en japonés) |
+
+Las etiquetas se adaptan al idioma de la canción (p. ej. 原/ふ/A en japonés, Orig/Ruby/A en el resto).
+
+## Traducción
+
+Traducción **lazy por lote**: al activar **T**, se traducen todas las líneas de la canción en una sola petición y el resultado se cachea en disco.
+
+Configura en **Ajustes (⚙) → Traducción**:
+
+| Campo | Descripción |
+|-------|-------------|
+| **Proveedor** | DeepL (default) o Google Translate v2 |
+| **API key** | Tu clave del proveedor elegido |
+| **Idioma destino** | Código ISO (default `es`) |
+
+Sin API key, el toggle **T** avisa y enlaza a Ajustes. La traducción aparece bajo la línea actual (`Traducción: …`).
 
 ## Estructura del repo
 
@@ -70,7 +110,9 @@ npm run dev:kill          # Si no abre tras Ctrl+C: mata Electron + puerto 5173
    AUDD_API_TOKEN=tu_token
    ```
 
-3. Atajo global **Ctrl+Alt+S** o clic en la pill **SING** para expandir e identificar.
+3. Opcional: en **Ajustes → Traducción**, configura DeepL o Google para ver traducciones al cantar.
+
+4. Atajo global **Ctrl+Alt+S** o clic en la pill **SING** para expandir e identificar.
 
 Guía completa: [`apps/desktop/WINDOWS.md`](apps/desktop/WINDOWS.md).
 
@@ -82,12 +124,12 @@ Guía completa: [`apps/desktop/WINDOWS.md`](apps/desktop/WINDOWS.md).
 | **Shazam** | Solo cliente no oficial |
 | **AudD** | Requiere `AUDD_API_TOKEN` en `.env` |
 
-Selector en **Ajustes (⚙)** del widget.
+Selector en **Ajustes (⚙)** del widget. También ahí: opacidad, fuente, traducción (DeepL/Google) y pinyin con/sin tonos.
 
 ## Scripts útiles
 
 ```bash
-npm test              # Vitest (128+ tests)
+npm test              # Vitest (147+ tests)
 npm run build         # Build producción
 npm run package       # Instalador Windows (electron-builder)
 ```
