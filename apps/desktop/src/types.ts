@@ -120,6 +120,16 @@ export interface DisplaySettings {
   mirrorMode: boolean;
 }
 
+export interface RemoteStatus {
+  enabled: boolean;
+  running: boolean;
+  micConnected: boolean;
+  tvUrl: string;
+  micUrl: string;
+  ip: string;
+  port: number;
+}
+
 /** Estado que el main envía al renderer por IPC ~10 veces por segundo. */
 export interface RenderModel {
   previous_lines: RenderLine[];
@@ -205,6 +215,11 @@ export interface DesktopApi {
   ) => Promise<{ ok: boolean; reading: ReadingSettings }>;
 
   requestTranslation: () => Promise<{ ok: boolean; error?: string }>;
+
+  getRemoteStatus: () => Promise<{ ok: boolean } & RemoteStatus>;
+  setRemoteEnabled: (enabled: boolean) => Promise<{ ok: boolean; error?: string; status: RemoteStatus }>;
+  onRemoteStatus: (cb: (status: RemoteStatus) => void) => () => void;
+  onRemoteMicActive: (cb: () => void) => () => void;
 
   // Window controls
   close: () => Promise<{ ok: boolean }>;

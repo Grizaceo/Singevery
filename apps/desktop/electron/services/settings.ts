@@ -61,6 +61,15 @@ export interface WindowBoundsStore {
   set(bounds: WindowBounds | null): void;
 }
 
+export interface RemoteSettings {
+  enabled: boolean;
+}
+
+export interface RemoteSettingsStore {
+  get(): RemoteSettings;
+  set(partial: Partial<RemoteSettings>): void;
+}
+
 export interface AppSettings {
   offsetStore: OffsetStore;
   calibrationStore: CalibrationStore;
@@ -69,6 +78,7 @@ export interface AppSettings {
   translationStore: TranslationStore;
   readingStore: ReadingStore;
   windowBoundsStore: WindowBoundsStore;
+  remoteSettingsStore: RemoteSettingsStore;
 }
 
 export const DEFAULT_DISPLAY_SETTINGS: DisplaySettings = {
@@ -128,6 +138,15 @@ export const NULL_WINDOW_BOUNDS_STORE: WindowBoundsStore = {
   set: () => {},
 };
 
+export const DEFAULT_REMOTE_SETTINGS: RemoteSettings = {
+  enabled: false,
+};
+
+export const NULL_REMOTE_SETTINGS_STORE: RemoteSettingsStore = {
+  get: () => ({ ...DEFAULT_REMOTE_SETTINGS }),
+  set: () => {},
+};
+
 const SETTINGS_FILE = 'espejo-settings.json';
 
 interface SettingsShape {
@@ -138,6 +157,7 @@ interface SettingsShape {
   translation?: Partial<TranslationSettings>;
   reading?: Partial<ReadingSettings>;
   windowBounds?: WindowBounds | null;
+  remote?: Partial<RemoteSettings>;
 }
 
 function clampOpacity(value: number): number {
@@ -216,6 +236,7 @@ export function createPersistentSettings(): AppSettings {
   let translation = { ...DEFAULT_TRANSLATION_SETTINGS };
   let reading = { ...DEFAULT_READING_SETTINGS };
   let windowBounds: WindowBounds | null = null;
+  let remote = { ...DEFAULT_REMOTE_SETTINGS };
 
   try {
     if (fs.existsSync(file)) {
@@ -231,6 +252,7 @@ export function createPersistentSettings(): AppSettings {
       translation = normalizeTranslationSettings(parsed.translation);
       reading = normalizeReadingSettings(parsed.reading);
       windowBounds = normalizeWindowBounds(parsed.windowBounds);
+      remote = { enabled: !!parsed.remote?.enabled };
     }
   } catch (err) {
     console.error('[settings] no se pudo leer el archivo de ajustes, empezando limpio:', err);
@@ -246,6 +268,7 @@ export function createPersistentSettings(): AppSettings {
         translation,
         reading,
         windowBounds,
+        remote,
       };
       fs.writeFileSync(file, JSON.stringify(payload, null, 2), 'utf8');
     } catch (err) {
@@ -313,6 +336,14 @@ export function createPersistentSettings(): AppSettings {
     },
   };
 
+  const remoteSettingsStore: RemoteSettingsStore = {
+    get: () => ({ ...remote }),
+    set: (partial) => {
+      remote = { ...remote, ...partial };
+      persist();
+    },
+  };
+
   return {
     offsetStore,
     calibrationStore,
@@ -321,5 +352,6 @@ export function createPersistentSettings(): AppSettings {
     translationStore,
     readingStore,
     windowBoundsStore,
+    remoteSettingsStore,
   };
 }

@@ -73,6 +73,8 @@ export class StateStore {
   private readonly translationStore: TranslationStore;
   private readonly readingStore: ReadingStore;
   private readonly lyricsService: LyricsService;
+  /** Retransmisión opcional del RenderModel al servidor LAN (modo TV). */
+  private remoteBroadcast: ((model: RenderModel) => void) | null = null;
 
   constructor(
     window: BrowserWindow | null,
@@ -112,6 +114,11 @@ export class StateStore {
 
   attachWindow(window: BrowserWindow): void {
     this.window = window;
+  }
+
+  /** Enlaza retransmisión LAN del RenderModel (modo TV). null = desactivada. */
+  setRemoteBroadcast(cb: ((model: RenderModel) => void) | null): void {
+    this.remoteBroadcast = cb;
   }
 
   start(intervalMs = 100): void {
@@ -573,5 +580,6 @@ export class StateStore {
     if (this.window && !this.window.isDestroyed()) {
       this.window.webContents.send('render:model', model);
     }
+    this.remoteBroadcast?.(model);
   }
 }

@@ -86,4 +86,12 @@ describe('settings persistente (P2.8)', () => {
     const s2 = createPersistentSettings();
     expect(s2.windowBoundsStore.get()).toEqual({ x: 100, y: 80, width: 800, height: 600 });
   });
+
+  it('persiste ajuste de modo TV remoto', () => {
+    const s1 = createPersistentSettings();
+    s1.remoteSettingsStore.set({ enabled: true });
+
+    const s2 = createPersistentSettings();
+    expect(s2.remoteSettingsStore.get()).toEqual({ enabled: true });
+  });
 });

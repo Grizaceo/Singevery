@@ -48,6 +48,13 @@ function AppContent() {
   }, [handleSing]);
 
   useEffect(() => {
+    if (!window.api?.onRemoteMicActive) return;
+    return window.api.onRemoteMicActive(() => {
+      void recognition.stop();
+    });
+  }, [recognition]);
+
+  useEffect(() => {
     void window.api?.setCollapsed?.(collapsed);
   }, [collapsed]);
 

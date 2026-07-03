@@ -46,6 +46,7 @@ import {
 } from './services/windowLayout';
 import type { RecognitionPhase } from './core/stateStore';
 import { setupContentSecurityPolicy } from './csp';
+import { createRemoteServer, type RemoteServer } from './services/remote/remoteServer';
 
 const isDev = process.env.NODE_ENV === 'development' || !!process.env.VITE_DEV_SERVER_URL;
 const devServerUrl = process.env.VITE_DEV_SERVER_URL ?? 'http://localhost:5173';
@@ -65,6 +66,7 @@ let lyricsCache: FileLyricsCache | null = null;
 let smtcReader: SmtcReader | null = null;
 let wakeWordReader: WakeWordReader | null = null;
 let recognitionService: RecognitionService | null = null;
+let remoteServer: RemoteServer | null = null;
 let appSettings: AppSettings | null = null;
 /** Bounds expandidos guardados al colapsar a pill; se restauran al expandir. */
 let savedBounds: Rect | null = null;
@@ -511,6 +513,150 @@ function registerIpcHandlers(): void {
     if (!stateStore) return { ok: false, error: 'App no inicializada' };
     return stateStore.requestTranslation();
   });
+
+  ipcMain.handle('remote:getStatus', (): {
+    ok: boolean;
+    enabled: boolean;
+    running: boolean;
+    micConnected: boolean;
+    tvUrl: string;
+    micUrl: string;
+    ip: string;
+    port: number;
+  } => {
+    const enabled = appSettings?.remoteSettingsStore.get().enabled ?? false;
+    const info = remoteServer?.getInfo();
+    return {
+      ok: true,
+      enabled,
+      running: remoteServer?.isRunning() ?? false,
+      micConnected: remoteServer?.isMicConnected() ?? false,
+      tvUrl: info?.tvUrl ?? '',
+      micUrl: info?.micUrl ?? '',
+      ip: info?.ip ?? '',
+      port: info?.port ?? 5175,
+    };
+  });
+
+  ipcMain.handle(
+    'remote:setEnabled',
+    async (_event, enabled: boolean): Promise<{ ok: boolean; error?: string; status: ReturnType<typeof getRemoteStatusPayload> }> => {
+      if (!appSettings) {
+        return { ok: false, error: 'Ajustes no inicializados', status: getRemoteStatusPayload() };
+      }
+      appSettings.remoteSettingsStore.set({ enabled });
+      try {
+        await syncRemoteServer();
+        notifyRemoteStatus();
+        return { ok: true, status: getRemoteStatusPayload() };
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'No se pudo iniciar el servidor remoto';
+        appSettings.remoteSettingsStore.set({ enabled: false });
+        return { ok: false, error: message, status: getRemoteStatusPayload() };
+      }
+    },
+  );
+}
+
+function getRemoteStatusPayload(): {
+  enabled: boolean;
+  running: boolean;
+  micConnected: boolean;
+  tvUrl: string;
+  micUrl: string;
+  ip: string;
+  port: number;
+} {
+  const enabled = appSettings?.remoteSettingsStore.get().enabled ?? false;
+  const info = remoteServer?.getInfo();
+  return {
+    enabled,
+    running: remoteServer?.isRunning() ?? false,
+    micConnected: remoteServer?.isMicConnected() ?? false,
+    tvUrl: info?.tvUrl ?? '',
+    micUrl: info?.micUrl ?? '',
+    ip: info?.ip ?? '',
+    port: info?.port ?? 5175,
+  };
+}
+
+function notifyRemoteStatus(): void {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  mainWindow.webContents.send('remote:status', getRemoteStatusPayload());
+}
+
+function buildRemoteServer(): RemoteServer {
+  const staticDir = path.join(app.getAppPath(), 'dist');
+  const certDir = path.join(app.getPath('userData'), 'remote-tls');
+  const devProxyOrigin = isDev ? devServerUrl : undefined;
+
+  return createRemoteServer({
+    staticDir,
+    certDir,
+    devProxyOrigin,
+    micHandlers: {
+      onLevel: (level) => stateStore?.reportAudioLevel(level),
+      onPhase: (phase) => stateStore?.setRecognitionPhase(phase),
+      onMicConnected: (connected) => {
+        notifyRemoteStatus();
+        if (connected && mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send('remote:mic-active');
+        }
+      },
+      onIdentify: async (audio, mimeType, recordStartedAt) => {
+        if (!stateStore || !recognitionService) {
+          return { ok: false, matched: false, error: 'App no inicializada' };
+        }
+        try {
+          stateStore.setRecognitionPhase('IDENTIFYING');
+          const match = await recognitionService.identify(audio, mimeType);
+          if (!match) {
+            stateStore.setRecognitionPhase('LISTENING');
+            return { ok: true, matched: false };
+          }
+          await stateStore.applyMatch(match, recordStartedAt);
+          return { ok: true, matched: true };
+        } catch (err) {
+          stateStore.setRecognitionPhase(null);
+          const message = err instanceof Error ? err.message : 'Error desconocido';
+          return { ok: false, matched: false, error: message };
+        }
+      },
+      onCorrect: async (audio, mimeType, recordStartedAt) => {
+        if (!stateStore || !recognitionService) {
+          return { ok: false, matched: false, error: 'App no inicializada' };
+        }
+        try {
+          const match = await recognitionService.identify(audio, mimeType);
+          if (!match) return { ok: true, matched: false };
+          const changed = await stateStore.applyMatch(match, recordStartedAt);
+          return { ok: true, matched: true, changed };
+        } catch (err) {
+          const message = err instanceof Error ? err.message : 'Error desconocido';
+          return { ok: false, matched: false, error: message };
+        }
+      },
+    },
+  });
+}
+
+async function syncRemoteServer(): Promise<void> {
+  const enabled = appSettings?.remoteSettingsStore.get().enabled ?? false;
+  if (!enabled) {
+    stateStore?.setRemoteBroadcast(null);
+    remoteServer?.stop();
+    return;
+  }
+
+  if (!remoteServer) {
+    remoteServer = buildRemoteServer();
+  }
+
+  if (!remoteServer.isRunning()) {
+    await remoteServer.start();
+  }
+
+  stateStore?.setRemoteBroadcast((model) => remoteServer?.broadcastModel(model));
 }
 
 function bootstrap(): void {
@@ -577,6 +723,11 @@ function bootstrap(): void {
   const wakeExe = process.env.WAKEWORD_SIDECAR?.trim() ?? '';
   wakeWordReader = new WakeWordReader(() => triggerSing(), wakeExe);
   wakeWordReader.start();
+
+  void syncRemoteServer().then(() => notifyRemoteStatus()).catch((err) => {
+    console.error('[remote ERROR] No se pudo iniciar el servidor LAN:', err);
+    appSettings?.remoteSettingsStore.set({ enabled: false });
+  });
 }
 
 /**
@@ -665,6 +816,7 @@ if (!gotLock) {
   app.on('window-all-closed', () => {
     smtcReader?.stop();
     wakeWordReader?.stop();
+    remoteServer?.stop();
     stateStore?.stop();
     globalShortcut.unregisterAll();
     app.quit();
@@ -673,6 +825,7 @@ if (!gotLock) {
   app.on('before-quit', () => {
     smtcReader?.stop();
     wakeWordReader?.stop();
+    remoteServer?.stop();
     stateStore?.stop();
     globalShortcut.unregisterAll();
   });

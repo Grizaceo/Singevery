@@ -117,6 +117,32 @@ const api = {
 
   requestTranslation: (): Promise<{ ok: boolean; error?: string }> =>
     ipcRenderer.invoke('lyrics:translate'),
+
+  getRemoteStatus: (): Promise<{ ok: boolean } & import('../src/types').RemoteStatus> =>
+    ipcRenderer.invoke('remote:getStatus'),
+
+  setRemoteEnabled: (
+    enabled: boolean,
+  ): Promise<{ ok: boolean; error?: string; status: import('../src/types').RemoteStatus }> =>
+    ipcRenderer.invoke('remote:setEnabled', enabled),
+
+  onRemoteStatus: (cb: (status: import('../src/types').RemoteStatus) => void): (() => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, status: import('../src/types').RemoteStatus): void => {
+      cb(status);
+    };
+    ipcRenderer.on('remote:status', listener);
+    return () => {
+      ipcRenderer.removeListener('remote:status', listener);
+    };
+  },
+
+  onRemoteMicActive: (cb: () => void): (() => void) => {
+    const listener = (): void => cb();
+    ipcRenderer.on('remote:mic-active', listener);
+    return () => {
+      ipcRenderer.removeListener('remote:mic-active', listener);
+    };
+  },
 };
 
 contextBridge.exposeInMainWorld('api', api);

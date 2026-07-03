@@ -142,3 +142,5 @@ encontrado", revisa la ruta o compílalo.
 | No reconoce la canción | Señal baja (mira el medidor) o no está en la base de AudD. |
 | `[smtc] sidecar no encontrado` | No compilaste el sidecar (paso 5) o la ruta `SMTC_SIDECAR` apunta mal. |
 | Deriva o no sigue seek/skip | SMTC no está activo; sin él la app depende de AudD (más lento y con deriva). Compila el sidecar. |
+
+Ver también [REMOTE-TV.md](./REMOTE-TV.md) para pantalla en televisor TCL y micrófono del teléfono.

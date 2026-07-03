@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
+import QRCode from 'qrcode';
 import type { DisplaySettings, ReadingSettings, RecognitionProviderMode, TranslationSettings } from './types';
+import { useRemoteStatus } from './useRemoteStatus';
 import './SettingsPanel.css';
 
 interface SettingsPanelProps {
@@ -32,6 +34,10 @@ export function SettingsPanel({ open, onClose }: SettingsPanelProps) {
     targetLang: 'es',
   });
   const [reading, setReading] = useState<ReadingSettings>({ pinyinToneType: 'none' });
+  const { status: remoteStatus, setEnabled: setRemoteEnabled } = useRemoteStatus();
+  const [remoteError, setRemoteError] = useState<string | null>(null);
+  const [tvQr, setTvQr] = useState<string | null>(null);
+  const [micQr, setMicQr] = useState<string | null>(null);
 
   useEffect(() => {
     if (!open || !window.api) return;
@@ -48,6 +54,33 @@ export function SettingsPanel({ open, onClose }: SettingsPanelProps) {
       if (r.ok) setReading(r.reading);
     });
   }, [open]);
+
+  useEffect(() => {
+    if (!remoteStatus.enabled || !remoteStatus.tvUrl) {
+      setTvQr(null);
+      setMicQr(null);
+      return;
+    }
+    void QRCode.toDataURL(remoteStatus.tvUrl, { width: 160, margin: 1 }).then(setTvQr);
+    void QRCode.toDataURL(remoteStatus.micUrl, { width: 160, margin: 1 }).then(setMicQr);
+  }, [remoteStatus.enabled, remoteStatus.tvUrl, remoteStatus.micUrl]);
+
+  const toggleRemote = useCallback(
+    async (enabled: boolean) => {
+      setRemoteError(null);
+      const result = await setRemoteEnabled(enabled);
+      if (!result.ok) setRemoteError(result.error ?? 'No se pudo cambiar el modo TV');
+    },
+    [setRemoteEnabled],
+  );
+
+  const copyText = useCallback(async (text: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      /* clipboard may be unavailable */
+    }
+  }, []);
 
   const patchDisplay = useCallback(async (partial: Partial<DisplaySettings>) => {
     if (!window.api) return;
@@ -209,6 +242,50 @@ export function SettingsPanel({ open, onClose }: SettingsPanelProps) {
             />
             Mostrar tonos en pinyin (nǐ hǎo vs ni hao)
           </label>
+        </section>
+
+        <section className="settings-section">
+          <span className="settings-label">Modo TV (extensión remota)</span>
+          <p className="settings-hint">
+            Opcional: el PC sigue siendo el cerebro. Transmite letras por WiFi al televisor y permite
+            usar el teléfono como micrófono remoto.
+          </p>
+          <label className="settings-check">
+            <input
+              type="checkbox"
+              checked={remoteStatus.enabled}
+              onChange={(e) => void toggleRemote(e.target.checked)}
+            />
+            Activar servidor LAN (puerto {remoteStatus.port})
+          </label>
+          {remoteError && <p className="settings-error">{remoteError}</p>}
+          {remoteStatus.enabled && remoteStatus.running && (
+            <div className="settings-remote-urls">
+              <div className="settings-remote-block">
+                <span className="settings-label">TV — letras en pantalla grande</span>
+                <code className="settings-url">{remoteStatus.tvUrl}</code>
+                <div className="settings-row">
+                  <button type="button" className="chrome-button" onClick={() => void copyText(remoteStatus.tvUrl)}>
+                    Copiar
+                  </button>
+                </div>
+                {tvQr && <img className="settings-qr" src={tvQr} alt="QR para abrir en el televisor" />}
+              </div>
+              <div className="settings-remote-block">
+                <span className="settings-label">Teléfono — micrófono remoto</span>
+                <code className="settings-url">{remoteStatus.micUrl}</code>
+                <div className="settings-row">
+                  <button type="button" className="chrome-button" onClick={() => void copyText(remoteStatus.micUrl)}>
+                    Copiar
+                  </button>
+                </div>
+                {micQr && <img className="settings-qr" src={micQr} alt="QR para micrófono remoto" />}
+                {remoteStatus.micConnected && (
+                  <p className="settings-hint settings-hint-ok">Teléfono conectado y transmitiendo</p>
+                )}
+              </div>
+            </div>
+          )}
         </section>
 
         <section className="settings-section">
