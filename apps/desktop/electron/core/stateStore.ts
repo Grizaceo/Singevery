@@ -305,7 +305,7 @@ export class StateStore {
    * fue una corrección de la pista actual.
    */
   async applyMatch(match: TrackMatch, recordStartedAt?: number): Promise<boolean> {
-    const { title, artist } = match.track;
+    const { title, artist, album, duration_ms } = match.track;
     const matchKey = normalizeTrackKey(artist, title);
 
     const anchor =
@@ -322,7 +322,14 @@ export class StateStore {
       return false;
     }
 
-    await this.loadLyricsByMetadata(title, artist, anchor.positionMs, anchor.anchorAt);
+    await this.loadLyricsByMetadata(
+      title,
+      artist,
+      anchor.positionMs,
+      anchor.anchorAt,
+      album ?? null,
+      duration_ms ?? null,
+    );
     return true;
   }
 
@@ -559,9 +566,22 @@ export class StateStore {
   ): Promise<boolean> {
     const { album = null, durationMs = null, positionMs = 0, at = Date.now() } = options;
     const key = normalizeTrackKey(artist, title);
-    if (this.lastMatchKey === key && this.engine.getLyrics()) {
-      this.applyExternalPosition(positionMs, true, at);
-      return false;
+    if (this.lastMatchKey === key) {
+      if (this.engine.getLyrics()) {
+        this.applyExternalPosition(positionMs, true, at);
+        return false;
+      }
+      // Misma pista sin letra: ya se buscó (o se está buscando). SMTC repite
+      // el evento 'track' con frecuencia; sin este guard, cada evento
+      // relanzaba la búsqueda completa contra la red. El rescate manual
+      // (lyrics:load / lyrics:retry) no pasa por aquí y sigue funcionando.
+      if (
+        this.overrideStatus === 'NO_LYRICS' ||
+        this.overrideStatus === 'ERROR' ||
+        this.overrideStatus === 'FETCHING_LYRICS'
+      ) {
+        return false;
+      }
     }
     await this.loadLyricsByMetadata(title, artist, positionMs, at, album, durationMs);
     return true;

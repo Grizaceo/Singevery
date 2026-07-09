@@ -21,6 +21,66 @@
   pointer-events: none;
 }
 
+.lyrics-rescue-panel {
+  position: fixed;
+  left: 50%;
+  bottom: 18px;
+  z-index: 1200;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: min(760px, calc(100vw - 32px));
+  padding: 12px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 14px;
+  background: rgba(0, 0, 0, 0.72);
+  backdrop-filter: blur(14px);
+  transform: translateX(-50%);
+  text-align: left;
+}
+
+.lyrics-rescue-copy {
+  color: rgba(255, 255, 255, 0.82);
+  font-size: 0.92rem;
+}
+
+.lyrics-rescue-actions {
+  display: grid;
+  grid-template-columns: auto 1fr 1fr auto;
+  gap: 8px;
+}
+
+.lyrics-rescue-actions input,
+.lyrics-rescue-actions button {
+  min-height: 38px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  font: inherit;
+}
+
+.lyrics-rescue-actions input {
+  padding: 0 12px;
+  color: #fff;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.lyrics-rescue-actions button {
+  padding: 0 14px;
+  color: #fff;
+  background: rgba(255, 255, 255, 0.12);
+  cursor: pointer;
+}
+
+.lyrics-rescue-actions button:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.lyrics-rescue-error {
+  color: #ffb4b4;
+  font-size: 0.9rem;
+}
+
 /* Handle central único: siempre visible en modo expandido. Permite arrastrar
    la ventana (drag por IPC), revelar la chrome al hover y alternar modo
    fantasma con doble click. */

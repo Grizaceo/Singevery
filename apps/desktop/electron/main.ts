@@ -48,6 +48,7 @@ import type { RecognitionPhase } from './core/stateStore';
 import { setupContentSecurityPolicy } from './csp';
 import { createRemoteServer, type RemoteServer } from './services/remote/remoteServer';
 import { AutoContrastService } from './services/autoContrast';
+import { normalizeTrackKey } from './core/syncTiming';
 
 const isDev = process.env.NODE_ENV === 'development' || !!process.env.VITE_DEV_SERVER_URL;
 const devServerUrl = process.env.VITE_DEV_SERVER_URL ?? 'http://localhost:5173';
@@ -322,6 +323,24 @@ function registerIpcHandlers(): void {
         return { ok: false, error: 'StateStore no inicializado' };
       }
       try {
+        await stateStore.loadLyricsByMetadata(title, artist);
+        return { ok: true };
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Error desconocido';
+        return { ok: false, error: message };
+      }
+    },
+  );
+
+  ipcMain.handle(
+    'lyrics:retry',
+    async (_event, title: string, artist: string): Promise<{ ok: boolean; error?: string }> => {
+      if (!stateStore) {
+        return { ok: false, error: 'StateStore no inicializado' };
+      }
+      try {
+        const key = normalizeTrackKey(artist, title);
+        await lyricsCache?.clearEntry(key);
         await stateStore.loadLyricsByMetadata(title, artist);
         return { ok: true };
       } catch (err) {
@@ -832,6 +851,7 @@ if (!gotLock) {
     remoteServer?.stop();
     autoContrast?.dispose();
     stateStore?.stop();
+    lyricsCache?.flush(); // escribe el índice pendiente (persist debounced)
     globalShortcut.unregisterAll();
     app.quit();
   });
@@ -841,6 +861,7 @@ if (!gotLock) {
     wakeWordReader?.stop();
     remoteServer?.stop();
     stateStore?.stop();
+    lyricsCache?.flush();
     globalShortcut.unregisterAll();
   });
 }

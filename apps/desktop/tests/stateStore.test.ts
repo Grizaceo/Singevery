@@ -9,6 +9,7 @@ vi.mock('electron', () => ({
 
 import { StateStore } from '../electron/core/stateStore';
 import type { CalibrationStore } from '../electron/services/settings';
+import type { LyricsService } from '../electron/services/lyrics/lyricsService';
 
 // StateStore usa Date.now() internamente; controlamos el reloj con fake timers.
 describe('StateStore — pausa del reloj por silencio', () => {
@@ -111,5 +112,53 @@ describe('StateStore — calibración global (P2.8)', () => {
     expect(store.get()).toBe(350);
     // La letra se desplazó +50ms (adelantada).
     expect(state.getDisplayedPosition()).toBe(10_050);
+  });
+});
+
+describe('StateStore — metadata para búsqueda de letras', () => {
+  it('applyMatch propaga album y duration_ms al LyricsService', async () => {
+    const getLyrics = vi.fn(async () => null);
+    const lyricsService = { getLyrics } as unknown as LyricsService;
+    const state = new StateStore(null, undefined, lyricsService);
+
+    await state.applyMatch({
+      track: {
+        provider: 'shazam',
+        provider_track_id: 'x',
+        title: 'Tren al Sur',
+        artist: 'Los Prisioneros',
+        album: 'Corazones',
+        duration_ms: 312000,
+      },
+      confidence: 1,
+      position_ms: 0,
+      matched_at: Date.now(),
+    });
+
+    expect(getLyrics).toHaveBeenCalledWith({
+      title: 'Tren al Sur',
+      artist: 'Los Prisioneros',
+      album: 'Corazones',
+      durationMs: 312000,
+    });
+  });
+
+  it('applyExternalTrack no relanza la búsqueda para la misma pista sin letra', async () => {
+    const getLyrics = vi.fn(async () => null); // sin letra disponible
+    const lyricsService = { getLyrics } as unknown as LyricsService;
+    const state = new StateStore(null, undefined, lyricsService);
+
+    const first = await state.applyExternalTrack('Sin Letra', 'Artista X', { positionMs: 0 });
+    expect(first).toBe(true);
+    expect(getLyrics).toHaveBeenCalledTimes(1);
+
+    // SMTC repite el evento 'track' para la misma canción: no debe re-buscar.
+    const second = await state.applyExternalTrack('Sin Letra', 'Artista X', { positionMs: 5000 });
+    expect(second).toBe(false);
+    expect(getLyrics).toHaveBeenCalledTimes(1);
+
+    // Una pista DISTINTA sí dispara una búsqueda nueva.
+    await state.applyExternalTrack('Otra Cancion', 'Artista X', { positionMs: 0 });
+    expect(getLyrics).toHaveBeenCalledTimes(2);
   });
 });

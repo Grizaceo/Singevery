@@ -13,16 +13,17 @@ interface Props {
   ghost?: boolean;
 }
 
+// La prop `ghost` queda en la interfaz por compatibilidad (App la pasa), pero
+// hoy el efecto fantasma se maneja fuera del teleprompter.
 export const Teleprompter = React.memo(function Teleprompter({
   model,
   readingMode,
   showTranslation = false,
   chromeHidden = false,
-  ghost = false,
 }: Props) {
   const containerStyle: React.CSSProperties = {
     transform: model.mirror_mode ? 'scaleX(-1)' : 'none',
-    opacity: ghost ? 0.35 : model.opacity,
+    opacity: model.opacity,
     textAlign: model.alignment,
     transition: 'opacity 0.4s ease, color 0.4s ease',
     ['--lyrics-color' as string]: model.text_color ?? '#ffffff',

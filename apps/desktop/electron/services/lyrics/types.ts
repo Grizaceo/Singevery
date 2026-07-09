@@ -50,8 +50,9 @@ export interface LyricsCache {
   get(key: string): Promise<TimedLyrics | null>;
   put(key: string, lyrics: TimedLyrics, meta: CacheMeta): Promise<void>;
   /** true si la pista está en caché negativa (se sabe que no hay letra, TTL). */
-  isNegative(key: string): boolean;
-  markNotFound(key: string): Promise<void>;
+  isNegative(key: string, sourceHash?: string): boolean;
+  markNotFound(key: string, meta?: CacheMeta, sourceHash?: string): Promise<void>;
+  clearEntry?(key: string): Promise<void> | void;
 }
 
 /** Caché nula (sin persistencia): default cuando aún no se inyecta la real. */
@@ -60,4 +61,5 @@ export const NULL_LYRICS_CACHE: LyricsCache = {
   put: async () => {},
   isNegative: () => false,
   markNotFound: async () => {},
+  clearEntry: async () => {},
 };

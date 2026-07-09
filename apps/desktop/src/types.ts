@@ -175,6 +175,7 @@ export interface DesktopApi {
   onRenderModel: (cb: (model: RenderModel) => void) => () => void;
   onSingCommand: (cb: () => void) => () => void;
   loadLyrics: (title: string, artist: string) => Promise<{ ok: boolean; error?: string }>;
+  retryLyrics: (title: string, artist: string) => Promise<{ ok: boolean; error?: string }>;
   setRecognitionPhase: (phase: 'LISTENING' | 'IDENTIFYING' | null) => Promise<{ ok: boolean }>;
   identifyAudio: (
     audio: ArrayBuffer,

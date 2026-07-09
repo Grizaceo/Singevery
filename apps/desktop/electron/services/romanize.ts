@@ -48,6 +48,12 @@ async function getKuroshiro(): Promise<KuroshiroInstance> {
       await instance.init(new KuromojiAnalyzer());
       return instance;
     })();
+    // Si el init falla (p. ej. diccionario kuromoji no accesible), no dejar
+    // cacheada la promesa rechazada: el próximo intento vuelve a probar.
+    kuroshiroPromise.catch((err) => {
+      console.error('[romanize] kuroshiro no pudo inicializar:', err);
+      kuroshiroPromise = null;
+    });
   }
   return kuroshiroPromise;
 }

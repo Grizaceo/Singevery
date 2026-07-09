@@ -10,6 +10,8 @@ interface AuddResult {
   album?: string;
   timecode?: string | number | null;
   song_link?: string;
+  spotify?: { duration_ms?: number | null } | null;
+  apple_music?: { durationInMillis?: number | null } | null;
 }
 
 interface AuddResponse {
@@ -86,6 +88,7 @@ export async function identifyFromAudd(
       title: result.title,
       artist: result.artist,
       album: result.album ?? null,
+      duration_ms: result.spotify?.duration_ms ?? result.apple_music?.durationInMillis ?? null,
     },
     confidence: 1.0,
     position_ms: parseAuddTimecode(result.timecode),

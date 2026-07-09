@@ -66,12 +66,10 @@ export function SettingsPanel({ open, onClose }: SettingsPanelProps) {
     });
   }, [open]);
 
+  // Los QR solo se muestran bajo `enabled && running`, así que no hace falta
+  // resetearlos al desactivar (evita setState síncrono dentro del efecto).
   useEffect(() => {
-    if (!remoteStatus.enabled || !remoteStatus.tvUrl) {
-      setTvQr(null);
-      setMicQr(null);
-      return;
-    }
+    if (!remoteStatus.enabled || !remoteStatus.tvUrl) return;
     void QRCode.toDataURL(remoteStatus.tvUrl, { width: 160, margin: 1 }).then(setTvQr);
     void QRCode.toDataURL(remoteStatus.micUrl, { width: 160, margin: 1 }).then(setMicQr);
   }, [remoteStatus.enabled, remoteStatus.tvUrl, remoteStatus.micUrl]);

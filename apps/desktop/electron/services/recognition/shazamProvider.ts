@@ -17,6 +17,17 @@ function albumFromResponse(response: ShazamApiResponse): string | null {
   return album ?? null;
 }
 
+function durationFromResponse(response: ShazamApiResponse): number | null {
+  const songSection = response.track?.sections?.find((s) => s.type === 'SONG');
+  const length = songSection?.metadata?.find((m) => m.title === 'Length')?.text;
+  if (!length) return null;
+  const parts = length.split(':').map((part) => Number(part));
+  if (parts.some((part) => !Number.isFinite(part))) return null;
+  if (parts.length === 2) return (parts[0] * 60 + parts[1]) * 1000;
+  if (parts.length === 3) return (parts[0] * 3600 + parts[1] * 60 + parts[2]) * 1000;
+  return null;
+}
+
 /** Mapea la respuesta de Shazam al contrato interno TrackMatch. */
 export function mapShazamResponse(response: ShazamApiResponse): TrackMatch | null {
   const title = response.track?.title;
@@ -33,6 +44,7 @@ export function mapShazamResponse(response: ShazamApiResponse): TrackMatch | nul
       title,
       artist,
       album: albumFromResponse(response),
+      duration_ms: durationFromResponse(response),
     },
     confidence: 1.0,
     position_ms: parseShazamPositionMs(response),

@@ -6,6 +6,7 @@ import { ChromeBottomBar } from './ChromeBottomBar';
 import { SettingsPanel } from './SettingsPanel';
 import { Pill } from './Pill';
 import { WidgetHandle } from './WidgetHandle';
+import { LyricsRescuePanel } from './LyricsRescuePanel';
 import { useReadingMode } from './useReadingMode';
 import { useTranslationToggle } from './useTranslationToggle';
 import { useRecognition } from './useRecognition';
@@ -176,6 +177,11 @@ function AppContent() {
           onOpenSettings={() => setSettingsOpen(true)}
         />
         <ChromeBottomBar recognition={recognition} api={window.api} />
+        <LyricsRescuePanel
+          status={model.status}
+          title={model.track_title}
+          artist={model.track_artist}
+        />
         {import.meta.env.DEV && <DebugLyricsInput />}
       </div>
       <SettingsPanel open={settingsOpen} onClose={() => setSettingsOpen(false)} />

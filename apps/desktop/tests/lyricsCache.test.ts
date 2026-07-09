@@ -44,17 +44,56 @@ describe('FileLyricsCache', () => {
     c2.flush();
   });
 
+  it('reinicia la caché si cambia el schemaVersion', async () => {
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(
+      path.join(dir, 'index.json'),
+      JSON.stringify({
+        schemaVersion: 2,
+        entries: {
+          legacy: {
+            key: 'legacy',
+            title: 'Legacy',
+            artist: 'A',
+            source: 'netease',
+            synced: true,
+            hasFurigana: false,
+            hasRomaji: false,
+            hasKana: false,
+            lyricsFile: '',
+            bytes: 0,
+            firstHeardAt: 1,
+            lastHeardAt: 1,
+            playCount: 1,
+          },
+        },
+      }),
+      'utf8',
+    );
+
+    const c = new FileLyricsCache(dir);
+    expect(c.stats().entries).toBe(0);
+    expect(c.stats().negatives).toBe(0);
+  });
+
   it('markNotFound → isNegative y get null', async () => {
     const c = new FileLyricsCache(dir, { negativeTtlMs: 10_000 });
-    await c.markNotFound('nope');
-    expect(c.isNegative('nope')).toBe(true);
+    await c.markNotFound('nope', meta('Nope'), 'scope-a');
+    expect(c.isNegative('nope', 'scope-a')).toBe(true);
     expect(await c.get('nope')).toBeNull();
   });
 
   it('la caché negativa expira con el TTL', async () => {
     const c = new FileLyricsCache(dir, { negativeTtlMs: 0 });
-    await c.markNotFound('nope');
-    expect(c.isNegative('nope')).toBe(false);
+    await c.markNotFound('nope', meta('Nope'), 'scope-a');
+    expect(c.isNegative('nope', 'scope-a')).toBe(false);
+  });
+
+  it('ignora negativas viejas cuando cambia la cadena de proveedores', async () => {
+    const c = new FileLyricsCache(dir, { negativeTtlMs: 10_000 });
+    await c.markNotFound('nope', meta('Nope'), 'scope-a');
+    expect(c.isNegative('nope', 'scope-b')).toBe(false);
+    expect(c.isNegative('nope', 'scope-a')).toBe(true);
   });
 
   it('prune respeta favoritos (mayor playCount/recencia)', async () => {
@@ -97,6 +136,16 @@ describe('FileLyricsCache', () => {
     c.clear();
     expect(c.stats().entries).toBe(0);
     expect(await c.get('k1')).toBeNull();
+  });
+
+  it('clearEntry borra una sola entrada y su negativa asociada', async () => {
+    const c = new FileLyricsCache(dir);
+    await c.put('k1', lyrics('x'), meta('K1'));
+    await c.markNotFound('k2', meta('K2'), 'scope-a');
+    await c.clearEntry('k1');
+    await c.clearEntry('k2');
+    expect(await c.get('k1')).toBeNull();
+    expect(c.isNegative('k2', 'scope-a')).toBe(false);
   });
 
   it('debouncea persist en get() (no reescribe el índice en cada play)', async () => {

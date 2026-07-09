@@ -35,7 +35,8 @@ export function useRemoteStatus(): {
   }, []);
 
   useEffect(() => {
-    void refresh();
+    // Diferido a microtask: evita setState síncrono dentro del efecto.
+    void Promise.resolve().then(refresh);
     if (!window.api?.onRemoteStatus) return;
     return window.api.onRemoteStatus((next) => setStatus(next));
   }, [refresh]);

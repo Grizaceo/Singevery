@@ -20,7 +20,7 @@ import type { CacheMeta, LyricsCache } from '../lyrics/types';
 import type { TimedLyrics } from '../../../src/types';
 import { ANNOTATIONS_VERSION } from '../romanize';
 
-const SCHEMA_VERSION = 1;
+const SCHEMA_VERSION = 3;
 const INDEX_FILE = 'index.json';
 const PAYLOAD_DIR = 'lyrics';
 
@@ -43,7 +43,7 @@ export interface CacheEntry {
   lastHeardAt: number;
   playCount: number;
   /** Caché negativa: se sabe que no hay letra hasta `at + ttlMs`. */
-  notFound?: { at: number; ttlMs: number };
+  notFound?: { at: number; ttlMs: number; sourceHash?: string };
 }
 
 interface CacheIndexShape {
@@ -110,8 +110,15 @@ export class FileLyricsCache implements LyricsCache {
       fs.mkdirSync(this.baseDir, { recursive: true });
       const raw = fs.readFileSync(this.indexPath(), 'utf8');
       const parsed = JSON.parse(raw) as CacheIndexShape;
-      if (parsed && parsed.entries && typeof parsed.entries === 'object') {
+      if (
+        parsed &&
+        parsed.schemaVersion === SCHEMA_VERSION &&
+        parsed.entries &&
+        typeof parsed.entries === 'object'
+      ) {
         this.index = { schemaVersion: parsed.schemaVersion ?? SCHEMA_VERSION, entries: parsed.entries };
+      } else {
+        this.index = { schemaVersion: SCHEMA_VERSION, entries: {} };
       }
     } catch {
       // Sin índice (primer arranque) o corrupto → empezamos limpio.
@@ -195,21 +202,23 @@ export class FileLyricsCache implements LyricsCache {
     }
   }
 
-  isNegative(key: string): boolean {
+  isNegative(key: string, sourceHash?: string): boolean {
     const e = this.index.entries[key];
     if (!e || !e.notFound || e.lyricsFile) return false;
+    if (sourceHash && e.notFound.sourceHash && e.notFound.sourceHash !== sourceHash) return false;
+    if (sourceHash && !e.notFound.sourceHash) return false;
     return Date.now() - e.notFound.at < e.notFound.ttlMs;
   }
 
-  async markNotFound(key: string): Promise<void> {
+  async markNotFound(key: string, meta?: CacheMeta, sourceHash?: string): Promise<void> {
     const now = Date.now();
     const existing = this.index.entries[key];
     this.index.entries[key] = {
       key,
-      title: existing?.title ?? '',
-      artist: existing?.artist ?? '',
-      album: existing?.album ?? null,
-      durationMs: existing?.durationMs ?? null,
+      title: meta?.title ?? existing?.title ?? '',
+      artist: meta?.artist ?? existing?.artist ?? '',
+      album: meta?.album ?? existing?.album ?? null,
+      durationMs: meta?.durationMs ?? existing?.durationMs ?? null,
       source: 'none',
       synced: false,
       hasFurigana: false,
@@ -221,7 +230,7 @@ export class FileLyricsCache implements LyricsCache {
       firstHeardAt: existing?.firstHeardAt ?? now,
       lastHeardAt: now,
       playCount: existing?.playCount ?? 0,
-      notFound: { at: now, ttlMs: this.opts.negativeTtlMs },
+      notFound: { at: now, ttlMs: this.opts.negativeTtlMs, sourceHash },
     };
     this.persist();
   }
@@ -319,6 +328,20 @@ export class FileLyricsCache implements LyricsCache {
       /* noop */
     }
     this.index = { schemaVersion: SCHEMA_VERSION, entries: {} };
+    this.persist();
+  }
+
+  async clearEntry(key: string): Promise<void> {
+    const entry = this.index.entries[key];
+    if (!entry) return;
+    if (entry.lyricsFile) {
+      try {
+        fs.rmSync(this.payloadPath(entry.lyricsFile), { force: true });
+      } catch {
+        /* noop */
+      }
+    }
+    delete this.index.entries[key];
     this.persist();
   }
 }

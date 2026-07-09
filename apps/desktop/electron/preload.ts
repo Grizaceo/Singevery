@@ -39,6 +39,8 @@ const api = {
 
   loadLyrics: (title: string, artist: string): Promise<{ ok: boolean; error?: string }> =>
     ipcRenderer.invoke('lyrics:load', title, artist),
+  retryLyrics: (title: string, artist: string): Promise<{ ok: boolean; error?: string }> =>
+    ipcRenderer.invoke('lyrics:retry', title, artist),
 
   setRecognitionPhase: (phase: 'LISTENING' | 'IDENTIFYING' | null): Promise<{ ok: boolean }> =>
     ipcRenderer.invoke('recognition:setPhase', phase),
