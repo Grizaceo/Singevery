@@ -10,8 +10,8 @@
 // título/artista contra el <h1>/<h2> de la página.
 // ============================================================================
 
-import type { LyricsProvider, RawLyrics } from '../types';
-import { titleArtistSimilarity } from '../normalizeQuery';
+import type { LyricsProvider, LyricsQuery, RawLyrics } from '../types';
+import { titleArtistSimilarity, titleSimilarity } from '../normalizeQuery';
 import { appFetch } from '../../http';
 
 const BASE = 'https://www.letras.mus.br';
@@ -19,6 +19,21 @@ const USER_AGENT =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36';
 /** Similitud mínima entre lo pedido y lo que declara la página. */
 const MIN_MATCH_SCORE = 0.68;
+/** Similitud mínima de título al elegir un link del listado del artista. */
+const MIN_LINK_SCORE = 0.75;
+/** Segmentos bajo /<artista>/ que no son canciones. */
+const NON_SONG_SEGMENTS = new Set([
+  'discografia',
+  'fotos',
+  'shows',
+  'radio',
+  'ouvir',
+  'cifras',
+  'traducoes',
+  'significados',
+  'playlists',
+  'albuns',
+]);
 
 /** Slug estilo letras.mus.br: minúsculas, sin diacríticos, guiones. */
 export function letrasSlug(value: string): string {
@@ -76,6 +91,45 @@ export function parseSongPage(html: string): { plainLyrics: string | null; title
   };
 }
 
+/** Links a canciones dentro de la página del artista (server-rendered). */
+export function extractArtistSongLinks(
+  html: string,
+  artistSlug: string,
+): Array<{ href: string; label: string }> {
+  const links: Array<{ href: string; label: string }> = [];
+  const seen = new Set<string>();
+  const re = new RegExp(
+    `<a[^>]+href="((?:https?://[^"/]+)?/${artistSlug}/([^"/?#]+)/?)"[^>]*>([\\s\\S]*?)</a>`,
+    'gi',
+  );
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(html)) !== null) {
+    const href = m[1];
+    const segment = m[2];
+    if (segment.includes('.') || NON_SONG_SEGMENTS.has(segment.toLowerCase())) continue;
+    const title = /title="([^"]*)"/.exec(m[0])?.[1];
+    const label = decodeHtml(title && title.trim() ? title : m[3]);
+    if (!label || seen.has(href)) continue;
+    seen.add(href);
+    links.push({ href, label });
+  }
+  return links;
+}
+
+/** Valida la página de canción contra la query y la convierte en RawLyrics. */
+function pageToRaw(pageHtml: string, query: LyricsQuery): RawLyrics | null {
+  const parsed = parseSongPage(pageHtml);
+  if (!parsed.plainLyrics?.trim()) return null;
+
+  const score = titleArtistSimilarity(query, {
+    title: parsed.title || query.title,
+    artist: parsed.artist || query.artist,
+  });
+  if (score < MIN_MATCH_SCORE) return null;
+
+  return { source: 'letras', synced: false, plain: parsed.plainLyrics.trim() };
+}
+
 export const letrasProvider: LyricsProvider = {
   name: 'letras',
   async lookup(query, signal): Promise<RawLyrics | null> {
@@ -83,18 +137,33 @@ export const letrasProvider: LyricsProvider = {
     const titleSlug = letrasSlug(query.title);
     if (!artistSlug || !titleSlug) return null;
 
-    const pageHtml = await fetchPage(`${BASE}/${artistSlug}/${titleSlug}/`, signal);
-    if (!pageHtml) return null;
+    // 1) Slug directo /<artista>/<titulo>/ (redirige a la URL canónica).
+    const directHtml = await fetchPage(`${BASE}/${artistSlug}/${titleSlug}/`, signal);
+    if (directHtml) {
+      const direct = pageToRaw(directHtml, query);
+      if (direct) return direct;
+    }
 
-    const parsed = parseSongPage(pageHtml);
-    if (!parsed.plainLyrics?.trim()) return null;
+    // 2) Fallback: el slug adivinado falla cuando letras usa slugs no
+    //    estándar (p. ej. "pequea-serenata-diurna") o URLs numéricas sin
+    //    redirect. La página del artista SÍ es server-rendered y lista todas
+    //    sus canciones: elegir el link cuyo título calce con lo buscado.
+    const artistHtml = await fetchPage(`${BASE}/${artistSlug}/`, signal);
+    if (!artistHtml) return null;
 
-    const score = titleArtistSimilarity(query, {
-      title: parsed.title || query.title,
-      artist: parsed.artist || query.artist,
-    });
-    if (score < MIN_MATCH_SCORE) return null;
+    const links = extractArtistSongLinks(artistHtml, artistSlug);
+    let best: { href: string; score: number } | null = null;
+    for (const link of links) {
+      const score = titleSimilarity(query.title, link.label);
+      if (score >= MIN_LINK_SCORE && (!best || score > best.score)) {
+        best = { href: link.href, score };
+      }
+    }
+    if (!best) return null;
 
-    return { source: 'letras', synced: false, plain: parsed.plainLyrics.trim() };
+    const songUrl = best.href.startsWith('http') ? best.href : `${BASE}${best.href}`;
+    const songHtml = await fetchPage(songUrl, signal);
+    if (!songHtml) return null;
+    return pageToRaw(songHtml, query);
   },
 };

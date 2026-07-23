@@ -20,7 +20,9 @@ import type { CacheMeta, LyricsCache } from '../lyrics/types';
 import type { TimedLyrics } from '../../../src/types';
 import { ANNOTATIONS_VERSION } from '../romanize';
 
-const SCHEMA_VERSION = 3;
+// v4: parseLrc conserva solo el primer bloque cuando el LRC trae varias
+// letras concatenadas (original + romaji); invalida entradas intercaladas.
+const SCHEMA_VERSION = 4;
 const INDEX_FILE = 'index.json';
 const PAYLOAD_DIR = 'lyrics';
 

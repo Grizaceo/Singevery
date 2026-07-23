@@ -177,6 +177,7 @@ export interface DesktopApi {
   loadLyrics: (title: string, artist: string) => Promise<{ ok: boolean; error?: string }>;
   retryLyrics: (title: string, artist: string) => Promise<{ ok: boolean; error?: string }>;
   setRecognitionPhase: (phase: 'LISTENING' | 'IDENTIFYING' | null) => Promise<{ ok: boolean }>;
+  setRecognitionSource: (source: AudioSource | null) => Promise<{ ok: boolean }>;
   identifyAudio: (
     audio: ArrayBuffer,
     mimeType: string,

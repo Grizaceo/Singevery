@@ -358,6 +358,17 @@ function registerIpcHandlers(): void {
     },
   );
 
+  // Fuente de reconocimiento activa. En modo micrófono el audio es externo al
+  // PC (parlante de la pieza): se suprime SMTC para que el reproductor del PC
+  // no cambie la pista ni pise la letra que identifica el micrófono.
+  ipcMain.handle(
+    'recognition:setSource',
+    (_event, source: 'microphone' | 'system' | null): { ok: boolean } => {
+      stateStore?.setExternalInputSuppressed(source === 'microphone');
+      return { ok: true };
+    },
+  );
+
   ipcMain.handle(
     'recognition:identify',
     async (

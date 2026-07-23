@@ -44,6 +44,9 @@ const api = {
 
   setRecognitionPhase: (phase: 'LISTENING' | 'IDENTIFYING' | null): Promise<{ ok: boolean }> =>
     ipcRenderer.invoke('recognition:setPhase', phase),
+  setRecognitionSource: (
+    source: 'microphone' | 'system' | null,
+  ): Promise<{ ok: boolean }> => ipcRenderer.invoke('recognition:setSource', source),
 
   identifyAudio: (
     audio: ArrayBuffer,

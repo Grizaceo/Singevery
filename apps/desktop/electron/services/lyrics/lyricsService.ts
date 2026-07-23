@@ -59,11 +59,18 @@ const DEFAULT_OPTIONS: LyricsServiceOptions = {
   // 5s era muy justo: el lookup de LRCLIB puede encadenar /get + /search +
   // /search?q= y el de Musixmatch token + search + subtitle. Con 5s se
   // abortaba a mitad de camino y la canción terminaba en "ERROR".
-  requestTimeoutMs: 8000,
+  //
+  // 8s tampoco alcanzaba para el PRIMER lookup en frío: el chain tibio de
+  // LRCLIB tarda ~6s, pero el primer request (DNS + TLS + HTTP/2 sin abrir)
+  // se pasaba de 8s y se abortaba -> la cancion quedaba en NO_LYRICS y solo el
+  // re-intento del loop de correccion (ya con conexion tibia) la encontraba.
+  // 12s le da margen al arranque en frio sin que un host realmente caido
+  // queme mucho antes de caer al siguiente proveedor.
+  requestTimeoutMs: 12000,
   retryCount: 1,
   retryDelayMs: 250,
   enableMetadataHints: true,
-  totalBudgetMs: 20000,
+  totalBudgetMs: 25000,
 };
 
 /** Máximo de variantes de query a probar por proveedor. */
@@ -75,8 +82,10 @@ const MAX_VARIANTS = 4;
  * proveedores estaban rotos) dejan de aplicar y se vuelve a buscar.
  * v3: fallback por duración cuando el gate de similitud descarta todo
  * (canciones con metadata en otro alfabeto volvieron a ser encontrables).
+ * v4: letras.mus.br gana fallback por página del artista (slugs no estándar
+ * y URLs numéricas); las "no encontrada" viejas deben re-buscarse.
  */
-export const PROVIDER_SCOPE_VERSION = 3;
+export const PROVIDER_SCOPE_VERSION = 4;
 
 function isAbortError(err: unknown): boolean {
   return err instanceof Error && err.name === 'AbortError';

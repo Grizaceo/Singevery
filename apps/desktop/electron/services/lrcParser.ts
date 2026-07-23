@@ -42,10 +42,54 @@ function parseWords(lineContent: string): LyricWord[] | null {
   return words.length > 0 ? words : null;
 }
 
+/** Retroceso de timestamp (vs el máximo visto) que se interpreta como
+ *  reinicio de timeline — un bloque nuevo de letra — y no desorden menor. */
+const BLOCK_RESTART_DROP_MS = 60_000;
+
+/** Línea cruda parseada: su timestamp mínimo (para detectar reinicios de
+ *  timeline en orden de archivo) y las entradas que expande (multi-tag). */
+interface RawParsedLine {
+  minTs: number;
+  entries: LyricLine[];
+}
+
+/**
+ * Algunas fuentes (p. ej. LRCLIB con canciones JP/KO/ZH) empaquetan DOS o más
+ * letras completas en el MISMO LRC — la original y su romanización — una tras
+ * otra, cada una arrancando de nuevo cerca de 00:00. El sort final las
+ * intercalaría línea a línea (cada verso dos veces, el resaltado saltando
+ * entre alfabetos y "perdiéndose" a mitad de canción). Se detecta el reinicio
+ * (retroceso brusco del timestamp en orden de archivo) y se conserva el primer
+ * bloque sustancial (el original; la romanización local ya la agrega el app).
+ */
+function selectPrimaryBlock(rawLines: RawParsedLine[]): RawParsedLine[] {
+  const blocks: RawParsedLine[][] = [];
+  let current: RawParsedLine[] = [];
+  let maxMin = Number.NEGATIVE_INFINITY;
+  for (const line of rawLines) {
+    if (current.length > 0 && line.minTs < maxMin - BLOCK_RESTART_DROP_MS) {
+      blocks.push(current);
+      current = [];
+      maxMin = Number.NEGATIVE_INFINITY;
+    }
+    current.push(line);
+    maxMin = Math.max(maxMin, line.minTs);
+  }
+  if (current.length > 0) blocks.push(current);
+  if (blocks.length <= 1) return rawLines;
+
+  // Primer bloque con al menos la mitad de líneas que el mayor: evita elegir
+  // un fragmento residual, pero prefiere el bloque original sobre su copia.
+  const biggest = Math.max(...blocks.map((block) => block.length));
+  return blocks.find((block) => block.length >= biggest * 0.5) ?? blocks[0];
+}
+
 /** Parsea LRC sincronizado a líneas con start_ms. Ignora tags de metadatos.
- *  Soporta Enhanced LRC (A2): marcadores inline `<mm:ss.xx>` → words[]. */
+ *  Soporta Enhanced LRC (A2): marcadores inline `<mm:ss.xx>` → words[].
+ *  Si el LRC trae varias letras concatenadas (original + romaji), conserva
+ *  solo el primer bloque (ver selectPrimaryBlock). */
 export function parseLrc(lrc: string): LyricLine[] {
-  const lines: LyricLine[] = [];
+  const rawLines: RawParsedLine[] = [];
 
   for (const rawLine of lrc.split(/\r?\n/)) {
     const line = rawLine.trim();
@@ -67,19 +111,24 @@ export function parseLrc(lrc: string): LyricLine[] {
     if (timestamps.length === 0) {
       // Línea con solo marcadores de palabra (sin `[..]`): usa la 1ª palabra.
       if (words && words.length > 0) {
-        lines.push({ start_ms: words[0].start_ms, text, words });
+        rawLines.push({
+          minTs: words[0].start_ms,
+          entries: [{ start_ms: words[0].start_ms, text, words }],
+        });
       }
       continue;
     }
     if (!text && !words) continue;
 
-    for (const start_ms of timestamps) {
+    const entries: LyricLine[] = timestamps.map((start_ms) => {
       const entry: LyricLine = { start_ms, text };
       if (words) entry.words = words;
-      lines.push(entry);
-    }
+      return entry;
+    });
+    rawLines.push({ minTs: Math.min(...timestamps), entries });
   }
 
+  const lines = selectPrimaryBlock(rawLines).flatMap((raw) => raw.entries);
   lines.sort((a, b) => a.start_ms - b.start_ms);
   return lines;
 }

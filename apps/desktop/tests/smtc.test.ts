@@ -131,4 +131,26 @@ describe('StateStore — fuente externa (SMTC)', () => {
     const changed = await s.applyExternalTrack('Other', 'Band', { positionMs: 0, at: 0 });
     expect(changed).toBe(true);
   });
+
+  it('setExternalInputSuppressed: en modo micrófono SMTC no toca el estado', async () => {
+    const svc = new LyricsService(undefined, [fakeProvider]);
+    const s = new StateStore(null, undefined, svc);
+    await s.loadLyricsByMetadata('Song', 'Artist');
+    s.nudgePosition(30_000);
+
+    // Micrófono maneja audio externo: SMTC queda suprimido.
+    s.setExternalInputSuppressed(true);
+
+    // Un 'track' de otra canción del PC no debe cambiar ni recargar la letra.
+    const changed = await s.applyExternalTrack('Other', 'Band', { positionMs: 0, at: 0 });
+    expect(changed).toBe(false);
+    // La posición mostrada no se movió por SMTC (ni track ni position).
+    s.applyExternalPosition(999, true, 0);
+    expect(s.getDisplayedPosition(0)).toBe(30_000);
+
+    // Al rehabilitar, SMTC vuelve a mandar.
+    s.setExternalInputSuppressed(false);
+    const changedAfter = await s.applyExternalTrack('Other', 'Band', { positionMs: 0, at: 0 });
+    expect(changedAfter).toBe(true);
+  });
 });

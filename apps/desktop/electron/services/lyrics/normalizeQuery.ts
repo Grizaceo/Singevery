@@ -84,6 +84,13 @@ function exactishMatch(expected: string, actual: string): boolean {
   return left.length > 0 && left === right;
 }
 
+/** Similitud SOLO de título (0..1): igualdad normalizada o solape de tokens.
+ *  Para elegir la canción correcta dentro del listado de un artista. */
+export function titleSimilarity(expected: string, actual: string): number {
+  if (exactishMatch(expected, actual)) return 1;
+  return overlapRatio(expected, actual);
+}
+
 export function titleArtistSimilarity(
   query: Pick<LyricsQuery, 'title' | 'artist'>,
   candidate: { title?: string | null; artist?: string | null },

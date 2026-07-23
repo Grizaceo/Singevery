@@ -44,6 +44,8 @@ export function useRecognition(): RecognitionState {
     setHint(null);
     setError(null);
     setLevel(0);
+    // Al parar, rehabilita la fuente externa (SMTC) por si el PC reproduce.
+    await window.api?.setRecognitionSource(null);
     await window.api?.stopRecognition();
   }, []);
 
@@ -66,6 +68,9 @@ export function useRecognition(): RecognitionState {
           : 'Capturando audio del sistema…',
       );
       await window.api.setRecognitionPhase('LISTENING');
+      // Modo micrófono = audio externo al PC: suprime SMTC para que el
+      // reproductor del PC no pise la letra que identifica el micrófono.
+      await window.api.setRecognitionSource(source);
 
       if (source === 'system') {
         systemSessionRef.current = new SystemAudioSession();

@@ -1,7 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { musixmatchProvider } from '../electron/services/lyrics/providers/musixmatch';
 import { neteaseProvider } from '../electron/services/lyrics/providers/netease';
-import { letrasProvider, letrasSlug } from '../electron/services/lyrics/providers/letras';
+import {
+  extractArtistSongLinks,
+  letrasProvider,
+  letrasSlug,
+} from '../electron/services/lyrics/providers/letras';
 
 describe('lyrics providers', () => {
   afterEach(() => vi.unstubAllGlobals());
@@ -247,6 +251,85 @@ describe('lyrics providers', () => {
     }));
     vi.stubGlobal('fetch', fetchMock);
     const raw = await letrasProvider.lookup({ title: 'Tren al Sur', artist: 'Los Prisioneros' });
+    expect(raw).toBeNull();
+  });
+
+  // Formato real de la página de artista de letras.mus.br (server-rendered).
+  const ARTIST_PAGE = `
+    <a href="/los-bunkers/mais_acessadas.html">Mais tocadas</a>
+    <a href="/los-bunkers/discografia/">Discografia</a>
+    <a href="https://www.letras.mus.br/los-bunkers/399753/" title="Llueve Sobre La Ciudad">Llueve Sobre La Ciudad</a>
+    <a href="https://www.letras.mus.br/los-bunkers/pequea-serenata-diurna/" title="Pequeña Serenata Diurna">Pequeña Serenata Diurna</a>
+    <a href="/otra-banda/123/" title="De otro artista">De otro artista</a>`;
+
+  it('letras extrae solo links de canciones del artista (filtra .html y secciones)', () => {
+    const links = extractArtistSongLinks(ARTIST_PAGE, 'los-bunkers');
+    expect(links).toEqual([
+      {
+        href: 'https://www.letras.mus.br/los-bunkers/399753/',
+        label: 'Llueve Sobre La Ciudad',
+      },
+      {
+        href: 'https://www.letras.mus.br/los-bunkers/pequea-serenata-diurna/',
+        label: 'Pequeña Serenata Diurna',
+      },
+    ]);
+  });
+
+  it('letras fallback: slug directo 404 → página del artista → canción con slug no estándar', async () => {
+    const fetchMock = vi.fn(async (url: string) => {
+      // El slug adivinado (pequena-...) no existe; el real del sitio es pequea-...
+      if (url === 'https://www.letras.mus.br/los-bunkers/pequena-serenata-diurna/') {
+        return { ok: false, status: 404, text: async () => '' };
+      }
+      if (url === 'https://www.letras.mus.br/los-bunkers/') {
+        return { ok: true, status: 200, text: async () => ARTIST_PAGE };
+      }
+      if (url === 'https://www.letras.mus.br/los-bunkers/pequea-serenata-diurna/') {
+        return {
+          ok: true,
+          status: 200,
+          text: async () =>
+            '<h1>Pequeña Serenata Diurna</h1><h2><a href="/los-bunkers/">Los Bunkers</a></h2><div class="lyric-original">Vivo en un país libre<br>Cual solamente puede ser libre</div>',
+        };
+      }
+      return { ok: false, status: 404, text: async () => '' };
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const raw = await letrasProvider.lookup({
+      title: 'Pequeña Serenata Diurna',
+      artist: 'Los Bunkers',
+    });
+    expect(raw).toEqual({
+      source: 'letras',
+      synced: false,
+      plain: 'Vivo en un país libre\nCual solamente puede ser libre',
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
+  it('letras fallback: sin link que calce en la página del artista → null', async () => {
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url === 'https://www.letras.mus.br/los-bunkers/') {
+        return { ok: true, status: 200, text: async () => ARTIST_PAGE };
+      }
+      return { ok: false, status: 404, text: async () => '' };
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const raw = await letrasProvider.lookup({ title: 'Cancion Inventada', artist: 'Los Bunkers' });
+    expect(raw).toBeNull();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('letras fallback: artista inexistente (404) → null sin lanzar', async () => {
+    const fetchMock = vi.fn(async () => ({ ok: false, status: 404, text: async () => '' }));
+    vi.stubGlobal('fetch', fetchMock);
+    const raw = await letrasProvider.lookup({
+      title: 'Gracias a la Vida',
+      artist: 'Violeta Parra',
+    });
     expect(raw).toBeNull();
   });
 });

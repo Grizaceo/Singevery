@@ -55,6 +55,22 @@ export class StateStore {
   private lastMatchKey: string | null = null;
   private currentTrackKey: string | null = null;
 
+  // Histéresis de cambio de canción. El loop de corrección re-identifica con el
+  // micrófono cada ~18s; una mis-identificación puntual (ruido, versión/remaster
+  // con título que normaliza distinto) NO debe arrancar la letra que ya se está
+  // mostrando. Sólo cambiamos cuando la MISMA pista nueva se confirma en varios
+  // ciclos consecutivos.
+  private readonly CHANGE_CONFIRM_COUNT = 2;
+  private pendingChangeKey: string | null = null;
+  private pendingChangeCount = 0;
+
+  // Fuente externa suprimida. Cuando el micrófono maneja audio EXTERNO al PC
+  // (parlante de la pieza, teléfono), las sesiones de medios de Windows (SMTC)
+  // son irrelevantes y no deben cambiar la pista, la posición ni el play/pausa:
+  // pisarían la letra que identificó el micrófono. El renderer lo activa al
+  // iniciar reconocimiento por micrófono y lo apaga al parar / cambiar a system.
+  private externalInputSuppressed = false;
+
   /** Base de posición SIN offset crónico ni corrección: el "crudo" anclado. */
   private positionMs = 0;
   private anchoredAt = Date.now();
@@ -315,10 +331,21 @@ export class StateStore {
 
     if (this.lastMatchKey === matchKey && this.engine.getLyrics()) {
       // Misma canción: reconciliar deriva sin recargar ni tapar la letra.
+      // Confirmar la pista actual descarta cualquier cambio pendiente.
+      this.pendingChangeKey = null;
+      this.pendingChangeCount = 0;
       this.applyCorrection(anchor);
       if (this.overrideStatus === 'LISTENING' || this.overrideStatus === 'IDENTIFYING') {
         this.overrideStatus = null;
       }
+      return false;
+    }
+
+    // Histéresis compartida (mic + SMTC): un cambio de pista no se aplica al
+    // primer indicio; una mis-identificación puntual no debe arrancar la letra.
+    if (!this.confirmTrackChange(matchKey)) {
+      // Aún no confirmado: mantener la letra actual intacta (no tocar la
+      // posición: el anchor es de otra pista y desincronizaría la de ahora).
       return false;
     }
 
@@ -331,6 +358,37 @@ export class StateStore {
       duration_ms ?? null,
     );
     return true;
+  }
+
+  /**
+   * Histéresis de cambio de pista para el micrófono/AudD (applyMatch): el loop
+   * de corrección re-identifica cada ~18s, así que exigir varios ciclos filtra
+   * una mis-identificación puntual. (SMTC NO la usa: sus eventos 'track' son
+   * únicos por cambio real, exigir 2 lo dejaría clavado en una canción.)
+   * Devuelve true si el cambio a `matchKey` está CONFIRMADO (recargar la letra);
+   * false si todavía no (mantener la actual).
+   * Si no hay letra mostrándose cambia de inmediato (identificación inicial o
+   * pista sin letra: no hay nada que proteger). Requiere ver la MISMA pista
+   * nueva CHANGE_CONFIRM_COUNT ciclos seguidos antes de confirmar.
+   */
+  private confirmTrackChange(matchKey: string): boolean {
+    if (!this.engine.getLyrics()) {
+      this.pendingChangeKey = null;
+      this.pendingChangeCount = 0;
+      return true;
+    }
+    if (this.pendingChangeKey === matchKey) {
+      this.pendingChangeCount += 1;
+    } else {
+      this.pendingChangeKey = matchKey;
+      this.pendingChangeCount = 1;
+    }
+    if (this.pendingChangeCount >= this.CHANGE_CONFIRM_COUNT) {
+      this.pendingChangeKey = null;
+      this.pendingChangeCount = 0;
+      return true;
+    }
+    return false;
   }
 
   /**
@@ -516,8 +574,18 @@ export class StateStore {
   // AudD queda como fallback cuando no hay reproductor accesible.
   // ==========================================================================
 
+  /**
+   * Suprime (o rehabilita) la fuente externa SMTC. En modo micrófono con audio
+   * externo al PC, `true` hace que applyExternalTrack/Position/setPlaybackState
+   * sean no-op para que el reproductor del PC no pise la letra del micrófono.
+   */
+  setExternalInputSuppressed(suppressed: boolean): void {
+    this.externalInputSuppressed = suppressed;
+  }
+
   /** Pausa/reanuda el reloj según el estado de reproducción del SO. */
   setPlaybackState(playing: boolean, at: number = Date.now()): void {
+    if (this.externalInputSuppressed) return;
     if (playing) this.resumeClock(at);
     else this.pauseClock(at);
   }
@@ -532,6 +600,7 @@ export class StateStore {
    *     reanchor duro, para que la letra no tiemble.
    */
   applyExternalPosition(positionMs: number, playing: boolean, at: number = Date.now()): void {
+    if (this.externalInputSuppressed) return;
     if (!playing) {
       this.pauseClock(at);
       return;
@@ -564,6 +633,8 @@ export class StateStore {
       at?: number;
     } = {},
   ): Promise<boolean> {
+    // Micrófono manejando audio externo: el reproductor del PC no manda.
+    if (this.externalInputSuppressed) return false;
     const { album = null, durationMs = null, positionMs = 0, at = Date.now() } = options;
     const key = normalizeTrackKey(artist, title);
     if (this.lastMatchKey === key) {
@@ -583,6 +654,10 @@ export class StateStore {
         return false;
       }
     }
+    // SMTC no lleva histéresis por conteo: el sidecar emite 'track' una sola
+    // vez por cambio real (evento del SO, autoritativo). Exigir 2 eventos haría
+    // que nunca cambiara de canción. En modo micrófono SMTC va suprimido; el
+    // parpadeo espurio entre sesiones del PC es raro y se corrige al instante.
     await this.loadLyricsByMetadata(title, artist, positionMs, at, album, durationMs);
     return true;
   }

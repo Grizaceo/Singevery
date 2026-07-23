@@ -73,6 +73,51 @@ describe('parseLrc', () => {
     expect(line.start_ms).toBe(5_000);
     expect(line.words).toEqual([{ start_ms: 5_000, text: 'only words' }]);
   });
+
+  // LRCLIB a veces empaqueta la letra original Y su romanización en el mismo
+  // LRC, cada bloque arrancando de nuevo en ~00:00 (visto en canciones JP).
+  // Sin manejo, el sort las intercala línea a línea.
+  it('doble bloque (original + romaji): conserva solo el primer bloque', () => {
+    const lrc = `[00:01.00]無敵の笑顔で荒らすメディア
+[01:10.00]知りたいその秘密ミステリアス
+[03:20.00]愛してる
+[00:01.00]Muteki no egao de arasu media
+[01:10.00]Shiritai sono himitsu misuteriasu
+[03:20.00]Aishiteru`;
+    const lines = parseLrc(lrc);
+    expect(lines.map((l) => l.text)).toEqual([
+      '無敵の笑顔で荒らすメディア',
+      '知りたいその秘密ミステリアス',
+      '愛してる',
+    ]);
+  });
+
+  it('doble bloque: un primer bloque residual no gana al bloque real', () => {
+    const lrc = `[03:50.00]outro suelto
+[00:01.00]Line one
+[00:05.00]Line two
+[00:09.00]Line three
+[01:00.00]Line four`;
+    const lines = parseLrc(lrc);
+    expect(lines.map((l) => l.text)).toEqual(['Line one', 'Line two', 'Line three', 'Line four']);
+  });
+
+  it('multi-tag de coro no dispara la detección de bloques', () => {
+    const lrc = `[00:10.00][02:00.00]Coro repetido
+[00:12.00]Verso uno
+[00:20.00]Verso dos
+[02:10.00]Final`;
+    const lines = parseLrc(lrc);
+    expect(lines.map((l) => l.start_ms)).toEqual([10_000, 12_000, 20_000, 120_000, 130_000]);
+  });
+
+  it('retroceso menor (desorden) no parte bloques: solo reordena', () => {
+    const lrc = `[00:30.00]Later
+[00:05.00]Earlier
+[00:40.00]Last`;
+    const lines = parseLrc(lrc);
+    expect(lines.map((l) => l.text)).toEqual(['Earlier', 'Later', 'Last']);
+  });
 });
 
 describe('plainTextToLyrics', () => {
