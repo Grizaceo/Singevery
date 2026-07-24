@@ -2,7 +2,7 @@ import React from 'react';
 import type { ReadingMode, RenderModel } from '../types';
 import { LineView } from './LineView';
 import { TrackHeader } from './TrackHeader';
-import { splitPreviousTiers, splitNextTiers } from './teleprompterHelpers';
+import { splitPreviousTiers, splitNextTiers, tierSizes } from './teleprompterHelpers';
 import '../Teleprompter.css';
 
 interface Props {
@@ -31,9 +31,8 @@ export const Teleprompter = React.memo(function Teleprompter({
 
   const vignetteClass = model.text_vignette_light ? ' vignette-light' : '';
 
-  const currentSize = `${4 * model.font_scale}rem`;
-  const adjacentSize = `${2.1 * model.font_scale}rem`;
-  const farSize = `${1.35 * model.font_scale}rem`;
+  const fastPace = Boolean(model.fast_pace);
+  const sizes = tierSizes(model.font_scale, fastPace);
 
   const isIdle = model.status === 'IDLE';
   const prevTiers = splitPreviousTiers(model.previous_lines);
@@ -46,19 +45,19 @@ export const Teleprompter = React.memo(function Teleprompter({
       {!isIdle && (
         <div className="lyrics-panel">
           <div className="lyrics-display">
-            <div className="lyrics-far" style={{ fontSize: farSize }}>
+            <div className="lyrics-far" style={{ fontSize: sizes.far }}>
               {prevTiers.far.map((line, i) => (
                 <LineView key={`prev-far-${i}`} line={line} mode={readingMode} tier="far" />
               ))}
             </div>
 
-            <div className="lyrics-adjacent" style={{ fontSize: adjacentSize }}>
+            <div className="lyrics-adjacent" style={{ fontSize: sizes.prevAdjacent }}>
               {prevTiers.adjacent.map((line, i) => (
                 <LineView key={`prev-adj-${i}`} line={line} mode={readingMode} tier="adjacent" />
               ))}
             </div>
 
-            <div className="lyrics-current" style={{ fontSize: currentSize }}>
+            <div className="lyrics-current" style={{ fontSize: sizes.current }}>
               <LineView
                 line={model.current_line}
                 mode={readingMode}
@@ -70,13 +69,16 @@ export const Teleprompter = React.memo(function Teleprompter({
               />
             </div>
 
-            <div className="lyrics-adjacent" style={{ fontSize: adjacentSize }}>
+            <div
+              className={`lyrics-adjacent${fastPace ? ' lyrics-next-fast' : ''}`}
+              style={{ fontSize: sizes.nextAdjacent }}
+            >
               {nextTiers.adjacent.map((line, i) => (
                 <LineView key={`next-adj-${i}`} line={line} mode={readingMode} tier="adjacent" />
               ))}
             </div>
 
-            <div className="lyrics-far" style={{ fontSize: farSize }}>
+            <div className="lyrics-far" style={{ fontSize: sizes.far }}>
               {nextTiers.far.map((line, i) => (
                 <LineView key={`next-far-${i}`} line={line} mode={readingMode} tier="far" />
               ))}

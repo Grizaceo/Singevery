@@ -165,6 +165,12 @@ export interface RenderModel {
   current_word_index?: number;
   /** Avance 0..1 dentro de la palabra activa (A2). */
   current_word_progress?: number;
+  /**
+   * true = sección densa (rap / líneas muy seguidas): el motor está
+   * adelantando el highlight y el teleprompter realza la línea siguiente
+   * para que se pueda leer con anticipación.
+   */
+  fast_pace?: boolean;
 }
 
 /** Fuente de audio para reconocimiento. */

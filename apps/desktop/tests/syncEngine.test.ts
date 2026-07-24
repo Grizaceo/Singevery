@@ -5,7 +5,7 @@
 // ============================================================================
 
 import { describe, it, expect, beforeEach } from 'vitest';
-import { SyncEngine } from '../electron/core/syncEngine';
+import { SyncEngine, computeLocalGapMs, targetLeadMs } from '../electron/core/syncEngine';
 import type { TimedLyrics } from '../src/types';
 
 describe('SyncEngine', () => {
@@ -76,12 +76,20 @@ describe('SyncEngine', () => {
   });
 
   it('progreso 0 al inicio de la línea y ~1 justo antes del final', () => {
+    // Sondas EN FRÍO (engine fresco por llamada): sampleLyrics tiene gaps de
+    // 1s (densa) y llamadas secuenciales activarían la anticipación
+    // adaptativa, que aquí no es lo que se prueba.
+    const probe = (positionMs: number) => {
+      const e = new SyncEngine();
+      e.setLyrics(sampleLyrics);
+      return e.getRenderModel(positionMs).current_line_progress;
+    };
     // A los 1000 empieza la línea 2 → progreso 0.
-    expect(engine.getRenderModel(1000).current_line_progress).toBe(0);
+    expect(probe(1000)).toBe(0);
     // A los 1999 la línea 2 (1000–2000) está a punto de terminar → ~1.
-    expect(engine.getRenderModel(1999).current_line_progress).toBeCloseTo(0.999, 2);
+    expect(probe(1999)).toBeCloseTo(0.999, 2);
     // A los 2000 cae en la línea 3 → progreso 0 de esa línea.
-    expect(engine.getRenderModel(2000).current_line_progress).toBe(0);
+    expect(probe(2000)).toBe(0);
   });
 
   it('sin end_ms estima el progreso con la siguiente línea', () => {
@@ -151,5 +159,107 @@ describe('SyncEngine — modo palabra (A2)', () => {
     const e = new SyncEngine();
     e.setLyrics(a2Lyrics);
     expect(e.getRenderModel(10_100).current_line.words).toEqual(a2Lyrics.lines[0].words);
+  });
+});
+
+// ============================================================================
+// Anticipación adaptativa (secciones densas / rap): el motor adelanta el
+// highlight según la densidad local para que la línea se pueda leer antes
+// de que toque cantarla (caso "Enemy" — verso de JID).
+// ============================================================================
+describe('SyncEngine anticipación adaptativa', () => {
+  const makeLyrics = (gapMs: number, count = 30): TimedLyrics => ({
+    source: 'Test',
+    synced: true,
+    lines: Array.from({ length: count }, (_, i) => ({
+      start_ms: i * gapMs,
+      text: `L${i}`,
+    })),
+  });
+
+  /** Simula reproducción continua: ticks de 100ms desde 0 hasta `upToMs`. */
+  const warm = (e: SyncEngine, upToMs: number) => {
+    for (let p = 0; p <= upToMs; p += 100) e.getRenderModel(p);
+  };
+
+  it('targetLeadMs mapea gap → lead con tope de fracción del gap', () => {
+    expect(targetLeadMs(null)).toBe(0);
+    expect(targetLeadMs(3000)).toBe(0); // lento
+    expect(targetLeadMs(2000)).toBe(300); // rampa lineal
+    expect(targetLeadMs(1000)).toBe(450); // 600 capado a 0.45 * gap
+    expect(targetLeadMs(500)).toBe(225); // cap domina en gaps mínimos
+  });
+
+  it('computeLocalGapMs usa la mediana e ignora silencios largos', () => {
+    const dense = makeLyrics(1000);
+    expect(computeLocalGapMs(dense.lines, 5)).toBe(1000);
+    // Silencio de 9s entre medio: no cuenta como gap de sección.
+    const withBreak: TimedLyrics = {
+      source: 'Test',
+      synced: true,
+      lines: [
+        { start_ms: 0, text: 'a' },
+        { start_ms: 1000, text: 'b' },
+        { start_ms: 10_000, text: 'c' },
+        { start_ms: 11_000, text: 'd' },
+      ],
+    };
+    expect(computeLocalGapMs(withBreak.lines, 1)).toBe(1000);
+  });
+
+  it('no adelanta en frío: la primera llamada mantiene la línea real', () => {
+    const e = new SyncEngine();
+    e.setLyrics(makeLyrics(1000));
+    const m = e.getRenderModel(5600);
+    expect(m.current_line.text).toBe('L5');
+    expect(m.fast_pace).toBeUndefined();
+  });
+
+  it('tras calentar, en sección densa la línea siguiente entra antes', () => {
+    const e = new SyncEngine();
+    e.setLyrics(makeLyrics(1000));
+    warm(e, 5000);
+    // Posición real 5600 (línea 5), pero con lead 450 → ya muestra L6.
+    const m = e.getRenderModel(5600);
+    expect(m.current_line.text).toBe('L6');
+    expect(m.previous_lines.at(-1)).toEqual({ text: 'L5' });
+    expect(m.fast_pace).toBe(true);
+  });
+
+  it('el lead nunca supera la fracción del gap (no se salta líneas)', () => {
+    const e = new SyncEngine();
+    e.setLyrics(makeLyrics(1000));
+    warm(e, 5000);
+    // 5400 + 450 = 5850 < 6000 → sigue en L5.
+    const m = e.getRenderModel(5400);
+    expect(m.current_line.text).toBe('L5');
+  });
+
+  it('en secciones lentas no cambia nada', () => {
+    const e = new SyncEngine();
+    e.setLyrics(makeLyrics(4000));
+    warm(e, 7500);
+    const m = e.getRenderModel(7600);
+    expect(m.current_line.text).toBe('L1'); // 4000..8000
+    expect(m.fast_pace).toBeUndefined();
+  });
+
+  it('el lead crece gradualmente, sin salto al entrar a la sección', () => {
+    const e = new SyncEngine();
+    e.setLyrics(makeLyrics(1000));
+    e.getRenderModel(5000); // primera llamada: lead 0
+    expect(e.getRenderModel(5100).current_line.text).toBe('L5'); // lead ≤ 50
+    for (let p = 5200; p <= 5900; p += 100) e.getRenderModel(p);
+    // Con la rampa completa (450ms) la posición 5900 ya muestra L6.
+    expect(e.getRenderModel(5900).current_line.text).toBe('L6');
+  });
+
+  it('un seek hacia atrás resetea la anticipación', () => {
+    const e = new SyncEngine();
+    e.setLyrics(makeLyrics(1000));
+    warm(e, 5000);
+    const m = e.getRenderModel(1500); // retroceso → reset
+    expect(m.current_line.text).toBe('L1');
+    expect(m.fast_pace).toBeUndefined();
   });
 });
