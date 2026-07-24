@@ -1,5 +1,11 @@
 # Configuración de empaquetado con electron-builder.
 # Foco: Windows NSIS (.exe). macOS/Linux se pueden añadir después.
+#
+# Flujo completo (en Windows):
+#   npm run package:full   → recompila el sidecar SMTC autocontenido (.NET),
+#                            build de la app, avisos de terceros e instalador.
+#   npm run package        → igual pero sin recompilar el sidecar.
+# Salida: release/Singevery-Setup-<version>.exe
 appId: com.gris.singevery
 productName: Singevery
 copyright: Copyright © 2026 Gris
@@ -10,10 +16,23 @@ directories:
 
 # Incluye el sidecar SMTC compilado (native/smtc/dist) en los recursos de la
 # app empaquetada; smtcPath.ts lo autodetecta bajo process.resourcesPath.
+# IMPORTANTE: publicar el sidecar AUTOCONTENIDO (npm run build:smtc) antes de
+# empaquetar para terceros — si no, exige .NET 8 instalado en el equipo destino.
 extraResources:
   - from: ../../native/smtc/dist
     to: native/smtc/dist
-    filter: ['**/*']
+    filter: ['**/*', '!*.pdb']
+
+# Documentos que el usuario final debe poder leer: quedan junto a Singevery.exe.
+extraFiles:
+  - from: ../../LICENSE
+    to: LICENSE.txt
+  - from: ../../AVISO_LEGAL.md
+    to: AVISO_LEGAL.md
+  - from: ../../GUIA_DE_USO.md
+    to: GUIA_DE_USO.md
+  - from: build/THIRD-PARTY-NOTICES.txt
+    to: THIRD-PARTY-NOTICES.txt
 
 files:
   - dist/**/*
@@ -24,8 +43,17 @@ files:
   - '!**/node_modules/*/{CHANGELOG.md,README.md,readme.md,readme}'
   - '!**/node_modules/**/{*.map,*.ts,test.js,test.ts,test.d.ts}'
 
+# Binarios/datos que se leen con fs: mejor fuera del asar.
+asarUnpack:
+  - node_modules/kuromoji/dict/**/*
+  - node_modules/shazamio-core/**/*.wasm
+
 win:
-  signAndEditExecutable: false
+  icon: build/icon.ico
+  # true para que rcedit incruste ícono y metadata en el exe (no firma nada
+  # si no hay certificado configurado; SmartScreen avisará igual — documentado
+  # en GUIA_DE_USO.md y README).
+  signAndEditExecutable: true
   target:
     - target: nsis
       arch: [x64]
@@ -38,3 +66,5 @@ nsis:
   createDesktopShortcut: true
   createStartMenuShortcut: true
   shortcutName: Singevery
+  # Licencia + avisos que el instalador muestra antes de instalar.
+  license: build/license.txt

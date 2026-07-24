@@ -143,11 +143,41 @@ Selector en **Ajustes (⚙)** del widget. También ahí: opacidad, **color de le
 ## Scripts útiles
 
 ```bash
-npm test              # Vitest (151 tests)
+npm test              # Vitest (198 tests)
 npm run build         # Build producción
 npm run package       # Instalador Windows (electron-builder)
 ```
 
+## Generar el instalador (Windows)
+
+Desde `apps/desktop`, con Node y el SDK de .NET 8 instalados:
+
+```bash
+npm run package:full
+```
+
+Esto (1) publica el sidecar SMTC **autocontenido** (`npm run build:smtc` — el
+equipo destino no necesita .NET instalado), (2) hace el build de producción,
+(3) regenera `build/THIRD-PARTY-NOTICES.txt` con las licencias de las
+dependencias y (4) produce `release/Singevery-Setup-<version>.exe`.
+
+El instalador muestra la licencia (`build/license.txt`) y deja junto al
+ejecutable `GUIA_DE_USO.md`, `AVISO_LEGAL.md`, `LICENSE.txt` y
+`THIRD-PARTY-NOTICES.txt`. Si solo cambiaste código de la app (no el sidecar),
+basta `npm run package`.
+
+> El instalador no va firmado con certificado de código (SmartScreen avisará
+> la primera vez). Para distribución seria, considerar un certificado OV/EV
+> más adelante.
+
+## Documentación para usuarios
+
+* **[Guía de uso](GUIA_DE_USO.md)** — instalación y uso paso a paso, sin
+  conocimientos técnicos.
+* **[Aviso legal](AVISO_LEGAL.md)** — licencia, letras y servicios de
+  terceros, marcas y privacidad.
+
 ## Licencia
 
-[MIT](LICENSE) — Copyright © 2026 Gris.
+[MIT](LICENSE) — Copyright © 2026 Gris. Licencias de terceros: se generan en
+`apps/desktop/build/THIRD-PARTY-NOTICES.txt` y se instalan con la app.

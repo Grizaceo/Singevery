@@ -4,6 +4,7 @@
   "version": "0.1.0",
   "description": "Transparent desktop widget that recognizes music (Shazam/AudD) and shows synced karaoke lyrics with romaji — sing along without blocking your screen.",
   "author": "Gris",
+  "license": "MIT",
   "main": "dist-electron/electron/main.js",
   "scripts": {
     "dev": "vite",
@@ -24,7 +25,10 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "eslint .",
-    "package": "npm run build && electron-builder --config electron-builder.yml"
+    "notices": "node scripts/generate-third-party-notices.cjs",
+    "build:smtc": "dotnet publish ../../native/smtc -c Release -r win-x64 --self-contained true -o ../../native/smtc/dist",
+    "package": "npm run build && npm run notices && electron-builder --config electron-builder.yml",
+    "package:full": "npm run build:smtc && npm run package"
   },
   "dependencies": {
     "cyrillic-to-translit-js": "^3.2.1",

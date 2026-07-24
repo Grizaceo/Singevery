@@ -6,6 +6,10 @@ __pycache__/
 .Python
 env/
 build/
+# Recursos de empaquetado de la app (ícono, licencia del instalador, avisos):
+# SÍ van al repo pese al build/ genérico de Python de arriba.
+!apps/desktop/build/
+!apps/desktop/build/**
 develop-eggs/
 dist/
 downloads/
