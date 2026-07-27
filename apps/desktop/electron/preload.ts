@@ -28,6 +28,22 @@ const api = {
     };
   },
 
+  onResyncCommand: (cb: () => void): (() => void) => {
+    const listener = (): void => cb();
+    ipcRenderer.on('command:resync', listener);
+    return () => {
+      ipcRenderer.removeListener('command:resync', listener);
+    };
+  },
+
+  onTangibleCommand: (cb: (locked: boolean) => void): (() => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, locked: boolean): void => cb(locked);
+    ipcRenderer.on('command:tangible', listener);
+    return () => {
+      ipcRenderer.removeListener('command:tangible', listener);
+    };
+  },
+
   // Window controls
   close: (): Promise<{ ok: boolean }> => ipcRenderer.invoke('window:close'),
   setSize: (width: number, height: number): Promise<{ ok: boolean }> => ipcRenderer.invoke('window:setSize', width, height),
@@ -87,6 +103,8 @@ const api = {
     ipcRenderer.invoke('sync:adjustCalibration', deltaMs),
   getSyncCalibration: (): Promise<{ ok: boolean; offsetMs: number }> =>
     ipcRenderer.invoke('sync:getCalibration'),
+  applyOffsetToAllTracks: (): Promise<{ ok: boolean; calibrationMs: number; offsetMs: number }> =>
+    ipcRenderer.invoke('sync:applyOffsetToAll'),
 
   getDisplaySettings: (): Promise<{ ok: boolean; display: import('../src/types').DisplaySettings }> =>
     ipcRenderer.invoke('settings:getDisplay'),
@@ -123,31 +141,6 @@ const api = {
   requestTranslation: (): Promise<{ ok: boolean; error?: string }> =>
     ipcRenderer.invoke('lyrics:translate'),
 
-  getRemoteStatus: (): Promise<{ ok: boolean } & import('../src/types').RemoteStatus> =>
-    ipcRenderer.invoke('remote:getStatus'),
-
-  setRemoteEnabled: (
-    enabled: boolean,
-  ): Promise<{ ok: boolean; error?: string; status: import('../src/types').RemoteStatus }> =>
-    ipcRenderer.invoke('remote:setEnabled', enabled),
-
-  onRemoteStatus: (cb: (status: import('../src/types').RemoteStatus) => void): (() => void) => {
-    const listener = (_event: Electron.IpcRendererEvent, status: import('../src/types').RemoteStatus): void => {
-      cb(status);
-    };
-    ipcRenderer.on('remote:status', listener);
-    return () => {
-      ipcRenderer.removeListener('remote:status', listener);
-    };
-  },
-
-  onRemoteMicActive: (cb: () => void): (() => void) => {
-    const listener = (): void => cb();
-    ipcRenderer.on('remote:mic-active', listener);
-    return () => {
-      ipcRenderer.removeListener('remote:mic-active', listener);
-    };
-  },
 };
 
 contextBridge.exposeInMainWorld('api', api);

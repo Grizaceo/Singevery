@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   buildQueryVariants,
   extractCornerBracketTitle,
+  looksLikeSameTrack,
   normalizeSearchText,
   titleArtistSimilarity,
 } from '../electron/services/lyrics/normalizeQuery';
@@ -51,5 +52,102 @@ describe('normalizeQuery', () => {
       durationMs: null,
     });
     expect(variants.map((v) => v.title)).toContain('Bling-Bang-Bang-Born');
+  });
+
+  it('genera la variante totalmente limpia para títulos de video de YouTube', () => {
+    const variants = buildQueryVariants({
+      title: 'Dua Lipa - Houdini (Official Music Video)',
+      artist: 'Dua Lipa',
+      album: null,
+      durationMs: null,
+    });
+    expect(variants.map((v) => v.title)).toContain('Houdini');
+  });
+});
+
+describe('looksLikeSameTrack — identidad difusa (bug YouTube vs Spotify)', () => {
+  const clean = { title: 'Houdini', artist: 'Dua Lipa' };
+
+  it('reconoce el título de video de YouTube como la misma canción', () => {
+    expect(
+      looksLikeSameTrack(clean, {
+        title: 'Dua Lipa - Houdini (Official Music Video)',
+        artist: 'Dua Lipa',
+      }),
+    ).toBe(true);
+  });
+
+  it('tolera el canal VEVO compactado como artista', () => {
+    expect(
+      looksLikeSameTrack(clean, {
+        title: 'Dua Lipa - Houdini (Official Music Video)',
+        artist: 'DuaLipaVEVO',
+      }),
+    ).toBe(true);
+  });
+
+  it('tolera canales "Artista - Topic" (YouTube Music autogenerado)', () => {
+    expect(
+      looksLikeSameTrack(
+        { title: 'Roar', artist: 'Katy Perry' },
+        { title: 'Roar', artist: 'Katy Perry - Topic' },
+      ),
+    ).toBe(true);
+  });
+
+  it('acepta metadata embebida aunque el "artista" sea un canal ajeno', () => {
+    expect(
+      looksLikeSameTrack(clean, {
+        title: 'Dua Lipa - Houdini (Video Oficial 4K)',
+        artist: 'Vevo Music Hits',
+      }),
+    ).toBe(true);
+  });
+
+  it('NO confunde canciones distintas del mismo artista', () => {
+    expect(
+      looksLikeSameTrack(clean, {
+        title: 'Dua Lipa - New Rules (Official Music Video)',
+        artist: 'Dua Lipa',
+      }),
+    ).toBe(false);
+    expect(looksLikeSameTrack(clean, { title: 'New Rules', artist: 'Dua Lipa' })).toBe(false);
+  });
+
+  it('NO junta artistas distintos con títulos parecidos', () => {
+    expect(
+      looksLikeSameTrack(
+        { title: 'Hello', artist: 'Adele' },
+        { title: 'Hello', artist: 'Lionel Richie' },
+      ),
+    ).toBe(false);
+  });
+
+  it('reconoce títulos invertidos "Canción - Artista"', () => {
+    expect(
+      looksLikeSameTrack(
+        { title: 'Acróstico', artist: 'Shakira' },
+        { title: 'Acróstico - Shakira', artist: 'ShakiraVEVO' },
+      ),
+    ).toBe(true);
+  });
+
+  it('reconoce feat en medio del título de video', () => {
+    expect(
+      looksLikeSameTrack(
+        { title: 'Un x100to', artist: 'Grupo Frontera' },
+        { title: 'Grupo Frontera - Un x100to ft. Bad Bunny (Video Oficial)', artist: 'Grupo Frontera' },
+      ),
+    ).toBe(true);
+  });
+
+  it('es simétrica y estable con claves idénticas', () => {
+    expect(looksLikeSameTrack(clean, clean)).toBe(true);
+    expect(
+      looksLikeSameTrack(
+        { title: 'Dua Lipa - Houdini (Official Music Video)', artist: 'DuaLipaVEVO' },
+        clean,
+      ),
+    ).toBe(true);
   });
 });

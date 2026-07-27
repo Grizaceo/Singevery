@@ -1,18 +1,21 @@
 import { WindowControls } from './WindowControls';
 import { ReadingControls } from './ReadingControls';
-import type { ReadingMode } from './types';
+import { TrackHeader } from './teleprompter/TrackHeader';
+import type { ReadingMode, RenderModel, TranslationView } from './types';
 import type { DesktopApi } from './types';
 import type { ScriptHint } from './scriptDetect';
 import './ChromeBars.css';
 
 interface ChromeTopBarProps {
   api: DesktopApi | undefined;
+  /** Para mostrar título/artista/estado en el centro de la barra. */
+  model: RenderModel;
   readingMode: ReadingMode;
   onReadingModeChange: (mode: ReadingMode) => void;
   hasAnnotations: boolean;
   scriptHint?: ScriptHint;
-  showTranslation?: boolean;
-  onTranslationChange?: (enabled: boolean) => void;
+  translationView?: TranslationView;
+  onTranslationViewChange?: (view: TranslationView) => void;
   translationLoading?: boolean;
   translationError?: string | null;
   onCollapse?: () => void;
@@ -21,12 +24,13 @@ interface ChromeTopBarProps {
 
 export function ChromeTopBar({
   api,
+  model,
   readingMode,
   onReadingModeChange,
   hasAnnotations,
   scriptHint,
-  showTranslation,
-  onTranslationChange,
+  translationView,
+  onTranslationViewChange,
   translationLoading,
   translationError,
   onCollapse,
@@ -37,14 +41,15 @@ export function ChromeTopBar({
       <div className="chrome-bar-group">
         <WindowControls api={api} onCollapse={onCollapse} compact />
       </div>
+      <TrackHeader model={model} />
       <div className="chrome-bar-group">
         <ReadingControls
           mode={readingMode}
           onChange={onReadingModeChange}
           hasAnnotations={hasAnnotations}
           scriptHint={scriptHint}
-          showTranslation={showTranslation}
-          onTranslationChange={onTranslationChange}
+          translationView={translationView}
+          onTranslationViewChange={onTranslationViewChange}
           translationLoading={translationLoading}
           translationError={translationError}
           onOpenSettings={onOpenSettings}

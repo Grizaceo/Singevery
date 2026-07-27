@@ -8,6 +8,7 @@ vi.mock('electron', () => ({
 import {
   parseSmtcMessage,
   dispatchSmtcEvent,
+  nextForwardablePosition,
   type SmtcEvent,
   type SmtcSink,
 } from '../electron/services/smtc/smtcReader';
@@ -66,6 +67,77 @@ describe('dispatchSmtcEvent', () => {
     ];
     events.forEach((e) => dispatchSmtcEvent(e, sink));
     expect(calls).toEqual(['track', 'position', 'playback']);
+  });
+
+  it("propaga `playing` del evento 'track' al sink (pausa no roba la letra)", () => {
+    const applyExternalTrack = vi.fn(async () => true);
+    const sink: SmtcSink = {
+      applyExternalTrack,
+      applyExternalPosition: () => {},
+      setPlaybackState: () => {},
+    };
+    dispatchSmtcEvent(
+      { type: 'track', title: 'T', artist: 'A', album: null, durationMs: null, positionMs: 500, playing: false },
+      sink,
+      1234,
+    );
+    expect(applyExternalTrack).toHaveBeenCalledWith('T', 'A', {
+      album: null,
+      durationMs: null,
+      positionMs: 500,
+      at: 1234,
+      playing: false,
+    });
+  });
+});
+
+describe('nextForwardablePosition — filtro de snapshots congelados', () => {
+  const pos = (positionMs: number, playing = true): SmtcEvent => ({
+    type: 'position',
+    positionMs,
+    playing,
+  });
+
+  it('descarta posiciones repetidas mientras suena (sidecar sin proyección)', () => {
+    let last: number | null = null;
+    const first = nextForwardablePosition(pos(20_000), last);
+    expect(first.forward).toBe(true);
+    last = first.lastPositionMs;
+    // El navegador no actualiza el snapshot: el sidecar viejo repite 20000.
+    const repeat = nextForwardablePosition(pos(20_000), last);
+    expect(repeat.forward).toBe(false);
+    // Cuando el valor por fin cambia (seek o snapshot fresco), pasa.
+    const fresh = nextForwardablePosition(pos(31_500), repeat.lastPositionMs);
+    expect(fresh.forward).toBe(true);
+  });
+
+  it('las posiciones que avanzan (sidecar con proyección) pasan siempre', () => {
+    let last: number | null = null;
+    for (const p of [1000, 2000, 3000]) {
+      const r = nextForwardablePosition(pos(p), last);
+      expect(r.forward).toBe(true);
+      last = r.lastPositionMs;
+    }
+  });
+
+  it('en pausa las repeticiones sí pasan (mantienen el reloj congelado)', () => {
+    const r1 = nextForwardablePosition(pos(20_000, false), 20_000);
+    expect(r1.forward).toBe(true);
+  });
+
+  it("un evento 'track' resetea el filtro", () => {
+    const track: SmtcEvent = {
+      type: 'track',
+      title: 'T',
+      artist: 'A',
+      album: null,
+      durationMs: null,
+      positionMs: 0,
+      playing: true,
+    };
+    const r = nextForwardablePosition(track, 20_000);
+    expect(r.forward).toBe(true);
+    expect(r.lastPositionMs).toBeNull();
   });
 });
 

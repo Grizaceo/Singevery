@@ -1,50 +1,64 @@
 import { useCallback, useEffect, useState } from 'react';
+import type { TranslationView } from './types';
 
-const STORAGE_KEY = 'espejo.showTranslation';
+const STORAGE_KEY = 'espejo.translationView';
+/** Clave previa (booleana). Se migra a 'below' para no perder la preferencia. */
+const LEGACY_STORAGE_KEY = 'espejo.showTranslation';
+const VALID: TranslationView[] = ['off', 'below', 'side'];
 
-/** Toggle de traducción línea a línea, persistido en localStorage. */
-export function useTranslationToggle(): [
-  boolean,
-  (enabled: boolean) => void,
+function load(): TranslationView {
+  try {
+    const stored = localStorage.getItem(STORAGE_KEY) as TranslationView | null;
+    if (stored && VALID.includes(stored)) return stored;
+    // Migración desde el toggle booleano antiguo.
+    if (localStorage.getItem(LEGACY_STORAGE_KEY) === '1') return 'below';
+  } catch {
+    /* localStorage no disponible */
+  }
+  return 'off';
+}
+
+/**
+ * Vista de traducción (off / debajo / lado a lado), persistida en localStorage.
+ * Al activar cualquier modo con traducción se pide traducir la letra cargada;
+ * si falla, vuelve a 'off' y expone el error.
+ */
+export function useTranslationView(): [
+  TranslationView,
+  (view: TranslationView) => void,
   { loading: boolean; error: string | null },
 ] {
-  const [enabled, setEnabled] = useState(() => {
-    try {
-      return localStorage.getItem(STORAGE_KEY) === '1';
-    } catch {
-      return false;
-    }
-  });
+  const [view, setView] = useState<TranslationView>(load);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     try {
-      localStorage.setItem(STORAGE_KEY, enabled ? '1' : '0');
+      localStorage.setItem(STORAGE_KEY, view);
     } catch {
       /* ignore */
     }
-  }, [enabled]);
+  }, [view]);
 
-  const set = useCallback(async (next: boolean) => {
-    setEnabled(next);
+  const set = useCallback(async (next: TranslationView) => {
+    setView(next);
     setError(null);
-    if (!next || !window.api?.requestTranslation) return;
+    if (next === 'off' || !window.api?.requestTranslation) return;
 
     setLoading(true);
     try {
       const result = await window.api.requestTranslation();
       if (!result.ok) {
         setError(result.error ?? 'No se pudo traducir');
-        setEnabled(false);
+        setView('off');
       }
     } catch {
       setError('Error al solicitar traducción');
-      setEnabled(false);
+      setView('off');
     } finally {
       setLoading(false);
     }
   }, []);
 
-  return [enabled, set, { loading, error }];
+  return [view, set, { loading, error }];
 }

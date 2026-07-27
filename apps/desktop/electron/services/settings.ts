@@ -12,6 +12,13 @@ import type { ReadingSettings, TranslationSettings } from '../../src/types';
 export interface OffsetStore {
   get(trackKey: string): number;
   set(trackKey: string, offsetMs: number): void;
+  /** Offsets guardados (clave → ms). Sirve para detectar latencia global:
+   *  varias pistas corregidas en el MISMO sentido no son un problema por
+   *  pista, es un desfase del equipo. */
+  entries?(): Record<string, number>;
+  /** Resta `deltaMs` a todos los offsets guardados. Se usa al promover un
+   *  desfase a la calibración global, para que no se cuente dos veces. */
+  rebase?(deltaMs: number): void;
 }
 
 /** Almacén de la calibración global de sincronización (latencia). */
@@ -30,6 +37,19 @@ export interface DisplaySettings {
   mirrorMode: boolean;
   textColor: string;
   textColorMode: TextColorMode;
+  /** Color base del handle del overlay (hex #rrggbb). */
+  handleColor: string;
+  /** Escala del handle (1 = tamaño original). */
+  handleScale: number;
+  /** Posición horizontal del handle en la ventana (0 = izquierda, 1 = derecha). */
+  handlePositionX: number;
+  /**
+   * Cuántas líneas de contexto se muestran ARRIBA y ABAJO de la actual.
+   * 2 = el clásico (una adyacente + una lejana a cada lado). Subirlo da más
+   * margen cuando la sincronía va algo corrida y se termina cantando desde
+   * las líneas de previsualización.
+   */
+  lyricsWindowSize: number;
 }
 
 export interface DisplayStore {
@@ -64,15 +84,6 @@ export interface WindowBoundsStore {
   set(bounds: WindowBounds | null): void;
 }
 
-export interface RemoteSettings {
-  enabled: boolean;
-}
-
-export interface RemoteSettingsStore {
-  get(): RemoteSettings;
-  set(partial: Partial<RemoteSettings>): void;
-}
-
 export interface AppSettings {
   offsetStore: OffsetStore;
   calibrationStore: CalibrationStore;
@@ -81,7 +92,6 @@ export interface AppSettings {
   translationStore: TranslationStore;
   readingStore: ReadingStore;
   windowBoundsStore: WindowBoundsStore;
-  remoteSettingsStore: RemoteSettingsStore;
 }
 
 export const DEFAULT_DISPLAY_SETTINGS: DisplaySettings = {
@@ -91,6 +101,10 @@ export const DEFAULT_DISPLAY_SETTINGS: DisplaySettings = {
   mirrorMode: false,
   textColor: '#ffffff',
   textColorMode: 'manual',
+  handleColor: '#000000',
+  handleScale: 1.0,
+  handlePositionX: 0.5,
+  lyricsWindowSize: 2,
 };
 
 export const DEFAULT_RECOGNITION_PROVIDER: RecognitionProviderMode = 'auto';
@@ -109,6 +123,8 @@ export const DEFAULT_READING_SETTINGS: ReadingSettings = {
 export const NULL_OFFSET_STORE: OffsetStore = {
   get: () => 0,
   set: () => {},
+  entries: () => ({}),
+  rebase: () => {},
 };
 
 export const DEFAULT_CALIBRATION_OFFSET_MS = 300;
@@ -143,15 +159,6 @@ export const NULL_WINDOW_BOUNDS_STORE: WindowBoundsStore = {
   set: () => {},
 };
 
-export const DEFAULT_REMOTE_SETTINGS: RemoteSettings = {
-  enabled: false,
-};
-
-export const NULL_REMOTE_SETTINGS_STORE: RemoteSettingsStore = {
-  get: () => ({ ...DEFAULT_REMOTE_SETTINGS }),
-  set: () => {},
-};
-
 const SETTINGS_FILE = 'espejo-settings.json';
 
 interface SettingsShape {
@@ -162,7 +169,6 @@ interface SettingsShape {
   translation?: Partial<TranslationSettings>;
   reading?: Partial<ReadingSettings>;
   windowBounds?: WindowBounds | null;
-  remote?: Partial<RemoteSettings>;
 }
 
 function clampOpacity(value: number): number {
@@ -171,6 +177,20 @@ function clampOpacity(value: number): number {
 
 function clampFontScale(value: number): number {
   return Math.min(2, Math.max(0.6, value));
+}
+
+function clampHandleScale(value: number): number {
+  return Math.min(2, Math.max(0.6, value));
+}
+
+function clampHandlePosition(value: number): number {
+  return Math.min(1, Math.max(0, value));
+}
+
+/** 1..5 líneas de contexto por lado: con 0 se pierde el "qué viene", y por
+ *  encima de 5 el texto se vuelve ilegible en una ventana normal. */
+function clampWindowSize(value: number): number {
+  return Math.min(5, Math.max(1, Math.round(value)));
 }
 
 function normalizeHexColor(value: unknown, fallback: string): string {
@@ -194,6 +214,20 @@ function normalizeDisplay(raw?: Partial<DisplaySettings>): DisplaySettings {
     mirrorMode: !!raw?.mirrorMode,
     textColor: normalizeHexColor(raw?.textColor, DEFAULT_DISPLAY_SETTINGS.textColor),
     textColorMode: normalizeTextColorMode(raw?.textColorMode),
+    handleColor: normalizeHexColor(raw?.handleColor, DEFAULT_DISPLAY_SETTINGS.handleColor),
+    handleScale: clampHandleScale(
+      typeof raw?.handleScale === 'number' ? raw.handleScale : DEFAULT_DISPLAY_SETTINGS.handleScale,
+    ),
+    handlePositionX: clampHandlePosition(
+      typeof raw?.handlePositionX === 'number'
+        ? raw.handlePositionX
+        : DEFAULT_DISPLAY_SETTINGS.handlePositionX,
+    ),
+    lyricsWindowSize: clampWindowSize(
+      typeof raw?.lyricsWindowSize === 'number'
+        ? raw.lyricsWindowSize
+        : DEFAULT_DISPLAY_SETTINGS.lyricsWindowSize,
+    ),
   };
 }
 
@@ -253,7 +287,6 @@ export function createPersistentSettings(): AppSettings {
   let translation = { ...DEFAULT_TRANSLATION_SETTINGS };
   let reading = { ...DEFAULT_READING_SETTINGS };
   let windowBounds: WindowBounds | null = null;
-  let remote = { ...DEFAULT_REMOTE_SETTINGS };
 
   try {
     if (fs.existsSync(file)) {
@@ -269,7 +302,6 @@ export function createPersistentSettings(): AppSettings {
       translation = normalizeTranslationSettings(parsed.translation);
       reading = normalizeReadingSettings(parsed.reading);
       windowBounds = normalizeWindowBounds(parsed.windowBounds);
-      remote = { enabled: !!parsed.remote?.enabled };
     }
   } catch (err) {
     console.error('[settings] no se pudo leer el archivo de ajustes, empezando limpio:', err);
@@ -285,7 +317,6 @@ export function createPersistentSettings(): AppSettings {
         translation,
         reading,
         windowBounds,
-        remote,
       };
       fs.writeFileSync(file, JSON.stringify(payload, null, 2), 'utf8');
     } catch (err) {
@@ -300,6 +331,17 @@ export function createPersistentSettings(): AppSettings {
         delete trackOffsets[trackKey];
       } else {
         trackOffsets[trackKey] = offsetMs;
+      }
+      persist();
+    },
+    entries: () => ({ ...trackOffsets }),
+    rebase: (deltaMs) => {
+      if (!deltaMs) return;
+      for (const key of Object.keys(trackOffsets)) {
+        const next = trackOffsets[key] - deltaMs;
+        // Residuos por debajo de la resolución de ajuste no valen la pena.
+        if (Math.abs(next) < 25) delete trackOffsets[key];
+        else trackOffsets[key] = next;
       }
       persist();
     },
@@ -353,14 +395,6 @@ export function createPersistentSettings(): AppSettings {
     },
   };
 
-  const remoteSettingsStore: RemoteSettingsStore = {
-    get: () => ({ ...remote }),
-    set: (partial) => {
-      remote = { ...remote, ...partial };
-      persist();
-    },
-  };
-
   return {
     offsetStore,
     calibrationStore,
@@ -369,6 +403,5 @@ export function createPersistentSettings(): AppSettings {
     translationStore,
     readingStore,
     windowBoundsStore,
-    remoteSettingsStore,
   };
 }

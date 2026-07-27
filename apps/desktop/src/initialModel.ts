@@ -15,5 +15,8 @@ export const INITIAL_RENDER_MODEL: RenderModel = {
   mirror_mode: false,
   text_color: "#ffffff",
   text_vignette_light: false,
+  handle_color: "#000000",
+  handle_scale: 1.0,
+  handle_position_x: 0.5,
   status: "IDLE",
 };

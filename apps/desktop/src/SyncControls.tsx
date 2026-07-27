@@ -10,6 +10,9 @@ const SYNCABLE_STATUSES: Set<Status> = new Set([
 ]);
 
 const NUDGE_WHEEL_MS = 1000;
+/** Paso del ajuste por pista. 250ms: un desfase audible se corrige en pocos
+ *  clics (con 100ms hacían falta demasiados para un retraso de ~1-2s). */
+const OFFSET_STEP_MS = 250;
 
 export function SyncControls() {
   const model = useRenderModel();
@@ -47,6 +50,15 @@ export function SyncControls() {
     if (!window.api) return;
     const result = await window.api.adjustSyncCalibration(deltaMs);
     if (result.ok) setCalibrationMs(result.offsetMs);
+  }, []);
+
+  const applyToAll = useCallback(async () => {
+    if (!window.api?.applyOffsetToAllTracks) return;
+    const result = await window.api.applyOffsetToAllTracks();
+    if (result.ok) {
+      setCalibrationMs(result.calibrationMs);
+      setOffsetMs(result.offsetMs);
+    }
   }, []);
 
   const handleWheel = useCallback(
@@ -89,9 +101,9 @@ export function SyncControls() {
         <button
           type="button"
           className="chrome-button sync-btn offset-adj"
-          onClick={() => void adjustOffset(-100)}
+          onClick={() => void adjustOffset(-OFFSET_STEP_MS)}
           disabled={!hasLyrics}
-          title="Atrasar letra 100ms (esta pista)"
+          title={`Atrasar letra ${OFFSET_STEP_MS}ms (esta pista)`}
           aria-label="Atrasar letra"
         >
           −
@@ -102,13 +114,24 @@ export function SyncControls() {
         <button
           type="button"
           className="chrome-button sync-btn offset-adj"
-          onClick={() => void adjustOffset(100)}
+          onClick={() => void adjustOffset(OFFSET_STEP_MS)}
           disabled={!hasLyrics}
-          title="Adelantar letra 100ms (esta pista)"
+          title={`Adelantar letra ${OFFSET_STEP_MS}ms (esta pista)`}
           aria-label="Adelantar letra"
         >
           +
         </button>
+        {offsetMs !== 0 && (
+          <button
+            type="button"
+            className="chrome-button sync-btn offset-apply-all"
+            onClick={() => void applyToAll()}
+            title="Este desfase pasa en todas las canciones: aplicarlo de forma global para que las próximas ya salgan sincronizadas"
+            aria-label="Aplicar este ajuste a todas las canciones"
+          >
+            ⇈
+          </button>
+        )}
       </div>
 
       <div className="sync-row offset-row calibration-row">

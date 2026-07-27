@@ -23,7 +23,13 @@ export interface SmtcSink {
   applyExternalTrack(
     title: string,
     artist: string,
-    options: { album?: string | null; durationMs?: number | null; positionMs?: number; at?: number },
+    options: {
+      album?: string | null;
+      durationMs?: number | null;
+      positionMs?: number;
+      at?: number;
+      playing?: boolean;
+    },
   ): Promise<boolean> | boolean;
   applyExternalPosition(positionMs: number, playing: boolean, at?: number): void;
   setPlaybackState(playing: boolean, at?: number): void;
@@ -73,6 +79,31 @@ export function parseSmtcMessage(line: string): SmtcEvent | null {
   return null;
 }
 
+/**
+ * Filtro de posiciones CONGELADAS. La Position de SMTC es un snapshot; los
+ * navegadores (YouTube) lo actualizan solo en play/pausa/seek, así que un
+ * sidecar sin proyección re-emite el mismo valor cada segundo mientras la
+ * canción avanza — y cada re-emisión tiraba la letra hacia atrás (rubber-band).
+ * Un valor idéntico al anterior estando en reproducción no aporta información:
+ * se descarta. Con el sidecar nuevo (posiciones proyectadas, siempre avanzan)
+ * este filtro es un no-op. Función pura (testeable): devuelve el nuevo "último
+ * valor" o null si el evento debe descartarse.
+ */
+export function nextForwardablePosition(
+  ev: SmtcEvent,
+  lastPositionMs: number | null,
+): { forward: boolean; lastPositionMs: number | null } {
+  if (ev.type === 'track') {
+    // Cambio de pista: resetear el filtro (su posición inicial siempre pasa).
+    return { forward: true, lastPositionMs: null };
+  }
+  if (ev.type !== 'position') return { forward: true, lastPositionMs };
+  if (ev.playing && lastPositionMs != null && ev.positionMs === lastPositionMs) {
+    return { forward: false, lastPositionMs };
+  }
+  return { forward: true, lastPositionMs: ev.positionMs };
+}
+
 /** Aplica un evento al sink. Pura respecto al parsing (testeable). */
 export function dispatchSmtcEvent(ev: SmtcEvent, sink: SmtcSink, at: number = Date.now()): void {
   switch (ev.type) {
@@ -82,6 +113,7 @@ export function dispatchSmtcEvent(ev: SmtcEvent, sink: SmtcSink, at: number = Da
         durationMs: ev.durationMs,
         positionMs: ev.positionMs,
         at,
+        playing: ev.playing,
       });
       break;
     case 'position':
@@ -100,6 +132,8 @@ export function dispatchSmtcEvent(ev: SmtcEvent, sink: SmtcSink, at: number = Da
 export class SmtcReader {
   private proc: ChildProcess | null = null;
   private buf = '';
+  /** Última posición reenviada (filtro de snapshots congelados). */
+  private lastPositionMs: number | null = null;
 
   constructor(
     private readonly sink: SmtcSink,
@@ -126,7 +160,10 @@ export class SmtcReader {
         const line = this.buf.slice(0, idx);
         this.buf = this.buf.slice(idx + 1);
         const ev = parseSmtcMessage(line);
-        if (ev) dispatchSmtcEvent(ev, this.sink);
+        if (!ev) continue;
+        const { forward, lastPositionMs } = nextForwardablePosition(ev, this.lastPositionMs);
+        this.lastPositionMs = lastPositionMs;
+        if (forward) dispatchSmtcEvent(ev, this.sink);
       }
     });
     this.proc.stderr?.on('data', (d: Buffer) => console.error('[smtc]', d.toString()));

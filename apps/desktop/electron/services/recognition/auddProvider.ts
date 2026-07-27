@@ -93,6 +93,9 @@ export async function identifyFromAudd(
     confidence: 1.0,
     position_ms: parseAuddTimecode(result.timecode),
     matched_at: matchedAt,
+    // El `timecode` de AudD apunta al INICIO del archivo enviado, así que la
+    // referencia es el arranque de la grabación (a diferencia de Shazam).
+    sample_offset_ms: 0,
   };
 }
 

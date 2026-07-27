@@ -6,9 +6,9 @@ import { ChromeBottomBar } from './ChromeBottomBar';
 import { SettingsPanel } from './SettingsPanel';
 import { Pill } from './Pill';
 import { WidgetHandle } from './WidgetHandle';
-import { LyricsRescuePanel } from './LyricsRescuePanel';
 import { useReadingMode } from './useReadingMode';
-import { useTranslationToggle } from './useTranslationToggle';
+import { useTranslationView } from './useTranslationToggle';
+import { useAutoStart } from './useAutoStart';
 import { useRecognition } from './useRecognition';
 import { RenderModelProvider, useRenderModel } from './renderModelContext';
 import { detectScriptFromLines } from './scriptDetect';
@@ -25,16 +25,32 @@ const CHROME_IDLE_MS = 2800;
 function AppContent() {
   const model = useRenderModel();
   const [readingMode, setReadingMode] = useReadingMode();
-  const [showTranslation, setShowTranslation, translationState] = useTranslationToggle();
+  const [translationView, setTranslationView, translationState] = useTranslationView();
   const [chromeVisible, setChromeVisible] = useState(true);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(true);
   const [ghost, setGhost] = useState(false);
   const [handleHovered, setHandleHovered] = useState(false);
+  // Modo tangible forzado por atajo global (Ctrl+Alt+T). Es la vía de escape
+  // cuando hay un juego en primer plano: el overlay no recibe el hover del
+  // mouse, así que sin teclado no habría forma de agarrarlo para moverlo.
+  const [tangible, setTangible] = useState(false);
   const hideTimerRef = useRef<number | undefined>(undefined);
   const prevTrackRef = useRef<string | undefined>(undefined);
+  const autoStartedRef = useRef(false);
+  const [autoStart, setAutoStart] = useAutoStart();
 
   const recognition = useRecognition();
+
+  // Arranque automático: escuchar el audio del sistema apenas abre. Se queda
+  // en modo pastilla mientras no reconozca nada; al identificar la canción, el
+  // efecto de abajo expande la ventana solo. El ref evita que un re-render
+  // relance la captura.
+  useEffect(() => {
+    if (!autoStart || autoStartedRef.current || !window.api) return;
+    autoStartedRef.current = true;
+    void recognition.start('system');
+  }, [autoStart, recognition]);
 
   const handleSing = useCallback(() => {
     setCollapsed(false);
@@ -48,12 +64,28 @@ function AppContent() {
     });
   }, [handleSing]);
 
+  // El main detectó un posible cambio de canción (evento del reproductor del
+  // SO) que no pudo confirmar por metadata: re-identificar de inmediato en vez
+  // de esperar el próximo ciclo de corrección.
   useEffect(() => {
-    if (!window.api?.onRemoteMicActive) return;
-    return window.api.onRemoteMicActive(() => {
-      void recognition.stop();
+    if (!window.api?.onResyncCommand) return;
+    return window.api.onResyncCommand(() => {
+      recognition.requestResync();
     });
   }, [recognition]);
+
+  // Al forzar el modo tangible, sacar también el modo fantasma y mostrar la
+  // chrome: si no, el widget sería agarrable pero seguiría invisible.
+  useEffect(() => {
+    if (!window.api?.onTangibleCommand) return;
+    return window.api.onTangibleCommand((locked) => {
+      setTangible(locked);
+      if (locked) {
+        setGhost(false);
+        setChromeVisible(true);
+      }
+    });
+  }, []);
 
   useEffect(() => {
     void window.api?.setCollapsed?.(collapsed);
@@ -120,12 +152,13 @@ function AppContent() {
     };
   }, [isDisplaying, chromeVisible, ghost, reveal]);
 
-  const chromeHidden = ghost || (isDisplaying && !chromeVisible);
+  const chromeHidden = !tangible && (ghost || (isDisplaying && !chromeVisible));
 
   useEffect(() => {
-    const clickThrough = !settingsOpen && (ghost ? !handleHovered : chromeHidden);
+    const clickThrough =
+      !tangible && !settingsOpen && (ghost ? !handleHovered : chromeHidden);
     window.api?.setClickThrough?.(clickThrough);
-  }, [ghost, handleHovered, chromeHidden, settingsOpen]);
+  }, [ghost, handleHovered, chromeHidden, settingsOpen, tangible]);
 
   const hasAnnotations =
     model.status === 'DISPLAYING' &&
@@ -151,40 +184,50 @@ function AppContent() {
       <Teleprompter
         model={model}
         readingMode={readingMode}
-        showTranslation={showTranslation}
+        translationView={translationView}
         chromeHidden={chromeHidden}
         ghost={ghost}
       />
+      {tangible && (
+        <div className="tangible-badge" role="status">
+          Modo tangible · <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>T</kbd> para soltar ·{' '}
+          <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+flechas para mover
+        </div>
+      )}
       <WidgetHandle
         api={window.api}
         ghost={ghost}
         onToggleGhost={toggleGhost}
         onReveal={reveal}
         onHoverChange={setHandleHovered}
+        color={model.handle_color}
+        scale={model.handle_scale}
+        positionX={model.handle_position_x}
       />
       <div className={`app-chrome${chromeHidden ? ' chrome-hidden' : ''}`}>
         <ChromeTopBar
           api={window.api}
+          model={model}
           readingMode={readingMode}
           onReadingModeChange={setReadingMode}
           hasAnnotations={hasAnnotations}
           scriptHint={scriptHint}
-          showTranslation={showTranslation}
-          onTranslationChange={setShowTranslation}
+          translationView={translationView}
+          onTranslationViewChange={setTranslationView}
           translationLoading={translationState.loading}
           translationError={translationState.error}
           onCollapse={handleCollapse}
           onOpenSettings={() => setSettingsOpen(true)}
         />
         <ChromeBottomBar recognition={recognition} api={window.api} />
-        <LyricsRescuePanel
-          status={model.status}
-          title={model.track_title}
-          artist={model.track_artist}
-        />
         {import.meta.env.DEV && <DebugLyricsInput />}
       </div>
-      <SettingsPanel open={settingsOpen} onClose={() => setSettingsOpen(false)} />
+      <SettingsPanel
+        open={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        autoStart={autoStart}
+        onAutoStartChange={setAutoStart}
+      />
     </>
   );
 }

@@ -78,8 +78,23 @@ describe('settings persistente (P2.8)', () => {
       mirrorMode: true,
       textColor: '#ffffff',
       textColorMode: 'manual',
+      handleColor: '#000000',
+      handleScale: 1,
+      handlePositionX: 0.5,
+      lyricsWindowSize: 2,
     });
     expect(s2.recognitionProviderStore.get()).toBe('shazam');
+  });
+
+  it('persiste y normaliza la personalización del handle', () => {
+    const s1 = createPersistentSettings();
+    s1.displayStore.set({ handleColor: '#FDE047', handleScale: 5, handlePositionX: -0.2 });
+
+    const s2 = createPersistentSettings();
+    const display = s2.displayStore.get();
+    expect(display.handleColor).toBe('#fde047'); // hex normalizado a minúsculas
+    expect(display.handleScale).toBe(2); // clamp superior
+    expect(display.handlePositionX).toBe(0); // clamp inferior
   });
 
   it('persiste bounds de ventana', () => {
@@ -98,11 +113,38 @@ describe('settings persistente (P2.8)', () => {
     expect(s2.displayStore.get().textColorMode).toBe('auto');
   });
 
-  it('persiste ajuste de modo TV remoto', () => {
+  it('acota las líneas visibles a un rango usable', () => {
+    const s = createPersistentSettings();
+    expect(s.displayStore.get().lyricsWindowSize).toBe(2); // por defecto
+
+    s.displayStore.set({ lyricsWindowSize: 4 });
+    expect(s.displayStore.get().lyricsWindowSize).toBe(4);
+
+    // Sin contexto no se ve lo que viene; con demasiado no se lee nada.
+    s.displayStore.set({ lyricsWindowSize: 0 });
+    expect(s.displayStore.get().lyricsWindowSize).toBe(1);
+    s.displayStore.set({ lyricsWindowSize: 99 });
+    expect(s.displayStore.get().lyricsWindowSize).toBe(5);
+
+    // Persiste entre sesiones.
+    s.displayStore.set({ lyricsWindowSize: 3 });
+    expect(createPersistentSettings().displayStore.get().lyricsWindowSize).toBe(3);
+  });
+
+  it('ignora ajustes de versiones anteriores sin romperse', () => {
+    // El modo TV se retiró: un archivo de ajustes viejo trae `remote` y otras
+    // claves que ya no existen. Deben ignorarse sin perder lo demás.
     const s1 = createPersistentSettings();
-    s1.remoteSettingsStore.set({ enabled: true });
+    s1.displayStore.set({ textColor: '#22d3ee' });
+
+    const file = path.join(userDataDir, 'espejo-settings.json');
+    const raw = JSON.parse(fs.readFileSync(file, 'utf8')) as Record<string, unknown>;
+    raw.remote = { enabled: true };
+    raw.claveInventada = 42;
+    fs.writeFileSync(file, JSON.stringify(raw), 'utf8');
 
     const s2 = createPersistentSettings();
-    expect(s2.remoteSettingsStore.get()).toEqual({ enabled: true });
+    expect(s2.displayStore.get().textColor).toBe('#22d3ee');
+    expect((s2 as unknown as Record<string, unknown>).remoteSettingsStore).toBeUndefined();
   });
 });

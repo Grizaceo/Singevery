@@ -267,6 +267,12 @@ export class LyricsService {
   async updateCachedLyrics(key: string, lyrics: TimedLyrics, meta: CacheMeta): Promise<void> {
     await this.cache.put(key, lyrics, meta);
   }
+
+  /** Olvida la entrada de caché de una pista (incluida la caché negativa),
+   *  para que el próximo getLyrics vuelva a pegarle a la red (auto-reintento). */
+  async forgetTrack(key: string): Promise<void> {
+    await this.cache.clearEntry?.(key);
+  }
 }
 
 /** Instancia por defecto (sin caché). Feature 2 reemplaza la caché al inicializar. */

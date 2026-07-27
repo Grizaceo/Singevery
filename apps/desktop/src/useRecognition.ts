@@ -20,6 +20,13 @@ export interface RecognitionState {
   level: number;
   start: (source: AudioSource) => Promise<void>;
   stop: () => Promise<void>;
+  /**
+   * Corta la espera entre ciclos y vuelve a identificar YA. Lo dispara el main
+   * cuando el reproductor del SO avisa de un cambio de pista que el arbitraje
+   * no pudo confirmar por metadata: sin esto había que esperar el ciclo
+   * completo (~18s) para que la letra nueva apareciera.
+   */
+  requestResync: () => void;
 }
 
 /**
@@ -34,6 +41,27 @@ export function useRecognition(): RecognitionState {
   const [level, setLevel] = useState(0);
   const abortRef = useRef<AbortController | null>(null);
   const systemSessionRef = useRef<SystemAudioSession | null>(null);
+  /** Resolver de la espera en curso: llamarlo la termina antes de tiempo. */
+  const wakeRef = useRef<(() => void) | null>(null);
+
+  /** Espera `ms` pero se corta si llega una petición de resync. */
+  const sleepOrWake = useCallback(async (ms: number, signal: AbortSignal) => {
+    let wake: (() => void) | null = null;
+    const woken = new Promise<void>((resolve) => {
+      wake = resolve;
+      wakeRef.current = resolve;
+    });
+    try {
+      await Promise.race([sleep(ms, signal), woken]);
+    } finally {
+      if (wakeRef.current === wake) wakeRef.current = null;
+    }
+  }, []);
+
+  const requestResync = useCallback(() => {
+    wakeRef.current?.();
+    wakeRef.current = null;
+  }, []);
 
   const stop = useCallback(async () => {
     abortRef.current?.abort();
@@ -112,7 +140,7 @@ export function useRecognition(): RecognitionState {
           if (blob.size < 4096) {
             if (tracking) {
               // En seguimiento, un chunk vacío puntual no es fatal: reintentar.
-              await sleep(CAPTURE_RESYNC_PAUSE_MS, controller.signal);
+              await sleepOrWake(CAPTURE_RESYNC_PAUSE_MS, controller.signal);
               continue;
             }
             throw new Error(
@@ -130,7 +158,7 @@ export function useRecognition(): RecognitionState {
                 ? 'Sin señal del micrófono — sube el volumen, acércalo a los parlantes o reproduce música.'
                 : 'Audio del sistema en silencio — sube el volumen o reproduce algo.';
             setHint(msg);
-            await sleep(tracking ? CAPTURE_RESYNC_PAUSE_MS : CAPTURE_PAUSE_MS, controller.signal);
+            await sleepOrWake(tracking ? CAPTURE_RESYNC_PAUSE_MS : CAPTURE_PAUSE_MS, controller.signal);
             continue;
           }
 
@@ -148,7 +176,7 @@ export function useRecognition(): RecognitionState {
               setHint('Sincronizado · corrigiendo en vivo…');
             }
             if (!controller.signal.aborted) {
-              await sleep(CAPTURE_RESYNC_PAUSE_MS, controller.signal);
+              await sleepOrWake(CAPTURE_RESYNC_PAUSE_MS, controller.signal);
             }
             continue;
           }
@@ -179,14 +207,14 @@ export function useRecognition(): RecognitionState {
             tracking = true;
             setHint('Sincronizado · corrigiendo en vivo…');
             if (!controller.signal.aborted) {
-              await sleep(CAPTURE_RESYNC_PAUSE_MS, controller.signal);
+              await sleepOrWake(CAPTURE_RESYNC_PAUSE_MS, controller.signal);
             }
             continue;
           }
 
           setHint('Sin coincidencia, reintentando…');
           if (!controller.signal.aborted) {
-            await sleep(CAPTURE_PAUSE_MS, controller.signal);
+            await sleepOrWake(CAPTURE_PAUSE_MS, controller.signal);
           }
         }
       } catch (err) {
@@ -206,7 +234,7 @@ export function useRecognition(): RecognitionState {
         }
       }
     },
-    [stop],
+    [stop, sleepOrWake],
   );
 
   useEffect(() => {
@@ -216,5 +244,5 @@ export function useRecognition(): RecognitionState {
     };
   }, []);
 
-  return { activeSource, hint, error, level, start, stop };
+  return { activeSource, hint, error, level, start, stop, requestResync };
 }

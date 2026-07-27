@@ -1,5 +1,5 @@
 import React from 'react';
-import type { ReadingMode, RenderLine } from '../types';
+import type { ReadingMode, RenderLine, TranslationView } from '../types';
 import { splitAtFraction, splitSegmentsAtFraction } from '../lineHighlight';
 import { WordsView } from './WordsView';
 
@@ -12,7 +12,20 @@ interface LineViewProps {
   progress?: number;
   wordIndex?: number;
   wordProgress?: number;
-  showTranslation?: boolean;
+  /** off = sin traducción; below = bajo la línea actual; side = columna paralela. */
+  translationView?: TranslationView;
+}
+
+/** Texto con la parte ya cantada atenuada (resaltado interpolado). */
+function splitHighlighted(text: string, frac: number, highlight: boolean): React.ReactNode {
+  if (!highlight) return text;
+  const [spoken, rest] = splitAtFraction(text, frac);
+  return (
+    <>
+      {spoken && <span className="line-spoken">{spoken}</span>}
+      {rest}
+    </>
+  );
 }
 
 /** Render seguro de una línea según el modo de lectura. */
@@ -23,7 +36,7 @@ export const LineView = React.memo(function LineView({
   progress,
   wordIndex,
   wordProgress,
-  showTranslation = false,
+  translationView = 'off',
 }: LineViewProps) {
   const hasFurigana = !!line.furigana && line.furigana.length > 0;
   const hasRomaji = !!line.romaji;
@@ -33,37 +46,24 @@ export const LineView = React.memo(function LineView({
   const useWords =
     tier === 'current' && !!line.words && line.words.length > 0 && wordIndex != null;
 
-  if (mode === 'kana') {
-    const text = hasKana ? line.kana! : line.text;
-    if (!highlight) return <p className="line-main">{text}</p>;
-    const [spoken, rest] = splitAtFraction(text, frac);
-    return (
-      <p className="line-main">
-        {spoken && <span className="line-spoken">{spoken}</span>}
-        {rest}
-      </p>
-    );
-  }
-
-  if (mode === 'romaji') {
-    const text = hasRomaji ? line.romaji! : line.text;
-    if (!highlight) return <p className="line-main">{text}</p>;
-    const [spoken, rest] = splitAtFraction(text, frac);
-    return (
-      <p className="line-main">
-        {spoken && <span className="line-spoken">{spoken}</span>}
-        {rest}
-      </p>
-    );
-  }
-
   const showRuby = (mode === 'furigana' || mode === 'furigana_romaji') && hasFurigana;
-  const showRomajiBelow = mode === 'furigana_romaji' && hasRomaji && tier === 'current';
+  // En columna paralela el romaji bajo la línea sobra: la izquierda ya es la
+  // pronunciación y la derecha el significado.
+  const showRomajiBelow =
+    mode === 'furigana_romaji' && hasRomaji && tier === 'current' && translationView !== 'side';
+
+  const translation = line.translation?.trim() ?? '';
+  const hasTranslation = translation.length > 0;
   const showTranslationBelow =
-    showTranslation && tier === 'current' && !!line.translation && line.translation.trim();
+    translationView === 'below' && tier === 'current' && hasTranslation;
+  const sideBySide = translationView === 'side';
 
   let mainContent: React.ReactNode;
-  if (showRuby) {
+  if (mode === 'kana') {
+    mainContent = splitHighlighted(hasKana ? line.kana! : line.text, frac, highlight);
+  } else if (mode === 'romaji') {
+    mainContent = splitHighlighted(hasRomaji ? line.romaji! : line.text, frac, highlight);
+  } else if (showRuby) {
     if (!highlight) {
       mainContent = line.furigana!.map((seg, i) =>
         seg.rt ? (
@@ -108,15 +108,26 @@ export const LineView = React.memo(function LineView({
     mainContent = (
       <WordsView words={line.words!} activeIndex={wordIndex!} wordProgress={wordProgress ?? 0} />
     );
-  } else if (!highlight) {
-    mainContent = line.text;
   } else {
-    const [spoken, rest] = splitAtFraction(line.text, frac);
-    mainContent = (
-      <>
-        {spoken && <span className="line-spoken">{spoken}</span>}
-        {rest}
-      </>
+    mainContent = splitHighlighted(line.text, frac, highlight);
+  }
+
+  // Vista de texto paralelo: dos columnas alineadas por línea. La traducción se
+  // ilumina con la MISMA fracción que la letra, para asociar tramo con tramo
+  // (el orden de palabras entre idiomas no calza, así que es una guía visual,
+  // no una correspondencia palabra a palabra).
+  if (sideBySide) {
+    return (
+      <div className="line-row">
+        <div className="line-col line-col-main">
+          <p className="line-main">{mainContent}</p>
+        </div>
+        <div className="line-col line-col-translation">
+          <p className="line-main line-translation-side">
+            {hasTranslation ? splitHighlighted(translation, frac, highlight) : null}
+          </p>
+        </div>
+      </div>
     );
   }
 
@@ -124,9 +135,7 @@ export const LineView = React.memo(function LineView({
     <>
       <p className="line-main">{mainContent}</p>
       {showRomajiBelow && <p className="line-romaji">{line.romaji}</p>}
-      {showTranslationBelow && (
-        <p className="line-translation">Traducción: {line.translation}</p>
-      )}
+      {showTranslationBelow && <p className="line-translation">Traducción: {translation}</p>}
     </>
   );
 });

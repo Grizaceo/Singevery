@@ -1,5 +1,5 @@
 import React, { useMemo, useRef, useState } from 'react';
-import type { ReadingMode } from './types';
+import type { ReadingMode, TranslationView } from './types';
 import type { ScriptHint } from './scriptDetect';
 import './ReadingControls.css';
 
@@ -9,12 +9,31 @@ interface Props {
   /** Si las letras cargadas tienen datos de furigana/romaji/kana. */
   hasAnnotations?: boolean;
   scriptHint?: ScriptHint;
-  showTranslation?: boolean;
-  onTranslationChange?: (enabled: boolean) => void;
+  translationView?: TranslationView;
+  onTranslationViewChange?: (view: TranslationView) => void;
   translationLoading?: boolean;
   translationError?: string | null;
   onOpenSettings?: () => void;
 }
+
+/** Ciclo del botón de traducción: sin → debajo → lado a lado → sin. */
+const TRANSLATION_CYCLE: Record<TranslationView, TranslationView> = {
+  off: 'below',
+  below: 'side',
+  side: 'off',
+};
+
+const TRANSLATION_LABEL: Record<TranslationView, string> = {
+  off: 'T',
+  below: 'T',
+  side: 'T⇉',
+};
+
+const TRANSLATION_TITLE: Record<TranslationView, string> = {
+  off: 'Traducción: desactivada — clic para mostrarla bajo la línea actual',
+  below: 'Traducción bajo la línea actual — clic para verla lado a lado',
+  side: 'Texto paralelo: letra y traducción en columnas — clic para desactivar',
+};
 
 interface ModeOption {
   key: ReadingMode;
@@ -133,8 +152,8 @@ export function ReadingControls({
   onChange,
   hasAnnotations = false,
   scriptHint = 'latin',
-  showTranslation = false,
-  onTranslationChange,
+  translationView = 'off',
+  onTranslationViewChange,
   translationLoading = false,
   translationError,
   onOpenSettings,
@@ -175,26 +194,27 @@ export function ReadingControls({
           );
         })}
 
-        {onTranslationChange && (
+        {onTranslationViewChange && (
           <button
             type="button"
             className={[
               'chrome-button reading-btn reading-btn-translate',
-              showTranslation ? 'active' : '',
+              translationView !== 'off' ? 'active' : '',
+              translationView === 'side' ? 'reading-btn-translate-side' : '',
               translationLoading ? 'loading' : '',
             ]
               .filter(Boolean)
               .join(' ')}
-            onClick={() => onTranslationChange(!showTranslation)}
+            onClick={() => onTranslationViewChange(TRANSLATION_CYCLE[translationView])}
             title={
               translationError ??
-              (translationLoading ? 'Traduciendo…' : 'Mostrar traducción de la línea actual')
+              (translationLoading ? 'Traduciendo…' : TRANSLATION_TITLE[translationView])
             }
-            aria-label="Traducción"
-            aria-pressed={showTranslation}
+            aria-label={TRANSLATION_TITLE[translationView]}
+            aria-pressed={translationView !== 'off'}
             disabled={translationLoading}
           >
-            T
+            {TRANSLATION_LABEL[translationView]}
           </button>
         )}
 

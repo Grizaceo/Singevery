@@ -34,6 +34,16 @@ export interface TrackMatch {
   confidence: number; // 0.0 a 1.0
   position_ms: number; // posición estimada dentro de la canción
   matched_at: number; // timestamp local (ms desde epoch) del match
+  /**
+   * A qué instante DE LA GRABACIÓN se refiere `position_ms`, en ms desde que
+   * empezó a grabarse el chunk. Es el punto de referencia sin el cual no se
+   * puede anclar el reloj:
+   *   - AudD (`timecode`) apunta al inicio del archivo enviado → 0.
+   *   - Shazam (`matches[].offset`) apunta al final de la ventana de audio que
+   *     cubre la huella enviada → `samplems` de esa huella.
+   * Si falta, se asume 0 (inicio de la grabación).
+   */
+  sample_offset_ms?: number;
 }
 
 /** Segmento ruby: texto base + lectura encima (rt) opcional. */
@@ -97,6 +107,16 @@ export interface RenderLine {
 /** Modo de lectura elegido por el usuario (estado del renderer, persistido). */
 export type ReadingMode = 'original' | 'furigana' | 'romaji' | 'furigana_romaji' | 'kana';
 
+/**
+ * Cómo se muestra la traducción (estado del renderer, persistido):
+ *   - 'off'   sin traducción.
+ *   - 'below' una línea traducida bajo la línea actual (comportamiento previo).
+ *   - 'side'  texto paralelo: letra a la izquierda y traducción a la derecha,
+ *             ambas columnas iluminándose al mismo ritmo, en todas las líneas
+ *             visibles (para asociar tramos con su significado).
+ */
+export type TranslationView = 'off' | 'below' | 'side';
+
 export type TranslationProvider = 'deepl' | 'google';
 
 export interface TranslationSettings {
@@ -121,16 +141,14 @@ export interface DisplaySettings {
   mirrorMode: boolean;
   textColor: string;
   textColorMode: TextColorMode;
-}
-
-export interface RemoteStatus {
-  enabled: boolean;
-  running: boolean;
-  micConnected: boolean;
-  tvUrl: string;
-  micUrl: string;
-  ip: string;
-  port: number;
+  /** Color base del handle del overlay (hex #rrggbb). */
+  handleColor: string;
+  /** Escala del handle (1 = tamaño original). */
+  handleScale: number;
+  /** Posición horizontal del handle en la ventana (0 = izquierda, 1 = derecha). */
+  handlePositionX: number;
+  /** Líneas de contexto mostradas arriba y abajo de la actual (1..5). */
+  lyricsWindowSize: number;
 }
 
 /** Estado que el main envía al renderer por IPC ~10 veces por segundo. */
@@ -147,6 +165,11 @@ export interface RenderModel {
   text_color: string;
   /** true = viñeta clara (texto oscuro sobre fondo claro). */
   text_vignette_light?: boolean;
+
+  /** Personalización del handle del overlay (color/tamaño/posición). */
+  handle_color?: string;
+  handle_scale?: number;
+  handle_position_x?: number;
 
   track_title?: string;
   track_artist?: string;
@@ -180,6 +203,18 @@ export type AudioSource = 'microphone' | 'system';
 export interface DesktopApi {
   onRenderModel: (cb: (model: RenderModel) => void) => () => void;
   onSingCommand: (cb: () => void) => () => void;
+  /**
+   * El main pide re-identificar YA (sin esperar el ciclo de corrección): el
+   * reproductor del SO avisó de un cambio de pista que el arbitraje no pudo
+   * confirmar por metadata. Acorta la detección de canción nueva.
+   */
+  onResyncCommand: (cb: () => void) => () => void;
+  /**
+   * Modo tangible forzado por atajo global (Ctrl+Alt+T). Existe porque con un
+   * juego a pantalla completa el overlay no recibe el hover del mouse y sin
+   * esto quedaría inagarrable.
+   */
+  onTangibleCommand: (cb: (locked: boolean) => void) => () => void;
   loadLyrics: (title: string, artist: string) => Promise<{ ok: boolean; error?: string }>;
   retryLyrics: (title: string, artist: string) => Promise<{ ok: boolean; error?: string }>;
   setRecognitionPhase: (phase: 'LISTENING' | 'IDENTIFYING' | null) => Promise<{ ok: boolean }>;
@@ -208,6 +243,12 @@ export interface DesktopApi {
   // Calibración global de latencia (SYNC_OFFSET_MS persistido, P2.8)
   adjustSyncCalibration: (deltaMs: number) => Promise<{ ok: boolean; offsetMs: number }>;
   getSyncCalibration: () => Promise<{ ok: boolean; offsetMs: number }>;
+  /** Promueve el ajuste de la pista actual a la calibración global. */
+  applyOffsetToAllTracks: () => Promise<{
+    ok: boolean;
+    calibrationMs: number;
+    offsetMs: number;
+  }>;
 
   // Ajustes de visualización y reconocimiento (persistidos)
   getDisplaySettings: () => Promise<{ ok: boolean; display: DisplaySettings }>;
@@ -230,11 +271,6 @@ export interface DesktopApi {
   ) => Promise<{ ok: boolean; reading: ReadingSettings }>;
 
   requestTranslation: () => Promise<{ ok: boolean; error?: string }>;
-
-  getRemoteStatus: () => Promise<{ ok: boolean } & RemoteStatus>;
-  setRemoteEnabled: (enabled: boolean) => Promise<{ ok: boolean; error?: string; status: RemoteStatus }>;
-  onRemoteStatus: (cb: (status: RemoteStatus) => void) => () => void;
-  onRemoteMicActive: (cb: () => void) => () => void;
 
   // Window controls
   close: () => Promise<{ ok: boolean }>;

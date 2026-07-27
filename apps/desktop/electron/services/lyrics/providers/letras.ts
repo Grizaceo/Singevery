@@ -64,6 +64,9 @@ function decodeHtml(html: string): string {
 
 /** GET de una página; 404 = canción inexistente (null), otros errores lanzan. */
 async function fetchPage(url: string, signal?: AbortSignal): Promise<string | null> {
+  // Guarda dura: las vistas derivadas (traducción, significado, impresión) no
+  // son la letra original y nunca deben pedirse.
+  if (/\/(traducao|traduccion|significado|print)\b/i.test(url)) return null;
   const res = await appFetch(url, {
     signal,
     headers: {
@@ -76,16 +79,90 @@ async function fetchPage(url: string, signal?: AbortSignal): Promise<string | nu
   return await res.text();
 }
 
+const CJK_RE = /[぀-ヿ㐀-䶿一-鿿가-힯]/;
+const CJK_GLOBAL_RE = /[぀-ヿ㐀-䶿一-鿿가-힯]/g;
+
+/**
+ * Deshace la "transliteração automática" de letras.mus.br.
+ *
+ * La página sirve el original y su romanización DENTRO de la misma línea, sin
+ * separador, y las devuelve pegadas al extraer el texto:
+ *   "無敵の笑顔であらすメディアmuteki no egao de arasu media"
+ *   "(You're my savior)(You're my savior)"   ← si el original ya es latino
+ * Mostrar eso arruina la letra. Esta función recupera solo el original.
+ * Pura y testeable.
+ */
+export function stripInterleavedTransliteration(line: string): string {
+  const trimmed = line.trim();
+  if (!trimmed) return '';
+
+  // Caso 1 — original latino: la transliteración es idéntica, así que la línea
+  // es exactamente el mismo texto dos veces seguidas.
+  const half = trimmed.length / 2;
+  if (Number.isInteger(half) && half > 0) {
+    const left = trimmed.slice(0, half);
+    if (left === trimmed.slice(half)) return left.trim();
+  }
+
+  // Caso 2 — original CJK seguido de su romanización latina. Se corta en el
+  // último carácter CJK: lo que sigue (latino) es la lectura añadida.
+  if (CJK_RE.test(trimmed)) {
+    CJK_GLOBAL_RE.lastIndex = 0;
+    let lastCjk = -1;
+    let m: RegExpExecArray | null;
+    while ((m = CJK_GLOBAL_RE.exec(trimmed)) !== null) lastCjk = m.index;
+    const tail = trimmed.slice(lastCjk + 1);
+    // Solo si la cola es una romanización plausible (latino, sin CJK) y con
+    // cuerpo suficiente como para no comerse signos de puntuación legítimos.
+    if (tail.trim().length >= 3 && /^[\p{Script=Latin}\p{N}\s'’,.!?()\-–—]+$/u.test(tail)) {
+      return trimmed.slice(0, lastCjk + 1).trim();
+    }
+  }
+
+  return trimmed;
+}
+
+/** Aplica la limpieza línea a línea, preservando los saltos de estrofa. */
+export function cleanLetrasLyrics(text: string): string {
+  return text
+    .split('\n')
+    .map((line) => stripInterleavedTransliteration(line))
+    .join('\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
+/**
+ * ¿El bloque extraído es una TRADUCCIÓN y no la letra original? letras.mus.br
+ * publica la traducción en la misma plantilla (pestaña "Tradução"), y servirla
+ * como si fuera la letra es justo lo que no queremos.
+ */
+export function looksLikeTranslationBlock(html: string, blockIndex: number): boolean {
+  // Contexto inmediatamente anterior al bloque: ahí van los encabezados y las
+  // clases que marcan la columna traducida.
+  const context = html.slice(Math.max(0, blockIndex - 400), blockIndex);
+  return /lyric-translation|cnt-trad|letra-traduzida|traducao|traducción|tradução/i.test(context);
+}
+
 export function parseSongPage(html: string): { plainLyrics: string | null; title: string; artist: string } {
   const title = /<h1[^>]*>([^<]+)<\/h1>/i.exec(html)?.[1]?.trim() ?? '';
   const artist = /<h2[^>]*>(?:<a[^>]*>)?([^<]+)/i.exec(html)?.[1]?.trim() ?? '';
-  const lyricsHtml =
-    /<div[^>]+class="[^"]*lyric-original[^"]*"[^>]*>([\s\S]*?)<\/div>/i.exec(html)?.[1] ??
-    /<div[^>]+class="[^"]*cnt-letra[^"]*"[^>]*>([\s\S]*?)<\/div>/i.exec(html)?.[1] ??
-    null;
+
+  // Preferir SIEMPRE el contenedor del original. El fallback genérico
+  // (cnt-letra) comparte plantilla con la vista de traducción, así que solo se
+  // acepta si su contexto no delata que es el bloque traducido.
+  const original = /<div[^>]+class="[^"]*lyric-original[^"]*"[^>]*>([\s\S]*?)<\/div>/i.exec(html);
+  let lyricsHtml: string | null = original?.[1] ?? null;
+
+  if (lyricsHtml == null) {
+    const generic = /<div[^>]+class="[^"]*cnt-letra[^"]*"[^>]*>([\s\S]*?)<\/div>/i.exec(html);
+    if (generic && !looksLikeTranslationBlock(html, generic.index)) {
+      lyricsHtml = generic[1];
+    }
+  }
 
   return {
-    plainLyrics: lyricsHtml ? decodeHtml(lyricsHtml) : null,
+    plainLyrics: lyricsHtml ? cleanLetrasLyrics(decodeHtml(lyricsHtml)) : null,
     title,
     artist,
   };

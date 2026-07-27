@@ -46,9 +46,7 @@ import {
 } from './services/windowLayout';
 import type { RecognitionPhase } from './core/stateStore';
 import { setupContentSecurityPolicy } from './csp';
-import { createRemoteServer, type RemoteServer } from './services/remote/remoteServer';
 import { AutoContrastService } from './services/autoContrast';
-import { normalizeTrackKey } from './core/syncTiming';
 
 const isDev = process.env.NODE_ENV === 'development' || !!process.env.VITE_DEV_SERVER_URL;
 const devServerUrl = process.env.VITE_DEV_SERVER_URL ?? 'http://localhost:5173';
@@ -68,7 +66,6 @@ let lyricsCache: FileLyricsCache | null = null;
 let smtcReader: SmtcReader | null = null;
 let wakeWordReader: WakeWordReader | null = null;
 let recognitionService: RecognitionService | null = null;
-let remoteServer: RemoteServer | null = null;
 let autoContrast: AutoContrastService | null = null;
 let appSettings: AppSettings | null = null;
 /** Bounds expandidos guardados al colapsar a pill; se restauran al expandir. */
@@ -80,6 +77,22 @@ const EXPANDED_WIDTH = 760;
 const EXPANDED_HEIGHT = 560;
 /** Acelerador del atajo SING (expandir + reconocer). */
 const SING_ACCELERATOR = 'Ctrl+Alt+S';
+/** Fuerza el modo tangible (agarrar el widget sin depender del hover). */
+const TANGIBLE_ACCELERATOR = 'Ctrl+Alt+T';
+/** Píxeles que se mueve el widget con cada pulsación de flecha. */
+const MOVE_STEP_PX = 40;
+
+/**
+ * Modo tangible forzado.
+ *
+ * Normalmente el widget alterna click-through según el hover del handle. Eso
+ * falla cuando hay un juego a pantalla completa: el juego captura el mouse, el
+ * overlay nunca recibe el hover y por tanto NUNCA se vuelve agarrable — no hay
+ * forma de moverlo si estorba. Este bloqueo se activa por atajo de teclado (no
+ * necesita mouse) y mientras esté puesto el widget ignora las peticiones de
+ * click-through del renderer: manda el teclado.
+ */
+let tangibleLock = false;
 
 function createWindow(): BrowserWindow {
   const windowed = process.platform === 'linux' || process.env.ESPEJO_WINDOWED === '1';
@@ -134,8 +147,11 @@ function createWindow(): BrowserWindow {
     },
   });
 
-  // Clicks con -webkit-app-region: drag no llegan al renderer; el botón de
-  // cierre (×) que vendrá en Fase 5 usará IPC, no problemas de captura aquí.
+  // Nivel de "siempre encima" más alto que el normal: sin esto el widget queda
+  // POR DEBAJO de los juegos en pantalla completa sin bordes (el modo habitual
+  // hoy). No ayuda con pantalla completa exclusiva, donde el juego se adueña
+  // del display y ninguna ventana puede dibujarse encima.
+  if (overlay) win.setAlwaysOnTop(true, 'screen-saver');
 
   const showFallback = setTimeout(() => {
     if (!win.isDestroyed() && !win.isVisible()) {
@@ -274,7 +290,12 @@ function registerIpcHandlers(): void {
     'window:setClickThrough',
     (_event, ignore: boolean): { ok: boolean } => {
       if (mainWindow) {
-        if (ignore) {
+        // Con el modo tangible forzado por teclado, el renderer no puede
+        // volver a hacer el widget intangible (si no, sobre un juego a
+        // pantalla completa quedaría inagarrable otra vez).
+        if (tangibleLock) {
+          mainWindow.setIgnoreMouseEvents(false);
+        } else if (ignore) {
           mainWindow.setIgnoreMouseEvents(true, { forward: true });
         } else {
           mainWindow.setIgnoreMouseEvents(false);
@@ -300,7 +321,7 @@ function registerIpcHandlers(): void {
         const workArea = screen.getDisplayMatching(cur).workArea;
         mainWindow.setMinimumSize(PILL_WIDTH, PILL_HEIGHT);
         mainWindow.setBounds(pillBounds(workArea));
-        mainWindow.setAlwaysOnTop(true);
+        mainWindow.setAlwaysOnTop(true, 'screen-saver');
       } else {
         mainWindow.setMinimumSize(320, 200);
         if (savedBounds) {
@@ -339,9 +360,9 @@ function registerIpcHandlers(): void {
         return { ok: false, error: 'StateStore no inicializado' };
       }
       try {
-        const key = normalizeTrackKey(artist, title);
-        await lyricsCache?.clearEntry(key);
-        await stateStore.loadLyricsByMetadata(title, artist);
+        // retrySearch limpia la caché (incluida la negativa) y preserva la
+        // posición/pausa actuales (antes el retry manual reiniciaba a 0:00).
+        await stateStore.retrySearch(title, artist);
         return { ok: true };
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Error desconocido';
@@ -359,12 +380,13 @@ function registerIpcHandlers(): void {
   );
 
   // Fuente de reconocimiento activa. En modo micrófono el audio es externo al
-  // PC (parlante de la pieza): se suprime SMTC para que el reproductor del PC
-  // no cambie la pista ni pise la letra que identifica el micrófono.
+  // PC → SMTC suprimido por completo. En modo system, AudD manda en la
+  // identidad de la pista y SMTC solo colabora si su sesión coincide
+  // (arbitraje anti-loop de YouTube). null devuelve el mando a SMTC.
   ipcMain.handle(
     'recognition:setSource',
     (_event, source: 'microphone' | 'system' | null): { ok: boolean } => {
-      stateStore?.setExternalInputSuppressed(source === 'microphone');
+      stateStore?.setRecognitionSource(source);
       return { ok: true };
     },
   );
@@ -483,6 +505,17 @@ function registerIpcHandlers(): void {
     return { ok: true, offsetMs: stateStore?.getCalibrationOffsetMs() ?? 0 };
   });
 
+  // "Este desfase pasa en todas las canciones": mueve el ajuste de la pista
+  // actual a la calibración global, para que las próximas ya nazcan bien.
+  ipcMain.handle(
+    'sync:applyOffsetToAll',
+    (): { ok: boolean; calibrationMs: number; offsetMs: number } => {
+      if (!stateStore) return { ok: false, calibrationMs: 0, offsetMs: 0 };
+      const calibrationMs = stateStore.applyOffsetToAllTracks();
+      return { ok: true, calibrationMs, offsetMs: stateStore.getSyncOffsetMs() };
+    },
+  );
+
   ipcMain.handle('settings:getDisplay', (): { ok: boolean; display: ReturnType<DisplayStore['get']> } => {
     const display = appSettings?.displayStore.get() ?? NULL_DISPLAY_STORE.get();
     return { ok: true, display };
@@ -547,149 +580,6 @@ function registerIpcHandlers(): void {
     return stateStore.requestTranslation();
   });
 
-  ipcMain.handle('remote:getStatus', (): {
-    ok: boolean;
-    enabled: boolean;
-    running: boolean;
-    micConnected: boolean;
-    tvUrl: string;
-    micUrl: string;
-    ip: string;
-    port: number;
-  } => {
-    const enabled = appSettings?.remoteSettingsStore.get().enabled ?? false;
-    const info = remoteServer?.getInfo();
-    return {
-      ok: true,
-      enabled,
-      running: remoteServer?.isRunning() ?? false,
-      micConnected: remoteServer?.isMicConnected() ?? false,
-      tvUrl: info?.tvUrl ?? '',
-      micUrl: info?.micUrl ?? '',
-      ip: info?.ip ?? '',
-      port: info?.port ?? 5175,
-    };
-  });
-
-  ipcMain.handle(
-    'remote:setEnabled',
-    async (_event, enabled: boolean): Promise<{ ok: boolean; error?: string; status: ReturnType<typeof getRemoteStatusPayload> }> => {
-      if (!appSettings) {
-        return { ok: false, error: 'Ajustes no inicializados', status: getRemoteStatusPayload() };
-      }
-      appSettings.remoteSettingsStore.set({ enabled });
-      try {
-        await syncRemoteServer();
-        notifyRemoteStatus();
-        return { ok: true, status: getRemoteStatusPayload() };
-      } catch (err) {
-        const message = err instanceof Error ? err.message : 'No se pudo iniciar el servidor remoto';
-        appSettings.remoteSettingsStore.set({ enabled: false });
-        return { ok: false, error: message, status: getRemoteStatusPayload() };
-      }
-    },
-  );
-}
-
-function getRemoteStatusPayload(): {
-  enabled: boolean;
-  running: boolean;
-  micConnected: boolean;
-  tvUrl: string;
-  micUrl: string;
-  ip: string;
-  port: number;
-} {
-  const enabled = appSettings?.remoteSettingsStore.get().enabled ?? false;
-  const info = remoteServer?.getInfo();
-  return {
-    enabled,
-    running: remoteServer?.isRunning() ?? false,
-    micConnected: remoteServer?.isMicConnected() ?? false,
-    tvUrl: info?.tvUrl ?? '',
-    micUrl: info?.micUrl ?? '',
-    ip: info?.ip ?? '',
-    port: info?.port ?? 5175,
-  };
-}
-
-function notifyRemoteStatus(): void {
-  if (!mainWindow || mainWindow.isDestroyed()) return;
-  mainWindow.webContents.send('remote:status', getRemoteStatusPayload());
-}
-
-function buildRemoteServer(): RemoteServer {
-  const staticDir = path.join(app.getAppPath(), 'dist');
-  const certDir = path.join(app.getPath('userData'), 'remote-tls');
-  const devProxyOrigin = isDev ? devServerUrl : undefined;
-
-  return createRemoteServer({
-    staticDir,
-    certDir,
-    devProxyOrigin,
-    micHandlers: {
-      onLevel: (level) => stateStore?.reportAudioLevel(level),
-      onPhase: (phase) => stateStore?.setRecognitionPhase(phase),
-      onMicConnected: (connected) => {
-        notifyRemoteStatus();
-        if (connected && mainWindow && !mainWindow.isDestroyed()) {
-          mainWindow.webContents.send('remote:mic-active');
-        }
-      },
-      onIdentify: async (audio, mimeType, recordStartedAt) => {
-        if (!stateStore || !recognitionService) {
-          return { ok: false, matched: false, error: 'App no inicializada' };
-        }
-        try {
-          stateStore.setRecognitionPhase('IDENTIFYING');
-          const match = await recognitionService.identify(audio, mimeType);
-          if (!match) {
-            stateStore.setRecognitionPhase('LISTENING');
-            return { ok: true, matched: false };
-          }
-          await stateStore.applyMatch(match, recordStartedAt);
-          return { ok: true, matched: true };
-        } catch (err) {
-          stateStore.setRecognitionPhase(null);
-          const message = err instanceof Error ? err.message : 'Error desconocido';
-          return { ok: false, matched: false, error: message };
-        }
-      },
-      onCorrect: async (audio, mimeType, recordStartedAt) => {
-        if (!stateStore || !recognitionService) {
-          return { ok: false, matched: false, error: 'App no inicializada' };
-        }
-        try {
-          const match = await recognitionService.identify(audio, mimeType);
-          if (!match) return { ok: true, matched: false };
-          const changed = await stateStore.applyMatch(match, recordStartedAt);
-          return { ok: true, matched: true, changed };
-        } catch (err) {
-          const message = err instanceof Error ? err.message : 'Error desconocido';
-          return { ok: false, matched: false, error: message };
-        }
-      },
-    },
-  });
-}
-
-async function syncRemoteServer(): Promise<void> {
-  const enabled = appSettings?.remoteSettingsStore.get().enabled ?? false;
-  if (!enabled) {
-    stateStore?.setRemoteBroadcast(null);
-    remoteServer?.stop();
-    return;
-  }
-
-  if (!remoteServer) {
-    remoteServer = buildRemoteServer();
-  }
-
-  if (!remoteServer.isRunning()) {
-    await remoteServer.start();
-  }
-
-  stateStore?.setRemoteBroadcast((model) => remoteServer?.broadcastModel(model));
 }
 
 function bootstrap(): void {
@@ -739,6 +629,13 @@ function bootstrap(): void {
     appSettings?.readingStore ?? NULL_READING_STORE,
   );
   stateStore.applyReadingSettings();
+  // Cambio de pista detectado por el SO pero no confirmable por metadata:
+  // pedirle al renderer que re-identifique por audio de inmediato.
+  stateStore.setResyncRequester(() => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('command:resync');
+    }
+  });
   stateStore.start(100); // 10 Hz
 
   if (appSettings) {
@@ -751,7 +648,7 @@ function bootstrap(): void {
   }
 
   registerIpcHandlers();
-  registerSingShortcut();
+  registerGlobalShortcuts();
 
   // Capa b: reproductor del SO (SMTC) como reloj maestro. No-op si no hay
   // sidecar ni Windows; AudD sigue como fallback. Ruta del sidecar:
@@ -766,11 +663,6 @@ function bootstrap(): void {
   const wakeExe = process.env.WAKEWORD_SIDECAR?.trim() ?? '';
   wakeWordReader = new WakeWordReader(() => triggerSing(), wakeExe);
   wakeWordReader.start();
-
-  void syncRemoteServer().then(() => notifyRemoteStatus()).catch((err) => {
-    console.error('[remote ERROR] No se pudo iniciar el servidor LAN:', err);
-    appSettings?.remoteSettingsStore.set({ enabled: false });
-  });
 }
 
 /**
@@ -786,15 +678,55 @@ function triggerSing(): void {
 }
 
 /**
- * Registra el atajo global Ctrl+Alt+S → command:sing. No-op si falla el
- * registro (p. ej. el acelerador ya está tomado por otra app).
+ * Activa/desactiva el modo tangible forzado. Se maneja en el proceso main (y
+ * no en el renderer) para que funcione aunque el overlay no esté recibiendo
+ * eventos de mouse, que es justo el caso con un juego en primer plano.
  */
-function registerSingShortcut(): void {
-  const ok = globalShortcut.register(SING_ACCELERATOR, () => {
-    triggerSing();
-  });
-  if (!ok) {
-    console.warn(`[main] no se pudo registrar el atajo ${SING_ACCELERATOR} (quizá ya esté en uso).`);
+function setTangibleLock(next: boolean): void {
+  tangibleLock = next;
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+
+  if (next) {
+    mainWindow.setIgnoreMouseEvents(false);
+    // 'screen-saver' es el nivel más alto: gana a las ventanas en pantalla
+    // completa sin bordes (el modo por defecto de casi todos los juegos).
+    mainWindow.setAlwaysOnTop(true, 'screen-saver');
+    if (!mainWindow.isVisible()) mainWindow.show();
+    // Sin foco, el clic se lo queda el juego que está debajo.
+    mainWindow.focus();
+  }
+  mainWindow.webContents.send('command:tangible', next);
+}
+
+/** Mueve el widget con el teclado (no depende del mouse ni del hover). */
+function nudgeWindow(dx: number, dy: number): void {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  const [x, y] = mainWindow.getPosition();
+  mainWindow.setPosition(x + dx, y + dy);
+}
+
+/**
+ * Atajos globales. Cada registro puede fallar si otra app ya se quedó con el
+ * acelerador; se avisa por consola y el resto sigue funcionando.
+ */
+function registerGlobalShortcuts(): void {
+  const shortcuts: Array<[string, () => void]> = [
+    [SING_ACCELERATOR, () => triggerSing()],
+    [TANGIBLE_ACCELERATOR, () => setTangibleLock(!tangibleLock)],
+    ['Ctrl+Alt+Left', () => nudgeWindow(-MOVE_STEP_PX, 0)],
+    ['Ctrl+Alt+Right', () => nudgeWindow(MOVE_STEP_PX, 0)],
+    ['Ctrl+Alt+Up', () => nudgeWindow(0, -MOVE_STEP_PX)],
+    ['Ctrl+Alt+Down', () => nudgeWindow(0, MOVE_STEP_PX)],
+  ];
+
+  for (const [accelerator, handler] of shortcuts) {
+    try {
+      if (!globalShortcut.register(accelerator, handler)) {
+        console.warn(`[main] no se pudo registrar el atajo ${accelerator} (quizá ya esté en uso).`);
+      }
+    } catch (err) {
+      console.warn(`[main] error registrando ${accelerator}:`, err);
+    }
   }
 }
 
@@ -830,7 +762,7 @@ if (!gotLock) {
         if (mainWindow.isMinimized()) mainWindow.restore();
         if (!mainWindow.isVisible()) mainWindow.show();
         mainWindow.center();
-        mainWindow.setAlwaysOnTop(true);
+        mainWindow.setAlwaysOnTop(true, 'screen-saver');
         mainWindow.focus();
       }
     });
@@ -859,7 +791,6 @@ if (!gotLock) {
   app.on('window-all-closed', () => {
     smtcReader?.stop();
     wakeWordReader?.stop();
-    remoteServer?.stop();
     autoContrast?.dispose();
     stateStore?.stop();
     lyricsCache?.flush(); // escribe el índice pendiente (persist debounced)
@@ -870,7 +801,6 @@ if (!gotLock) {
   app.on('before-quit', () => {
     smtcReader?.stop();
     wakeWordReader?.stop();
-    remoteServer?.stop();
     stateStore?.stop();
     lyricsCache?.flush();
     globalShortcut.unregisterAll();

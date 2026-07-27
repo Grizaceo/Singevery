@@ -13,6 +13,7 @@ import {
   normalizeTrackKey,
 } from './syncTiming';
 import type { RecognitionPhase } from './syncTiming';
+import { looksLikeSameTrack } from '../services/lyrics/normalizeQuery';
 import { LyricsService, defaultLyricsService } from '../services/lyrics/lyricsService';
 import { NULL_OFFSET_STORE, NULL_CALIBRATION_STORE, NULL_DISPLAY_STORE, NULL_TRANSLATION_STORE, NULL_READING_STORE } from '../services/settings';
 import type { OffsetStore, CalibrationStore, DisplayStore, TranslationStore, ReadingStore } from '../services/settings';
@@ -64,12 +65,51 @@ export class StateStore {
   private pendingChangeKey: string | null = null;
   private pendingChangeCount = 0;
 
+  // Claves alias de la pista ACTUAL. La misma canción llega con metadata
+  // distinta según la fuente (AudD: "Houdini"/"Dua Lipa"; SMTC de YouTube:
+  // "Dua Lipa - Houdini (Official Video)"/"DuaLipaVEVO"). Cuando la identidad
+  // difusa (looksLikeSameTrack) reconoce a un recién llegado como la pista en
+  // curso, su clave se registra aquí para resolver los próximos eventos por
+  // comparación exacta (barata) y sin recargar la letra.
+  private trackAliasKeys = new Set<string>();
+
+  // Auto-reintento de búsqueda de letra. Si una búsqueda termina en NO_LYRICS
+  // o ERROR, se reintenta solo (limpiando la caché negativa) con backoff, sin
+  // panel de rescate. Acotado por pista para no martillar a los proveedores.
+  private static readonly AUTO_RETRY_DELAYS_MS = [4000, 15000];
+  private autoRetryTimer: NodeJS.Timeout | null = null;
+  private autoRetryAttempt = 0;
+  private autoRetryPending = false;
+
   // Fuente externa suprimida. Cuando el micrófono maneja audio EXTERNO al PC
   // (parlante de la pieza, teléfono), las sesiones de medios de Windows (SMTC)
   // son irrelevantes y no deben cambiar la pista, la posición ni el play/pausa:
   // pisarían la letra que identificó el micrófono. El renderer lo activa al
   // iniciar reconocimiento por micrófono y lo apaga al parar / cambiar a system.
   private externalInputSuppressed = false;
+
+  // Fuente de reconocimiento activa en el renderer (SING). Con 'system', el
+  // fingerprint del audio (AudD/Shazam) es la VERDAD de lo que suena; la
+  // sesión SMTC (p. ej. YouTube en un navegador) solo colabora si su metadata
+  // coincide con la pista en curso. Sin este arbitraje, una sesión con
+  // metadata irreconocible recargaba la letra y entraba en loop con AudD.
+  private recognitionSource: 'microphone' | 'system' | null = null;
+
+  /** true si la sesión SMTC actual corresponde a la pista mostrada; en false
+   *  sus eventos de posición/pausa se ignoran (son de OTRA cosa). */
+  private externalTrusted = true;
+
+  /** Última pista SMTC ignorada por el bloqueo de identidad: sirve para
+   *  corroborar el próximo match de AudD y saltarse la histéresis. */
+  private lastUnmatchedExternal: { title: string; artist: string; at: number } | null = null;
+  private static readonly EXTERNAL_CORROBORATION_TTL_MS = 90_000;
+
+  /** Pide al renderer re-identificar YA (cambio de pista no confirmable). */
+  private resyncRequester: (() => void) | null = null;
+  /** -Infinity y no 0: con 0 la primera petición quedaba dentro del throttle. */
+  private lastResyncRequestAt = Number.NEGATIVE_INFINITY;
+  /** Mínimo entre peticiones de resync: un ciclo de captura completo. */
+  private static readonly RESYNC_THROTTLE_MS = 10_000;
 
   /** Base de posición SIN offset crónico ni corrección: el "crudo" anclado. */
   private positionMs = 0;
@@ -101,8 +141,6 @@ export class StateStore {
   private readonly translationStore: TranslationStore;
   private readonly readingStore: ReadingStore;
   private readonly lyricsService: LyricsService;
-  /** Retransmisión opcional del RenderModel al servidor LAN (modo TV). */
-  private remoteBroadcast: ((model: RenderModel) => void) | null = null;
 
   /** Color resuelto por auto-contraste (null = usar manual). */
   private autoContrastColor: string | null = null;
@@ -142,6 +180,7 @@ export class StateStore {
     this.engine.renderConfig.opacity = d.opacity;
     this.engine.renderConfig.alignment = d.alignment;
     this.engine.renderConfig.mirrorMode = d.mirrorMode;
+    this.engine.renderConfig.windowSize = d.lyricsWindowSize;
     if (d.textColorMode !== 'auto') {
       this.clearAutoContrast();
     }
@@ -177,9 +216,21 @@ export class StateStore {
     this.window = window;
   }
 
-  /** Enlaza retransmisión LAN del RenderModel (modo TV). null = desactivada. */
-  setRemoteBroadcast(cb: ((model: RenderModel) => void) | null): void {
-    this.remoteBroadcast = cb;
+  /**
+   * Enlaza el disparador de re-identificación inmediata. Se llama cuando el
+   * reproductor del SO reporta una pista que el arbitraje no puede confirmar:
+   * es señal fiable de que ALGO cambió, aunque su metadata no sirva para saber
+   * qué. Con throttle para no encadenar capturas.
+   */
+  setResyncRequester(cb: (() => void) | null): void {
+    this.resyncRequester = cb;
+  }
+
+  private requestResync(at: number): void {
+    if (!this.resyncRequester) return;
+    if (at - this.lastResyncRequestAt < StateStore.RESYNC_THROTTLE_MS) return;
+    this.lastResyncRequestAt = at;
+    this.resyncRequester();
   }
 
   start(intervalMs = 100): void {
@@ -192,6 +243,67 @@ export class StateStore {
       clearInterval(this.intervalHandle);
       this.intervalHandle = null;
     }
+    this.cancelAutoRetry();
+  }
+
+  // ==========================================================================
+  // Auto-reintento de búsqueda de letra (reemplaza al panel de rescate).
+  // ==========================================================================
+
+  private cancelAutoRetry(): void {
+    if (this.autoRetryTimer) {
+      clearTimeout(this.autoRetryTimer);
+      this.autoRetryTimer = null;
+    }
+    this.autoRetryPending = false;
+  }
+
+  /** Programa un reintento automático de la búsqueda que acaba de fallar. */
+  private scheduleAutoRetry(
+    trackKey: string,
+    title: string,
+    artist: string,
+    album: string | null,
+    durationMs: number | null,
+  ): void {
+    if (this.autoRetryAttempt >= StateStore.AUTO_RETRY_DELAYS_MS.length) return;
+    const delay = StateStore.AUTO_RETRY_DELAYS_MS[this.autoRetryAttempt];
+    this.autoRetryPending = true;
+    this.autoRetryTimer = setTimeout(() => {
+      this.autoRetryTimer = null;
+      this.autoRetryPending = false;
+      // La pista cambió mientras esperábamos: el reintento ya no aplica.
+      if (this.currentTrackKey !== trackKey) return;
+      this.autoRetryAttempt += 1;
+      this.retrySearch(title, artist, album, durationMs).catch(() => {
+        /* el estado ERROR ya quedó reflejado por loadLyricsByMetadata */
+      });
+    }, delay);
+    // No retener el proceso vivo por un reintento pendiente.
+    this.autoRetryTimer.unref?.();
+  }
+
+  /** Reintenta la búsqueda limpiando la entrada de caché (incluida la negativa)
+   *  y preservando reloj y estado de pausa. Público para el IPC lyrics:retry. */
+  async retrySearch(
+    title: string,
+    artist: string,
+    album: string | null = null,
+    durationMs: number | null = null,
+  ): Promise<void> {
+    const key = normalizeTrackKey(artist, title);
+    // Llamada opcional: los dobles de test del LyricsService pueden no tenerla.
+    await this.lyricsService.forgetTrack?.(key);
+    const now = Date.now();
+    const wasPaused = this.clockPaused;
+    // Ancla cruda actual (sin offset crónico: loadLyricsByMetadata lo re-suma).
+    const rawAnchor = Math.max(0, this.currentPosition(now) - this.syncOffsetMs);
+    try {
+      await this.loadLyricsByMetadata(title, artist, rawAnchor, now, album, durationMs);
+    } catch {
+      // loadLyricsByMetadata ya dejó overrideStatus en ERROR y re-programó.
+    }
+    if (wasPaused) this.pauseClock();
   }
 
   setLyrics(lyrics: TimedLyrics | null, title?: string, artist?: string): void {
@@ -267,6 +379,12 @@ export class StateStore {
     durationMs: number | null = null,
   ): Promise<void> {
     const trackKey = normalizeTrackKey(artist, title);
+    // Identidad nueva: limpiar aliases y contador de reintentos de la anterior.
+    if (trackKey !== this.currentTrackKey) {
+      this.trackAliasKeys.clear();
+      this.autoRetryAttempt = 0;
+    }
+    this.cancelAutoRetry();
     this.currentTrackKey = trackKey;
     this.lastMatchKey = trackKey;
     this.syncOffsetMs = this.offsetStore.get(trackKey); // offset crónico persistido
@@ -281,9 +399,12 @@ export class StateStore {
     try {
       // El servicio busca (cache-first), parsea y romaniza; devuelve TimedLyrics.
       const lyrics = await this.lyricsService.getLyrics({ title, artist, album, durationMs });
+      // Mientras buscábamos pudo cargarse otra pista: no pisar su estado.
+      if (this.currentTrackKey !== trackKey) return;
       if (!lyrics) {
         this.setLyrics(null, title, artist);
         this.overrideStatus = 'NO_LYRICS';
+        this.scheduleAutoRetry(trackKey, title, artist, album, durationMs);
         return;
       }
 
@@ -292,13 +413,35 @@ export class StateStore {
       const projected = projectAnchoredPosition(anchorMs, anchorAt);
 
       this.overrideStatus = null;
+      this.autoRetryAttempt = 0;
       this.setLyrics(lyrics, title, artist);
       this.reanchor(projected.positionMs + this.syncOffsetMs, projected.anchorAt);
     } catch (err) {
-      this.setLyrics(null, title, artist);
-      this.overrideStatus = 'ERROR';
+      if (this.currentTrackKey === trackKey) {
+        this.setLyrics(null, title, artist);
+        this.overrideStatus = 'ERROR';
+        this.scheduleAutoRetry(trackKey, title, artist, album, durationMs);
+      }
       throw err;
     }
+  }
+
+  /**
+   * ¿La metadata entrante refiere a la pista actualmente cargada, aunque su
+   * clave exacta difiera? Compara por alias ya resueltos y, si no, por
+   * identidad difusa (título de video vs metadata canónica). Registra el alias
+   * para resolver los próximos eventos con comparación exacta.
+   */
+  private matchesCurrentTrack(key: string, title: string, artist: string): boolean {
+    if (this.lastMatchKey === key) return true;
+    if (this.trackAliasKeys.has(key)) return true;
+    if (!this.trackTitle || !this.trackArtist) return false;
+    const same = looksLikeSameTrack(
+      { title, artist },
+      { title: this.trackTitle, artist: this.trackArtist },
+    );
+    if (same) this.trackAliasKeys.add(key);
+    return same;
   }
 
   setRecognitionPhase(phase: RecognitionPhase): void {
@@ -329,9 +472,11 @@ export class StateStore {
         ? adjustMatchPosition(match, recordStartedAt, this.calibrationOffsetMs)
         : { positionMs: match.position_ms, anchorAt: match.matched_at };
 
-    if (this.lastMatchKey === matchKey && this.engine.getLyrics()) {
-      // Misma canción: reconciliar deriva sin recargar ni tapar la letra.
-      // Confirmar la pista actual descarta cualquier cambio pendiente.
+    // Misma canción (por clave exacta, alias o identidad difusa — la metadata
+    // de AudD y la del SMTC de un navegador difieren para el mismo tema):
+    // reconciliar deriva sin recargar ni tapar la letra. Confirmar la pista
+    // actual descarta cualquier cambio pendiente.
+    if (this.engine.getLyrics() && this.matchesCurrentTrack(matchKey, title, artist)) {
       this.pendingChangeKey = null;
       this.pendingChangeCount = 0;
       this.applyCorrection(anchor);
@@ -341,12 +486,26 @@ export class StateStore {
       return false;
     }
 
+    // Corroboración de dos fuentes independientes: si SMTC ya reportó una
+    // pista (bloqueada por el arbitraje) y este match de AudD la reconoce como
+    // la misma canción, el cambio es real → confirmar sin esperar la
+    // histéresis (ahorra un ciclo de corrección de ~18s).
+    const ext = this.lastUnmatchedExternal;
+    const corroborated =
+      ext != null &&
+      Date.now() - ext.at < StateStore.EXTERNAL_CORROBORATION_TTL_MS &&
+      looksLikeSameTrack({ title, artist }, ext);
+
     // Histéresis compartida (mic + SMTC): un cambio de pista no se aplica al
     // primer indicio; una mis-identificación puntual no debe arrancar la letra.
-    if (!this.confirmTrackChange(matchKey)) {
+    if (!corroborated && !this.confirmTrackChange(matchKey)) {
       // Aún no confirmado: mantener la letra actual intacta (no tocar la
       // posición: el anchor es de otra pista y desincronizaría la de ahora).
       return false;
+    }
+    if (corroborated) {
+      this.pendingChangeKey = null;
+      this.pendingChangeCount = 0;
     }
 
     await this.loadLyricsByMetadata(
@@ -357,6 +516,14 @@ export class StateStore {
       album ?? null,
       duration_ms ?? null,
     );
+    if (corroborated && ext) {
+      // La sesión SMTC bloqueada ERA esta canción: registrar su clave como
+      // alias (los próximos eventos 'track' resuelven por comparación exacta)
+      // y volver a confiar en sus posiciones.
+      this.trackAliasKeys.add(normalizeTrackKey(ext.artist, ext.title));
+      this.externalTrusted = true;
+      this.lastUnmatchedExternal = null;
+    }
     return true;
   }
 
@@ -402,6 +569,14 @@ export class StateStore {
     const estimatedNow =
       anchor.positionMs + Math.max(0, now - anchor.anchorAt) + this.syncOffsetMs;
     const decision = computeDrift(estimatedNow, this.currentPosition(now));
+
+    // Diagnóstico de sincronía: el signo del error debe alternar alrededor de
+    // 0. Un sesgo persistente del mismo signo delata un problema de anclaje
+    // (referencia del position_ms del proveedor), no deriva del reloj.
+    console.log(
+      `[sync] error=${Math.round(decision.errorMs)}ms acción=${decision.action} ` +
+        `(mostrado=${Math.round(this.currentPosition(now))}ms, medido=${Math.round(estimatedNow)}ms)`,
+    );
 
     if (decision.action === 'ignore') return;
     if (decision.action === 'snap') {
@@ -542,6 +717,78 @@ export class StateStore {
     if (this.currentTrackKey) {
       this.offsetStore.set(this.currentTrackKey, this.syncOffsetMs);
     }
+    this.learnGlobalLatency();
+  }
+
+  // ==========================================================================
+  // Latencia global — "todas las canciones van un poco atrasadas".
+  //
+  // El offset por pista existe para problemas DE esa pista (un LRC mal
+  // timeado). Si el usuario corrige varias pistas distintas en el MISMO
+  // sentido y por una magnitud parecida, eso no es de las pistas: es latencia
+  // del equipo (captura del audio del sistema, anclaje del reconocedor, etc.).
+  // Se promueve a la calibración global para que las canciones NUEVAS ya
+  // nazcan sincronizadas, en vez de tener que corregir una por una.
+  // ==========================================================================
+
+  /** Pistas distintas con corrección coherente antes de aprender la latencia. */
+  private static readonly LATENCY_LEARN_MIN_TRACKS = 3;
+  /** Por debajo de esto no vale la pena mover la calibración global. */
+  private static readonly LATENCY_LEARN_MIN_MS = 250;
+
+  /**
+   * Mueve `deltaMs` desde los offsets por pista hacia la calibración global,
+   * sin que la letra salte: la calibración solo actúa al anclar matches
+   * futuros, así que la posición mostrada se re-ancla en su valor actual.
+   */
+  private promoteToCalibration(deltaMs: number): void {
+    if (!deltaMs) return;
+    const now = Date.now();
+    const displayed = this.currentPosition(now);
+
+    this.calibrationOffsetMs += deltaMs;
+    this.calibrationStore.set(this.calibrationOffsetMs);
+    // Descontar de lo ya guardado para no contar el desfase dos veces.
+    this.offsetStore.rebase?.(deltaMs);
+    this.syncOffsetMs -= deltaMs;
+    if (this.currentTrackKey) {
+      this.offsetStore.set(this.currentTrackKey, this.syncOffsetMs);
+    }
+    this.reanchor(displayed, now);
+  }
+
+  /**
+   * Aplica el ajuste de la pista actual a TODAS las canciones (acción manual
+   * del usuario: "esto pasa siempre, no solo aquí"). Devuelve la calibración
+   * global resultante.
+   */
+  applyOffsetToAllTracks(): number {
+    this.promoteToCalibration(this.syncOffsetMs);
+    return this.calibrationOffsetMs;
+  }
+
+  /** Detecta latencia global a partir de las correcciones ya hechas. */
+  private learnGlobalLatency(): void {
+    const entries = this.offsetStore.entries?.();
+    if (!entries) return;
+    const values = Object.values(entries).filter((v) => Math.abs(v) >= StateStore.LATENCY_LEARN_MIN_MS);
+    if (values.length < StateStore.LATENCY_LEARN_MIN_TRACKS) return;
+    // Todas en el mismo sentido: si las hay de ambos signos, no es global.
+    const positive = values.every((v) => v > 0);
+    const negative = values.every((v) => v < 0);
+    if (!positive && !negative) return;
+
+    const sorted = [...values].sort((a, b) => a - b);
+    const mid = Math.floor(sorted.length / 2);
+    const median =
+      sorted.length % 2 === 1 ? sorted[mid] : Math.round((sorted[mid - 1] + sorted[mid]) / 2);
+    if (Math.abs(median) < StateStore.LATENCY_LEARN_MIN_MS) return;
+
+    console.log(
+      `[sync] latencia global aprendida de ${values.length} pistas: ${median}ms ` +
+        `(calibración ${this.calibrationOffsetMs} → ${this.calibrationOffsetMs + median})`,
+    );
+    this.promoteToCalibration(median);
   }
 
   getSyncOffsetMs(): number {
@@ -583,9 +830,25 @@ export class StateStore {
     this.externalInputSuppressed = suppressed;
   }
 
+  /**
+   * Fuente de reconocimiento activa (renderer). 'microphone' suprime SMTC por
+   * completo (audio externo al PC); 'system' activa el arbitraje: AudD manda
+   * en la identidad y SMTC solo aporta posición si su sesión coincide con la
+   * pista actual; null (reconocimiento parado) devuelve el mando a SMTC.
+   */
+  setRecognitionSource(source: 'microphone' | 'system' | null): void {
+    this.recognitionSource = source;
+    this.externalInputSuppressed = source === 'microphone';
+    // Cambio de modo: resetear la confianza y la corroboración pendiente.
+    this.externalTrusted = true;
+    this.lastUnmatchedExternal = null;
+  }
+
   /** Pausa/reanuda el reloj según el estado de reproducción del SO. */
   setPlaybackState(playing: boolean, at: number = Date.now()): void {
     if (this.externalInputSuppressed) return;
+    // Sesión no confiable (es de OTRA pista): su play/pausa no aplica.
+    if (!this.externalTrusted) return;
     if (playing) this.resumeClock(at);
     else this.pauseClock(at);
   }
@@ -601,6 +864,11 @@ export class StateStore {
    */
   applyExternalPosition(positionMs: number, playing: boolean, at: number = Date.now()): void {
     if (this.externalInputSuppressed) return;
+    // Sesión no confiable: sus posiciones son de OTRA pista (p. ej. un video
+    // de YouTube cuya metadata no coincide con lo que AudD identificó) y
+    // tirarían la letra hacia cualquier parte. El reloj de pared + las
+    // correcciones de AudD gobiernan hasta que la sesión vuelva a coincidir.
+    if (!this.externalTrusted) return;
     if (!playing) {
       this.pauseClock(at);
       return;
@@ -631,21 +899,30 @@ export class StateStore {
       durationMs?: number | null;
       positionMs?: number;
       at?: number;
+      playing?: boolean;
     } = {},
   ): Promise<boolean> {
     // Micrófono manejando audio externo: el reproductor del PC no manda.
     if (this.externalInputSuppressed) return false;
-    const { album = null, durationMs = null, positionMs = 0, at = Date.now() } = options;
+    const { album = null, durationMs = null, positionMs = 0, at = Date.now(), playing = true } = options;
     const key = normalizeTrackKey(artist, title);
-    if (this.lastMatchKey === key) {
+    // Comparación tolerante: el título de video de YouTube ("Artista - Canción
+    // (Official Video)" con canal como artista) y la metadata canónica de AudD
+    // son la MISMA pista; sin esto, cada fuente "cambiaba" la canción de la
+    // otra y la letra entraba en un loop de recarga (bug YouTube vs Spotify).
+    if (this.matchesCurrentTrack(key, title, artist)) {
+      // La sesión SMTC coincide con la pista en curso: vuelve a ser confiable
+      // (sus posiciones y play/pausa aplican).
+      this.externalTrusted = true;
+      this.lastUnmatchedExternal = null;
       if (this.engine.getLyrics()) {
-        this.applyExternalPosition(positionMs, true, at);
+        this.applyExternalPosition(positionMs, playing, at);
         return false;
       }
       // Misma pista sin letra: ya se buscó (o se está buscando). SMTC repite
       // el evento 'track' con frecuencia; sin este guard, cada evento
-      // relanzaba la búsqueda completa contra la red. El rescate manual
-      // (lyrics:load / lyrics:retry) no pasa por aquí y sigue funcionando.
+      // relanzaba la búsqueda completa contra la red. El reintento automático
+      // (scheduleAutoRetry) no pasa por aquí y sigue funcionando.
       if (
         this.overrideStatus === 'NO_LYRICS' ||
         this.overrideStatus === 'ERROR' ||
@@ -653,12 +930,39 @@ export class StateStore {
       ) {
         return false;
       }
+    } else if (this.recognitionSource === 'system' && this.engine.getLyrics()) {
+      // BLOQUEO DE IDENTIDAD (bug YouTube): con reconocimiento por sistema
+      // activo y letra en pantalla, el fingerprint del audio es la verdad de
+      // lo que SUENA. Una sesión SMTC cuya metadata no calza (título de video
+      // irreconocible, otra pestaña, sesión zombie de un sidecar viejo) NO
+      // recarga la letra — eso era el loop: recarga SMTC ↔ recarga AudD.
+      // Se guarda para corroborar el próximo match de AudD (cambio real de
+      // canción confirma rápido) y la sesión queda como NO confiable: sus
+      // posiciones dejan de tirar la letra hacia otra pista.
+      this.externalTrusted = false;
+      const isNewSignal =
+        this.lastUnmatchedExternal == null ||
+        normalizeTrackKey(this.lastUnmatchedExternal.artist, this.lastUnmatchedExternal.title) !== key;
+      this.lastUnmatchedExternal = { title, artist, at };
+      // El evento del SO es señal fiable de que ALGO cambió aunque su metadata
+      // no permita saber qué: pedir una identificación por audio de inmediato
+      // en vez de esperar el próximo ciclo de corrección (~18s).
+      if (isNewSignal) this.requestResync(at);
+      return false;
+    } else if (!playing && this.engine.getLyrics() && !this.clockPaused) {
+      // Una sesión EN PAUSA no roba la letra de lo que está sonando: Windows a
+      // veces parpadea la "sesión actual" entre apps (navegador ↔ Spotify) y
+      // ese flip transitorio no debe recargar nada.
+      return false;
     }
     // SMTC no lleva histéresis por conteo: el sidecar emite 'track' una sola
     // vez por cambio real (evento del SO, autoritativo). Exigir 2 eventos haría
     // que nunca cambiara de canción. En modo micrófono SMTC va suprimido; el
     // parpadeo espurio entre sesiones del PC es raro y se corrige al instante.
     await this.loadLyricsByMetadata(title, artist, positionMs, at, album, durationMs);
+    this.externalTrusted = true;
+    this.lastUnmatchedExternal = null;
+    if (!playing) this.pauseClock(at);
     return true;
   }
 
@@ -671,12 +975,25 @@ export class StateStore {
       case 'FETCHING_LYRICS':
         return 'Buscando letra...';
       case 'NO_LYRICS':
-        return 'Sin letra disponible';
+        return this.autoRetryPending ? 'Sin letra aún · reintentando...' : 'Sin letra disponible';
       case 'ERROR':
-        return 'Error al buscar letra';
+        return this.autoRetryPending ? 'Error al buscar letra · reintentando...' : 'Error al buscar letra';
       default:
         return IDLE_MESSAGE;
     }
+  }
+
+  /** Apariencia del handle configurada por el usuario (color/tamaño/posición). */
+  private resolveHandleAppearance(): Pick<
+    RenderModel,
+    'handle_color' | 'handle_scale' | 'handle_position_x'
+  > {
+    const d = this.displayStore.get();
+    return {
+      handle_color: d.handleColor,
+      handle_scale: d.handleScale,
+      handle_position_x: d.handlePositionX,
+    };
   }
 
   private buildBaseModel(status: Status, currentLine: string): RenderModel {
@@ -690,6 +1007,7 @@ export class StateStore {
       alignment: d.alignment,
       mirror_mode: d.mirrorMode,
       ...this.resolveTextAppearance(),
+      ...this.resolveHandleAppearance(),
       track_title: this.trackTitle,
       track_artist: this.trackArtist,
       status,
@@ -712,6 +1030,7 @@ export class StateStore {
     const full: RenderModel = {
       ...model,
       ...this.resolveTextAppearance(),
+      ...this.resolveHandleAppearance(),
       track_title: this.trackTitle,
       track_artist: this.trackArtist,
     };
@@ -722,6 +1041,5 @@ export class StateStore {
     if (this.window && !this.window.isDestroyed()) {
       this.window.webContents.send('render:model', model);
     }
-    this.remoteBroadcast?.(model);
   }
 }

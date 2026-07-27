@@ -24,6 +24,12 @@
   font-size: 1rem;
 }
 
+/* "Aplicar a todas": aparece solo cuando hay un ajuste que promover. */
+.sync-btn.offset-apply-all {
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
 .sync-offset-label {
   font-size: 0.65rem;
   font-family: 'Inter', monospace;

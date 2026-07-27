@@ -28,8 +28,20 @@ function durationFromResponse(response: ShazamApiResponse): number | null {
   return null;
 }
 
-/** Mapea la respuesta de Shazam al contrato interno TrackMatch. */
-export function mapShazamResponse(response: ShazamApiResponse): TrackMatch | null {
+/**
+ * Mapea la respuesta de Shazam al contrato interno TrackMatch.
+ *
+ * `sampleMs` es el `samplems` de la huella que produjo el match: la ventana de
+ * audio (desde el inicio de la grabación) que cubre esa huella. El `offset` de
+ * Shazam está referido al FINAL de esa ventana, así que se propaga como
+ * `sample_offset_ms` para que adjustMatchPosition pueda anclar bien el reloj.
+ * Sin este dato se asumía el inicio de la grabación y la letra se adelantaba
+ * varios segundos de forma sistemática.
+ */
+export function mapShazamResponse(
+  response: ShazamApiResponse,
+  sampleMs = 0,
+): TrackMatch | null {
   const title = response.track?.title;
   const artist = response.track?.subtitle;
   if (!title || !artist) return null;
@@ -49,6 +61,7 @@ export function mapShazamResponse(response: ShazamApiResponse): TrackMatch | nul
     confidence: 1.0,
     position_ms: parseShazamPositionMs(response),
     matched_at: matchedAt,
+    sample_offset_ms: Number.isFinite(sampleMs) ? Math.max(0, sampleMs) : 0,
   };
 }
 
@@ -84,7 +97,9 @@ export async function identifyFromShazam(
         samplems: sig.samplems,
       });
       if (response) {
-        return mapShazamResponse(response);
+        // `sig.samplems` viaja con el match: es el punto de la grabación al que
+        // se refiere el offset devuelto (ver mapShazamResponse).
+        return mapShazamResponse(response, sig.samplems);
       }
     }
     return null;

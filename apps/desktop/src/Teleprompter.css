@@ -37,20 +37,22 @@
     text-shadow: 0 1px 4px rgba(255, 255, 255, 0.65);
 }
 
-/* Header superior-centrado: título, artista y estado. Discreto, no compite
-   con la letra y desaparece junto al resto de la UI durante la reproducción. */
+/* ==========================================================================
+   Título / artista / estado — ahora es el elemento CENTRAL de la barra
+   superior (ver TrackHeader.tsx). Antes iba en position:absolute sobre la
+   misma banda que la barra, así que con títulos largos o ventanas angostas
+   se montaba encima de los controles. Como ítem flex con min-width:0 el
+   navegador garantiza el reparto y el texto se trunca antes de empujar nada.
+   ========================================================================== */
 .track-header {
-    position: absolute;
-    top: 0.6rem;
-    left: 50%;
-    transform: translateX(-50%);
-    z-index: 900;
     display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 0.05rem;
-    max-width: 70%;
-    text-align: center;
+    flex: 1 1 auto;
+    min-width: 0; /* imprescindible: permite que el texto se trunque */
+    align-items: baseline;
+    justify-content: center;
+    gap: 0.5rem;
+    padding: 0 0.5rem;
+    overflow: hidden;
     -webkit-app-region: no-drag;
     pointer-events: auto;
     transition: opacity 0.4s ease;
@@ -61,54 +63,33 @@
 }
 
 .track-header-title {
-    font-size: 0.82rem;
+    font-size: 0.78rem;
     font-weight: 600;
-    color: color-mix(in srgb, var(--lyrics-color) 90%, transparent);
+    color: var(--chrome-text, #f2f2f7);
     text-shadow: 0 1px 6px rgba(0, 0, 0, 0.9);
-    transition: color 0.4s ease;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    max-width: 100%;
-}
-
-.track-header-artist {
-    font-size: 0.7rem;
-    font-weight: 400;
-    color: color-mix(in srgb, var(--lyrics-color) 55%, transparent);
-    text-shadow: 0 1px 6px rgba(0, 0, 0, 0.9);
-    transition: color 0.4s ease;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    max-width: 100%;
+    min-width: 0;
 }
 
 .track-header-status {
-    font-size: 0.6rem;
-    color: color-mix(in srgb, var(--lyrics-color) 40%, transparent);
+    flex: 0 0 auto;
+    font-size: 0.58rem;
+    color: var(--chrome-text-muted, rgba(242, 242, 247, 0.55));
     text-transform: uppercase;
     letter-spacing: 0.06em;
-    margin-top: 0.1rem;
-    transition: color 0.4s ease;
+    white-space: nowrap;
 }
 
-.teleprompter-container.vignette-light .track-header-title,
-.teleprompter-container.vignette-light .track-header-artist,
-.teleprompter-container.vignette-light .track-header-status {
-    text-shadow: 0 1px 4px rgba(255, 255, 255, 0.55);
-}
-
-/* Panel de letras: backdrop translúcido y suave para legibilidad sobre
-   cualquier fondo, sin bordes duros, conservando la transparencia del overlay. */
 .lyrics-panel {
     display: flex;
     justify-content: center;
     align-items: center;
     width: 100%;
     max-width: 100%;
-    /* top: deja espacio para el header; bottom: para los controles */
-    padding: 3.2rem 0.9rem 3.2rem;
+    /* deja aire para las barras fijas de arriba y abajo */
+    padding: 3rem 0.9rem 3.2rem;
     box-sizing: border-box;
     background: radial-gradient(
         ellipse at center,
@@ -255,4 +236,87 @@ ruby.line-spoken > rt {
 .teleprompter-container.vignette-light .line-romaji,
 .teleprompter-container.vignette-light .line-translation {
     text-shadow: 0 1px 4px rgba(255, 255, 255, 0.45);
+}
+
+/* ==========================================================================
+   Texto paralelo (traducción lado a lado)
+
+   Cada línea es una fila de dos columnas alineadas: a la izquierda la letra
+   en el modo de lectura elegido, a la derecha su traducción. Ambas se
+   iluminan con la misma fracción, así el ojo asocia tramo con significado.
+   ========================================================================== */
+.lyrics-display.lyrics-side {
+    max-width: 98%;
+    width: 100%;
+    text-align: initial;
+}
+
+.lyrics-side-header {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1.6rem;
+    width: 100%;
+    padding-bottom: 0.15rem;
+    border-bottom: 1px solid color-mix(in srgb, var(--lyrics-color) 16%, transparent);
+    color: color-mix(in srgb, var(--lyrics-color) 40%, transparent);
+    font-size: 0.62rem;
+    font-weight: 600;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    user-select: none;
+}
+
+/* Las bandas de cada nivel ocupan todo el ancho para que las columnas
+   coincidan entre líneas (si no, cada banda se centraría por su cuenta). */
+.lyrics-side .lyrics-far,
+.lyrics-side .lyrics-adjacent,
+.lyrics-side .lyrics-current {
+    width: 100%;
+}
+
+.line-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1.6rem;
+    width: 100%;
+    align-items: baseline;
+}
+
+.line-col {
+    min-width: 0; /* permite que el texto largo haga wrap dentro de su columna */
+}
+
+.line-col-main {
+    text-align: right;
+}
+
+.line-col-translation {
+    text-align: left;
+}
+
+/* La traducción acompaña, no compite: algo más chica y en cursiva, pero
+   suficientemente legible como para leerse de un vistazo. */
+.line-translation-side {
+    font-size: 0.82em;
+    font-style: italic;
+    font-weight: inherit;
+    color: color-mix(in srgb, var(--lyrics-color) 82%, #c8dcff);
+}
+
+@media (max-width: 620px) {
+    /* Ventana angosta: el texto paralelo no cabe en dos columnas legibles,
+       así que se apila (traducción bajo su línea, manteniendo el resaltado). */
+    .line-row {
+        grid-template-columns: 1fr;
+        gap: 0.1rem;
+    }
+
+    .line-col-main,
+    .line-col-translation {
+        text-align: center;
+    }
+
+    .lyrics-side-header {
+        display: none;
+    }
 }

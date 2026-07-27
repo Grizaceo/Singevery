@@ -7,9 +7,40 @@ export type RecognitionPhase = 'LISTENING' | 'IDENTIFYING' | null;
 export const SYNC_OFFSET_MS = 300;
 
 /**
- * Ancla el timecode de AudD al instante del match. `syncOffsetMs` es la
- * calibración global de latencia (por defecto SYNC_OFFSET_MS); se recibe por
- * parámetro para que el StateStore use el valor persistido (P2.8). Función pura.
+ * Qué fracción de `sample_offset_ms` se descuenta al anclar un match.
+ *
+ * La huella enviada a Shazam cubre la ventana [0, samplems] de la grabación, y
+ * su `offset` está referido a ALGÚN punto de esa ventana — la API no documenta
+ * cuál. Medido contra el comportamiento observado:
+ *   - descontando 0 (comportamiento original), la letra se estabilizaba
+ *     ADELANTADA → el punto no es el inicio de la ventana;
+ *   - descontando la ventana completa, queda ATRASADA → tampoco es el final.
+ * Con el punto real acotado entre ambos extremos, el punto medio es la
+ * estimación que minimiza el error máximo. El residuo que quede lo absorbe la
+ * calibración global (manual o aprendida), que es constante por equipo.
+ */
+export const SAMPLE_ANCHOR_FRACTION = 0.5;
+
+/**
+ * Ancla el timecode del reconocedor al instante del match.
+ *
+ * La cuenta correcta necesita saber a QUÉ INSTANTE de la grabación se refiere
+ * `position_ms` (`sample_offset_ms`). Antes se asumía siempre el inicio de la
+ * grabación y se sumaba el elapsed completo:
+ *
+ *     positionMs = position_ms + (matched_at − recordStartedAt) + calibración
+ *
+ * Con AudD eso es correcto (`timecode` apunta al inicio del archivo), pero
+ * Shazam —el proveedor por defecto— devuelve un offset referido al FINAL de la
+ * ventana de audio que cubre la huella (`samplems`, varios segundos dentro del
+ * chunk de 6s). Se contaba ese tramo dos veces → cada corrección medía la
+ * posición con un sesgo constante HACIA ADELANTE, y como el lazo de corrección
+ * empuja la letra hacia lo medido, terminaba estabilizándose adelantada.
+ *
+ * Ahora se retrocede primero a la posición en `recordStartedAt` y desde ahí se
+ * proyecta. `syncOffsetMs` es la calibración global de latencia (por defecto
+ * SYNC_OFFSET_MS); se recibe por parámetro para que el StateStore use el valor
+ * persistido (P2.8). Función pura.
  */
 export function adjustMatchPosition(
   match: TrackMatch,
@@ -17,9 +48,15 @@ export function adjustMatchPosition(
   syncOffsetMs: number = SYNC_OFFSET_MS,
 ): { positionMs: number; anchorAt: number } {
   const anchorAt = match.matched_at;
-  const elapsed = anchorAt - recordStartedAt;
+  const elapsed = Math.max(0, anchorAt - recordStartedAt);
+  // Posición de la canción en el instante en que empezó la grabación. El
+  // offset no puede superar el tiempo transcurrido (no se puede haber grabado
+  // más audio del que pasó): acota valores absurdos del proveedor.
+  const sampleOffset =
+    Math.min(Math.max(0, match.sample_offset_ms ?? 0), elapsed) * SAMPLE_ANCHOR_FRACTION;
+  const positionAtRecordStart = Math.max(0, match.position_ms - sampleOffset);
   return {
-    positionMs: match.position_ms + Math.max(0, elapsed) + syncOffsetMs,
+    positionMs: positionAtRecordStart + elapsed + syncOffsetMs,
     anchorAt,
   };
 }

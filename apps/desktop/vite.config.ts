@@ -18,8 +18,6 @@ export default defineConfig({
     rollupOptions: {
       input: {
         main: path.resolve(__dirname, 'index.html'),
-        tv: path.resolve(__dirname, 'tv.html'),
-        mic: path.resolve(__dirname, 'mic.html'),
       },
     },
   },

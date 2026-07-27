@@ -1,14 +1,13 @@
 import React from 'react';
-import type { ReadingMode, RenderModel } from '../types';
+import type { ReadingMode, RenderModel, TranslationView } from '../types';
 import { LineView } from './LineView';
-import { TrackHeader } from './TrackHeader';
 import { splitPreviousTiers, splitNextTiers, tierSizes } from './teleprompterHelpers';
 import '../Teleprompter.css';
 
 interface Props {
   model: RenderModel;
   readingMode: ReadingMode;
-  showTranslation?: boolean;
+  translationView?: TranslationView;
   chromeHidden?: boolean;
   ghost?: boolean;
 }
@@ -18,7 +17,7 @@ interface Props {
 export const Teleprompter = React.memo(function Teleprompter({
   model,
   readingMode,
-  showTranslation = false,
+  translationView = 'off',
   chromeHidden = false,
 }: Props) {
   const containerStyle: React.CSSProperties = {
@@ -32,28 +31,52 @@ export const Teleprompter = React.memo(function Teleprompter({
   const vignetteClass = model.text_vignette_light ? ' vignette-light' : '';
 
   const fastPace = Boolean(model.fast_pace);
-  const sizes = tierSizes(model.font_scale, fastPace);
+  // Cuanto más contexto pida el usuario, más chico el texto: si no, con 5
+  // líneas por lado la letra se sale de la ventana.
+  const contextLines = model.previous_lines.length + model.next_lines.length;
+  const sizes = tierSizes(model.font_scale, fastPace, contextLines);
 
   const isIdle = model.status === 'IDLE';
   const prevTiers = splitPreviousTiers(model.previous_lines);
   const nextTiers = splitNextTiers(model.next_lines);
+  const sideBySide = translationView === 'side';
 
   return (
     <div className={`teleprompter-container${vignetteClass}`} style={containerStyle}>
-      <TrackHeader model={model} chromeHidden={chromeHidden} />
-
+      {/* El título/artista ya no flota aquí: vive en la barra superior
+          (ChromeTopBar) como elemento central del flex, para que no pueda
+          solaparse con los controles. */}
       {!isIdle && (
         <div className="lyrics-panel">
-          <div className="lyrics-display">
+          <div className={`lyrics-display${sideBySide ? ' lyrics-side' : ''}`}>
+            {sideBySide && (
+              <div className="lyrics-side-header" aria-hidden="true">
+                <span>Letra</span>
+                <span>Traducción</span>
+              </div>
+            )}
+
             <div className="lyrics-far" style={{ fontSize: sizes.far }}>
               {prevTiers.far.map((line, i) => (
-                <LineView key={`prev-far-${i}`} line={line} mode={readingMode} tier="far" />
+                <LineView
+                  key={`prev-far-${i}`}
+                  line={line}
+                  mode={readingMode}
+                  tier="far"
+                  translationView={translationView}
+                />
               ))}
             </div>
 
             <div className="lyrics-adjacent" style={{ fontSize: sizes.prevAdjacent }}>
               {prevTiers.adjacent.map((line, i) => (
-                <LineView key={`prev-adj-${i}`} line={line} mode={readingMode} tier="adjacent" />
+                <LineView
+                  key={`prev-adj-${i}`}
+                  line={line}
+                  mode={readingMode}
+                  tier="adjacent"
+                  translationView={translationView}
+                />
               ))}
             </div>
 
@@ -65,7 +88,7 @@ export const Teleprompter = React.memo(function Teleprompter({
                 progress={model.current_line_progress}
                 wordIndex={model.current_word_index}
                 wordProgress={model.current_word_progress}
-                showTranslation={showTranslation}
+                translationView={translationView}
               />
             </div>
 
@@ -74,13 +97,25 @@ export const Teleprompter = React.memo(function Teleprompter({
               style={{ fontSize: sizes.nextAdjacent }}
             >
               {nextTiers.adjacent.map((line, i) => (
-                <LineView key={`next-adj-${i}`} line={line} mode={readingMode} tier="adjacent" />
+                <LineView
+                  key={`next-adj-${i}`}
+                  line={line}
+                  mode={readingMode}
+                  tier="adjacent"
+                  translationView={translationView}
+                />
               ))}
             </div>
 
             <div className="lyrics-far" style={{ fontSize: sizes.far }}>
               {nextTiers.far.map((line, i) => (
-                <LineView key={`next-far-${i}`} line={line} mode={readingMode} tier="far" />
+                <LineView
+                  key={`next-far-${i}`}
+                  line={line}
+                  mode={readingMode}
+                  tier="far"
+                  translationView={translationView}
+                />
               ))}
             </div>
           </div>

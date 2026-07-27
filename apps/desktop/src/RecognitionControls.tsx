@@ -1,6 +1,5 @@
 import { SILENCE_PEAK } from './audio/capture';
 import type { RecognitionState } from './useRecognition';
-import { useRemoteStatus } from './useRemoteStatus';
 import './RecognitionControls.css';
 
 /** Medidor de nivel: 5 bloques llenados según el pico medido (0..1). */
@@ -28,14 +27,12 @@ interface RecognitionControlsProps {
  */
 export function RecognitionControls({ recognition }: RecognitionControlsProps) {
   const { activeSource, hint, error, level, start, stop } = recognition;
-  const { status: remoteStatus } = useRemoteStatus();
-  const phoneActive = remoteStatus.micConnected;
 
   if (!window.api) {
     return null;
   }
 
-  const localDisabled = activeSource !== null || phoneActive;
+  const localDisabled = activeSource !== null;
 
   return (
     <div className="recognition-controls">
@@ -59,26 +56,10 @@ export function RecognitionControls({ recognition }: RecognitionControlsProps) {
       >
         Mic
       </button>
-      <button
-        type="button"
-        className={`chrome-button${phoneActive ? ' active' : ''}`}
-        disabled
-        title={
-          remoteStatus.micUrl
-            ? `Micrófono remoto: abre ${remoteStatus.micUrl} en el teléfono`
-            : 'Activa Modo TV en Ajustes para usar el micrófono del teléfono'
-        }
-        aria-label="Micrófono remoto del teléfono"
-      >
-        Teléfono
-      </button>
       {activeSource && (
         <button type="button" className="chrome-button stop" onClick={() => void stop()} aria-label="Detener reconocimiento">
           Stop
         </button>
-      )}
-      {phoneActive && !activeSource && (
-        <span className="recognition-hint">Escuchando vía teléfono…</span>
       )}
       {activeSource && <LevelMeter level={level} />}
       {hint && !error && <span className="recognition-hint">{hint}</span>}
