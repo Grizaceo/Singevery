@@ -2,8 +2,27 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import {
   translateLines,
   splitForMyMemory,
+  parseNumberedTranslations,
+  buildLocalPrompt,
   MYMEMORY_MAX_BYTES,
 } from '../electron/services/translate';
+
+/** Respuesta con la forma de la API compatible con OpenAI (Ollama, LM Studio…). */
+function localOk(content: string) {
+  return {
+    ok: true,
+    status: 200,
+    json: async () => ({ choices: [{ message: { content } }] }),
+  };
+}
+
+const LOCAL_CONFIG = {
+  provider: 'local' as const,
+  apiKey: '',
+  targetLang: 'es',
+  localEndpoint: 'http://localhost:11434/v1/chat/completions',
+  localModel: 'translategemma:4b',
+};
 
 /** Respuesta de MyMemory con la forma real de la API. */
 function myMemoryOk(translatedText: string, detectedLanguage?: string) {
@@ -167,6 +186,132 @@ describe('translateLines', () => {
 
     expect(result.ok).toBe(true);
     expect(result.translations).toEqual(['solitaria']);
+  });
+});
+
+describe('traducción con modelo local', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('no exige credenciales y traduce la canción en una sola generación', async () => {
+    const fetchMock = vi.fn(async () => localOk('1. hola\n2. mundo'));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await translateLines(['hello', 'world'], LOCAL_CONFIG);
+
+    expect(result.ok).toBe(true);
+    expect(result.translations).toEqual(['hola', 'mundo']);
+    // Una petición para toda la canción: por línea sería insoportable en CPU.
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('manda el modelo configurado y pide salida determinista', async () => {
+    let body: Record<string, unknown> = {};
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_url: string, init: { body: string }) => {
+        body = JSON.parse(init.body) as Record<string, unknown>;
+        return localOk('1. hola');
+      }),
+    );
+
+    await translateLines(['hello'], LOCAL_CONFIG);
+
+    expect(body.model).toBe('translategemma:4b');
+    expect(body.temperature).toBe(0);
+    expect(body.stream).toBe(false);
+  });
+
+  it('explica qué hacer si el runtime no está corriendo', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => {
+        throw new TypeError('fetch failed');
+      }),
+    );
+
+    const result = await translateLines(['hello'], LOCAL_CONFIG);
+
+    expect(result.ok).toBe(false);
+    expect(result.error).toMatch(/no se pudo conectar/i);
+    expect(result.error).toMatch(/ollama/i);
+  });
+
+  it('explica cómo descargar el modelo si el runtime no lo tiene', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({ ok: false, status: 404, text: async () => 'model not found' })),
+    );
+
+    const result = await translateLines(['hello'], LOCAL_CONFIG);
+
+    expect(result.ok).toBe(false);
+    expect(result.error).toMatch(/ollama pull translategemma:4b/);
+  });
+
+  it('reintenta sin las líneas vacías si el modelo se sale del formato', async () => {
+    const fetchMock = vi
+      .fn()
+      // Primer intento: el modelo omite la línea vacía y descuadra el conteo.
+      .mockResolvedValueOnce(localOk('1. hola\n2. mundo'))
+      // Reintento solo con las líneas que tienen contenido.
+      .mockResolvedValueOnce(localOk('1. hola\n2. mundo'));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await translateLines(['hello', '', 'world'], LOCAL_CONFIG);
+
+    expect(result.ok).toBe(true);
+    // La línea vacía se conserva en su sitio: la letra no se desalinea.
+    expect(result.translations).toEqual(['hola', '', 'mundo']);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('falla claro antes que devolver una letra desalineada', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => localOk('me parece que dice hola y mundo')));
+
+    const result = await translateLines(['hello', 'world'], LOCAL_CONFIG);
+
+    expect(result.ok).toBe(false);
+    expect(result.error).toMatch(/formato/i);
+  });
+});
+
+describe('parseNumberedTranslations', () => {
+  it('recupera las líneas ignorando el preámbulo del modelo', () => {
+    const raw = 'Claro, aquí tienes:\n\n1. hola\n2. mundo\n\n¿Necesitas algo más?';
+    expect(parseNumberedTranslations(raw, 2)).toEqual(['hola', 'mundo']);
+  });
+
+  it('acepta las variantes de numeración que usan los modelos', () => {
+    expect(parseNumberedTranslations('1) uno\n2) dos', 2)).toEqual(['uno', 'dos']);
+    expect(parseNumberedTranslations('1: uno\n2: dos', 2)).toEqual(['uno', 'dos']);
+    expect(parseNumberedTranslations('1 - uno\n2 - dos', 2)).toEqual(['uno', 'dos']);
+  });
+
+  it('reordena por número, no por posición', () => {
+    expect(parseNumberedTranslations('2. dos\n1. uno', 2)).toEqual(['uno', 'dos']);
+  });
+
+  it('devuelve null si falta o sobra alguna línea', () => {
+    expect(parseNumberedTranslations('1. uno', 2)).toBeNull();
+    expect(parseNumberedTranslations('sin numerar', 1)).toBeNull();
+    // Números fuera de rango no cuentan.
+    expect(parseNumberedTranslations('1. uno\n9. nueve', 2)).toBeNull();
+  });
+
+  it('se queda con la primera aparición si el modelo repite un número', () => {
+    expect(parseNumberedTranslations('1. bueno\n1. malo\n2. dos', 2)).toEqual(['bueno', 'dos']);
+  });
+});
+
+describe('buildLocalPrompt', () => {
+  it('numera las líneas y fija el conteo esperado', () => {
+    const prompt = buildLocalPrompt(['hello', 'world'], 'es');
+    expect(prompt).toContain('1. hello');
+    expect(prompt).toContain('2. world');
+    expect(prompt).toContain('exactly 2 lines');
+    expect(prompt).toContain('es');
   });
 });
 

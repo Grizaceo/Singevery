@@ -22,6 +22,7 @@ const TRANSLATION_PROVIDERS: {
   hint: string;
 }[] = [
   { value: 'mymemory', label: 'MyMemory', hint: 'Sin clave, listo para usar' },
+  { value: 'local', label: 'Modelo local', hint: 'En tu equipo, sin límites' },
   { value: 'deepl', label: 'DeepL', hint: 'Mejor calidad, con tu clave' },
   { value: 'google', label: 'Google', hint: 'Con tu clave' },
 ];
@@ -75,6 +76,8 @@ export function SettingsPanel({
     provider: 'mymemory',
     apiKey: '',
     targetLang: 'es',
+    localEndpoint: 'http://localhost:11434/v1/chat/completions',
+    localModel: 'translategemma:4b',
   });
   const [reading, setReading] = useState<ReadingSettings>({ pinyinToneType: 'none' });
 
@@ -127,6 +130,7 @@ export function SettingsPanel({
   // MyMemory no pide credenciales: el campo pasa a ser un email opcional que
   // solo sirve para subir la cuota diaria.
   const isKeyless = translation.provider === 'mymemory';
+  const isLocal = translation.provider === 'local';
 
   return (
     <div className="settings-backdrop" onClick={onClose} role="presentation">
@@ -250,7 +254,43 @@ export function SettingsPanel({
             ))}
           </div>
 
-          {isKeyless ? (
+          {isLocal ? (
+            <>
+              <p className="settings-hint">
+                Traduce con un modelo en tu propio equipo: sin límite diario, sin internet y sin
+                mandar las letras a nadie. Necesitas un runtime local corriendo — el más simple es{' '}
+                <strong>Ollama</strong>: instálalo y ejecuta{' '}
+                <code>ollama pull translategemma:4b</code> (unos 3 GB, especializado en traducir,
+                55 idiomas). También sirven LM Studio, llama.cpp o Jan.
+              </p>
+              <label className="settings-label" htmlFor="local-model">
+                Modelo
+              </label>
+              <input
+                id="local-model"
+                className="settings-text-input"
+                type="text"
+                value={translation.localModel}
+                placeholder="translategemma:4b"
+                onChange={(e) => void patchTranslation({ localModel: e.target.value })}
+              />
+              <label className="settings-label" htmlFor="local-endpoint">
+                Dirección del runtime
+              </label>
+              <input
+                id="local-endpoint"
+                className="settings-text-input"
+                type="text"
+                value={translation.localEndpoint}
+                placeholder="http://localhost:11434/v1/chat/completions"
+                onChange={(e) => void patchTranslation({ localEndpoint: e.target.value })}
+              />
+              <p className="settings-hint">
+                Por defecto apunta a Ollama. Con un modelo de 4B la canción tarda unos segundos en
+                CPU y es casi instantánea con GPU.
+              </p>
+            </>
+          ) : isKeyless ? (
             <>
               <label className="settings-label" htmlFor="translation-key">
                 Tu email (opcional)

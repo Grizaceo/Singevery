@@ -94,7 +94,25 @@ proveedores de letras), y AudD es solo un respaldo opcional.
 
 Decisión pendiente; condiciona el mensaje de la web.
 
-### 1.2.b Traducción local (a explorar si MyMemory no convence)
+### 1.2.b Traducción local ✅ implementada (vía runtime en localhost)
+
+Ya se puede traducir con un modelo en el propio equipo: **Ajustes → Traducción
+→ Modelo local**. Habla con cualquier runtime que exponga API compatible con
+OpenAI (Ollama, LM Studio, llama.cpp server, Jan); por defecto apunta a Ollama
+con `translategemma:4b`. Sin cuota, sin red y sin mandar las letras a terceros.
+
+**Lo que falta para que sea apto para cualquiera:** hoy el usuario tiene que
+instalar el runtime y hacer `ollama pull` a mano. La experiencia "un clic y se
+descarga el modelo" implica gestor de descargas, verificación de integridad,
+control de espacio en disco y empaquetar un runtime de inferencia — todo eso
+**no está hecho** y no se puede validar sin probar en Windows real.
+
+**Pendiente de verificación:** la integración está cubierta por tests con la
+API simulada (formato de petición, parseo numerado, reintento, errores), pero
+**nadie ha ejecutado todavía una traducción contra un Ollama real**. Es lo
+primero que hay que probar a mano.
+
+Opciones de modelo evaluadas:
 
 La intuición es correcta: **existe un Gemma especializado en traducir**
 (`translategemma-4b-it-4bit`), y hay varias opciones locales maduras en 2026.

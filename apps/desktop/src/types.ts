@@ -117,14 +117,23 @@ export type ReadingMode = 'original' | 'furigana' | 'romaji' | 'furigana_romaji'
  */
 export type TranslationView = 'off' | 'below' | 'side';
 
-/** 'mymemory' no requiere credenciales: es el que hace que la traducción
- *  funcione recién instalada la app. */
-export type TranslationProvider = 'mymemory' | 'deepl' | 'google';
+/**
+ * - 'mymemory': sin credenciales, es el que hace que la traducción funcione
+ *   recién instalada la app.
+ * - 'local': un modelo corriendo en el propio equipo (TranslateGemma y
+ *   compañía) a través de un runtime con API compatible con OpenAI.
+ * - 'deepl' / 'google': mejor calidad de servicio, requieren clave.
+ */
+export type TranslationProvider = 'mymemory' | 'local' | 'deepl' | 'google';
 
 export interface TranslationSettings {
   provider: TranslationProvider;
   apiKey: string;
   targetLang: string;
+  /** Proveedor 'local': URL del runtime (Ollama, LM Studio, llama.cpp…). */
+  localEndpoint: string;
+  /** Proveedor 'local': nombre del modelo a pedirle al runtime. */
+  localModel: string;
 }
 
 export interface ReadingSettings {

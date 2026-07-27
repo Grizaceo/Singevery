@@ -93,12 +93,29 @@ Configura en **Ajustes (⚙) → Traducción**:
 
 | Campo | Descripción |
 |-------|-------------|
-| **Proveedor** | MyMemory (default, sin clave) · DeepL o Google con tu clave |
+| **Proveedor** | MyMemory (default, sin clave) · **Modelo local** · DeepL o Google con tu clave |
 | **Email / API key** | En MyMemory, email opcional para subir la cuota. En DeepL/Google, tu clave |
 | **Idioma destino** | Código ISO (default `es`) |
 
-DeepL y Google dan mejor calidad y no tienen el tope diario, pero requieren que
-consigas una credencial.
+### Modelo local (sin límites y sin internet)
+
+Traduce con un modelo en tu propio equipo: **sin cuota diaria, sin conexión y
+sin mandar las letras a un tercero**. Necesitas un runtime con API compatible
+con OpenAI; el más simple es [Ollama](https://ollama.com):
+
+```bash
+ollama pull translategemma:4b   # ~3 GB, Gemma 3 afinado para traducir, 55 idiomas
+```
+
+Luego en **Ajustes → Traducción → Modelo local**. Por defecto apunta a
+`http://localhost:11434/v1/chat/completions` con `translategemma:4b`; ambos
+campos son configurables, así que también sirven LM Studio, llama.cpp server o
+Jan, y cualquier otro modelo (`translategemma:12b`, `gemma3`, etc.).
+
+Con un 4B la canción tarda unos segundos en CPU y es casi instantánea con GPU.
+
+DeepL y Google dan buena calidad sin instalar nada, pero requieren que consigas
+una credencial.
 
 ## Estructura del repo
 

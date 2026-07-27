@@ -34,7 +34,7 @@ Consejos si no identifica: sube un poco el volumen, acerca el micrófono al parl
 * La línea actual avanza con **resaltado tipo karaoke**.
 * En canciones rápidas (rap), la app **adelanta sola el resaltado y agranda la línea siguiente** para que alcances a leerla. No hay que configurar nada.
 * **Ayudas de lectura** (botones de la barra): para japonés puedes ver la letra Original, en **Kana**, con **Furigana** (lectura sobre los kanji), en **romaji (A)** o combinada (ふ+A). Para chino hay Ruby/pinyin y romanización para coreano, cirílico y otros alfabetos.
-* **Traducción**: el botón **T** cicla entre sin traducción, traducción bajo la línea actual y **texto paralelo** (letra y traducción en columnas). Funciona sin configurar nada, con un tope de unas 3 canciones al día; en Ajustes → Traducción puedes poner tu email para subirlo a ~30, o una clave de DeepL/Google para quitar el tope.
+* **Traducción**: el botón **T** cicla entre sin traducción, traducción bajo la línea actual y **texto paralelo** (letra y traducción en columnas). Funciona sin configurar nada, con un tope de unas 3 canciones al día; en Ajustes → Traducción puedes poner tu email para subirlo a ~30, usar una clave de DeepL/Google, o traducir con un **modelo en tu propio equipo** (sin límite, sin internet y sin mandar las letras a nadie: instala [Ollama](https://ollama.com) y ejecuta `ollama pull translategemma:4b`).
 
 ## 5. Si la letra va corrida (adelantada o atrasada)
 

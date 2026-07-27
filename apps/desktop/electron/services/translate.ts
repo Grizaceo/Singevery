@@ -8,13 +8,17 @@
 //   - deepl / google: mejor calidad, requieren clave del usuario.
 // ============================================================================
 
-export type TranslationProvider = 'mymemory' | 'deepl' | 'google';
+export type TranslationProvider = 'mymemory' | 'local' | 'deepl' | 'google';
 
 export interface TranslationConfig {
   provider: TranslationProvider;
   /** DeepL/Google: la clave. MyMemory: email opcional (sube la cuota diaria). */
   apiKey: string;
   targetLang: string;
+  /** Proveedor 'local': URL del runtime con API compatible con OpenAI. */
+  localEndpoint?: string;
+  /** Proveedor 'local': modelo a usar (p. ej. translategemma:4b). */
+  localModel?: string;
 }
 
 export interface TranslationResult {
@@ -27,6 +31,12 @@ const DEEPL_FREE_URL = 'https://api-free.deepl.com/v2/translate';
 const DEEPL_PRO_URL = 'https://api.deepl.com/v2/translate';
 const GOOGLE_URL = 'https://translation.googleapis.com/language/translate/v2';
 const MYMEMORY_URL = 'https://api.mymemory.translated.net/get';
+
+/** Ollama expone además de su API propia una compatible con OpenAI, igual que
+ *  LM Studio, llama.cpp server o Jan: con una sola implementación sirven todos. */
+export const DEFAULT_LOCAL_ENDPOINT = 'http://localhost:11434/v1/chat/completions';
+/** Gemma 3 afinado para traducir, 55 idiomas. `ollama pull translategemma:4b`. */
+export const DEFAULT_LOCAL_MODEL = 'translategemma:4b';
 
 /** Tope duro del parámetro `q` de MyMemory. Por encima, la API rechaza. */
 export const MYMEMORY_MAX_BYTES = 500;
@@ -221,6 +231,144 @@ async function translateWithMyMemory(
   );
 }
 
+// ============================================================================
+// Proveedor local — un modelo corriendo en el equipo del usuario.
+//
+// Sin cuota, sin red y sin mandar las letras a un tercero. Se habla con él por
+// la API compatible con OpenAI que exponen Ollama, LM Studio, llama.cpp server
+// y Jan, así que una sola implementación cubre todos los runtimes.
+// ============================================================================
+
+/**
+ * Extrae las traducciones de una respuesta numerada del modelo.
+ *
+ * Los modelos generativos añaden de todo: preámbulos ("Aquí tienes la
+ * traducción:"), bloques de código, líneas en blanco. Parsear por número es
+ * mucho más robusto que confiar en el orden de las líneas. Pura y testeable.
+ *
+ * Devuelve null si no se recuperan exactamente `expected` líneas: quien llama
+ * decide el plan B en vez de mostrar una letra desalineada.
+ */
+export function parseNumberedTranslations(raw: string, expected: number): string[] | null {
+  const found = new Map<number, string>();
+
+  for (const line of raw.split('\n')) {
+    const match = /^\s*(\d+)\s*[.)：:\-]\s*(.*)$/.exec(line);
+    if (!match) continue;
+    const index = Number(match[1]);
+    if (!Number.isInteger(index) || index < 1 || index > expected) continue;
+    // Solo la primera aparición: si el modelo repite, gana la original.
+    if (!found.has(index)) found.set(index, match[2].trim());
+  }
+
+  if (found.size !== expected) return null;
+  return Array.from({ length: expected }, (_, i) => found.get(i + 1) ?? '');
+}
+
+/** Construye el prompt de traducción por lote. Pura (facilita ajustarlo). */
+export function buildLocalPrompt(lines: string[], targetLang: string): string {
+  const numbered = lines.map((line, i) => `${i + 1}. ${line}`).join('\n');
+  return (
+    `Translate each numbered line into ${targetLang}.\n` +
+    `Rules:\n` +
+    `- Output exactly ${lines.length} lines, using the same numbering.\n` +
+    `- Translate the meaning, not word by word. These are song lyrics.\n` +
+    `- Do not add explanations, notes or any extra text.\n` +
+    `- If a line is empty or has no words, repeat it as is.\n\n` +
+    numbered
+  );
+}
+
+async function callLocalModel(
+  prompt: string,
+  endpoint: string,
+  model: string,
+  signal?: AbortSignal,
+): Promise<string> {
+  let res: Response;
+  try {
+    res = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model,
+        messages: [{ role: 'user', content: prompt }],
+        // Traducir no es tarea creativa: determinismo y sin sorpresas.
+        temperature: 0,
+        stream: false,
+      }),
+      signal,
+    });
+  } catch (err) {
+    if (err instanceof Error && err.name === 'AbortError') throw err;
+    throw new Error(
+      `No se pudo conectar con el modelo local en ${endpoint}. ` +
+        '¿Está el runtime abierto? (por ejemplo, que Ollama esté corriendo)',
+    );
+  }
+
+  if (res.status === 404) {
+    throw new Error(
+      `El runtime local no conoce el modelo "${model}". Descárgalo primero ` +
+        `(con Ollama: ollama pull ${model}).`,
+    );
+  }
+  if (!res.ok) {
+    const detail = await res.text().catch(() => '');
+    throw new Error(`Modelo local ${res.status}${detail ? `: ${detail.slice(0, 120)}` : ''}`);
+  }
+
+  const data = (await res.json()) as {
+    choices?: { message?: { content?: string } }[];
+  };
+  const content = data.choices?.[0]?.message?.content;
+  if (typeof content !== 'string' || !content.trim()) {
+    throw new Error('El modelo local devolvió una respuesta vacía');
+  }
+  return content;
+}
+
+async function translateWithLocal(
+  lines: string[],
+  endpoint: string,
+  model: string,
+  targetLang: string,
+  signal?: AbortSignal,
+): Promise<string[]> {
+  const target = normalizeTargetLang(targetLang).toLowerCase();
+
+  // Una sola generación para toda la canción: mucho más rápido que una
+  // petición por línea, que en CPU sería insoportable.
+  const raw = await callLocalModel(buildLocalPrompt(lines, target), endpoint, model, signal);
+  const parsed = parseNumberedTranslations(raw, lines.length);
+  if (parsed) return parsed;
+
+  // El modelo se salió del formato. Antes de rendirse, se reintenta pidiendo
+  // solo las líneas con contenido: menos líneas = menos margen de error.
+  const nonEmpty = lines.map((line, i) => ({ line, i })).filter((x) => x.line.trim());
+  if (nonEmpty.length > 0 && nonEmpty.length < lines.length) {
+    const retryRaw = await callLocalModel(
+      buildLocalPrompt(nonEmpty.map((x) => x.line), target),
+      endpoint,
+      model,
+      signal,
+    );
+    const retry = parseNumberedTranslations(retryRaw, nonEmpty.length);
+    if (retry) {
+      const out = [...lines];
+      nonEmpty.forEach((x, k) => {
+        out[x.i] = retry[k];
+      });
+      return out;
+    }
+  }
+
+  throw new Error(
+    `El modelo local no respetó el formato pedido (se esperaban ${lines.length} líneas ` +
+      'numeradas). Prueba con un modelo especializado en traducción, como translategemma.',
+  );
+}
+
 async function translateWithDeepL(
   lines: string[],
   apiKey: string,
@@ -299,9 +447,10 @@ export async function translateLines(
   }
 
   const key = config.apiKey.trim();
-  // MyMemory es el único que funciona sin credenciales; en él, `apiKey` es un
-  // email opcional para subir la cuota.
-  if (config.provider !== 'mymemory' && !key) {
+  // MyMemory y el modelo local funcionan sin credenciales; en MyMemory,
+  // `apiKey` es un email opcional para subir la cuota.
+  const needsKey = config.provider === 'deepl' || config.provider === 'google';
+  if (needsKey && !key) {
     return { ok: false, error: 'Falta la API key de traducción (Ajustes → Traducción)' };
   }
 
@@ -311,6 +460,14 @@ export async function translateLines(
       translations = await translateWithGoogle(lines, key, config.targetLang, signal);
     } else if (config.provider === 'deepl') {
       translations = await translateWithDeepL(lines, key, config.targetLang, signal);
+    } else if (config.provider === 'local') {
+      translations = await translateWithLocal(
+        lines,
+        config.localEndpoint?.trim() || DEFAULT_LOCAL_ENDPOINT,
+        config.localModel?.trim() || DEFAULT_LOCAL_MODEL,
+        config.targetLang,
+        signal,
+      );
     } else {
       translations = await translateWithMyMemory(lines, key, config.targetLang, signal);
     }

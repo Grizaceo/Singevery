@@ -7,6 +7,7 @@ import * as path from 'path';
 import { app } from 'electron';
 import type { RecognitionProviderMode } from './recognition/provider';
 import type { ReadingSettings, TranslationSettings } from '../../src/types';
+import { DEFAULT_LOCAL_ENDPOINT, DEFAULT_LOCAL_MODEL } from './translate';
 
 /** Almacén de offsets por pista. El StateStore depende de esta interfaz. */
 export interface OffsetStore {
@@ -111,10 +112,12 @@ export const DEFAULT_RECOGNITION_PROVIDER: RecognitionProviderMode = 'auto';
 
 export const DEFAULT_TRANSLATION_SETTINGS: TranslationSettings = {
   // Sin clave: la traducción tiene que funcionar sin que el usuario consiga
-  // credenciales. DeepL/Google quedan como mejora opcional.
+  // credenciales. El modelo local y DeepL/Google son mejoras opcionales.
   provider: 'mymemory',
   apiKey: '',
   targetLang: 'es',
+  localEndpoint: DEFAULT_LOCAL_ENDPOINT,
+  localModel: DEFAULT_LOCAL_MODEL,
 };
 
 export const DEFAULT_READING_SETTINGS: ReadingSettings = {
@@ -241,9 +244,20 @@ function normalizeRecognitionProvider(value: unknown): RecognitionProviderMode {
 function normalizeTranslationSettings(raw?: Partial<TranslationSettings>): TranslationSettings {
   return {
     provider:
-      raw?.provider === 'google' || raw?.provider === 'deepl' || raw?.provider === 'mymemory'
+      raw?.provider === 'google' ||
+      raw?.provider === 'deepl' ||
+      raw?.provider === 'mymemory' ||
+      raw?.provider === 'local'
         ? raw.provider
         : DEFAULT_TRANSLATION_SETTINGS.provider,
+    localEndpoint:
+      typeof raw?.localEndpoint === 'string' && raw.localEndpoint.trim()
+        ? raw.localEndpoint.trim()
+        : DEFAULT_TRANSLATION_SETTINGS.localEndpoint,
+    localModel:
+      typeof raw?.localModel === 'string' && raw.localModel.trim()
+        ? raw.localModel.trim()
+        : DEFAULT_TRANSLATION_SETTINGS.localModel,
     apiKey: typeof raw?.apiKey === 'string' ? raw.apiKey : DEFAULT_TRANSLATION_SETTINGS.apiKey,
     targetLang:
       typeof raw?.targetLang === 'string' && raw.targetLang.trim()
