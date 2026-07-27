@@ -2,6 +2,7 @@
 
 ## Prerequisites
 
+- **Node 22.12+** (Electron 43 declares it in `engines`; `npm ci` fails on Node 20).
 - Version bumped in `apps/desktop/package.json` (and `package-lock.json` if you changed deps).
 - SMTC sidecar builds cleanly **self-contained**: `dotnet publish native/smtc/EspejoSmtc.csproj -c Release -r win-x64 --self-contained true -o native/smtc/dist` (or just `npm run build:smtc`).
   `--self-contained true` is not optional for public builds: without it the sidecar needs .NET 8 installed on the user's machine and dies silently when it isn't, losing instant pause/seek.

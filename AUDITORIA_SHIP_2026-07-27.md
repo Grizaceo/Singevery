@@ -281,6 +281,33 @@ son cambios con riesgo real y quedan para que los apruebes.
 
 ---
 
+## 5.b Triaje de `npm audit` (37 → 24)
+
+`npm ci` reportaba **37 vulnerabilidades (2 críticas, 32 altas, 3 moderadas)**.
+El número asusta más de lo que dice: `npm audit --omit=dev` daba **0**. Todas
+vivían en herramientas de build y test que **no viajan en el instalador**.
+
+Pero ese "0 en producción" también engaña, y en la dirección peligrosa:
+**`electron` está declarado como devDependency y sin embargo ES el runtime que
+se empaqueta.** `--omit=dev` lo excluye del recuento. La versión instalada era
+**33.4.11, ocho majors por detrás de la 43.2.0**, es decir fuera de soporte
+(Electron mantiene los tres últimos majors) y por tanto **sin parches de
+Chromium**, con 18 avisos acumulados. Era la única de las 37 que llegaba al
+usuario, y la única que se arregló de inmediato.
+
+| Acción | Resultado |
+|---|---|
+| `electron` 33.4.11 → **43.2.0** | Sale del listado. Todo `electron/` typechequea limpio contra el `.d.ts` real de la 43, y ninguna API que usa el widget aparece en los breaking changes de 34→43 |
+| `electron-builder` 25.1.0 → **26.15.3** | Se van 13 paquetes, incluida la crítica de `tar` |
+| Restantes: **24**, todas dev | `electron-builder` (última versión, avisos sin fix upstream en `ejs`/`glob`/`jake`), `eslint` y `vitest`. La crítica de vitest exige tener el servidor de UI escuchando (`--ui`), que este proyecto no usa |
+
+**Efecto secundario obligatorio:** Electron 43 declara `engines: node >= 22.12.0`.
+Los dos workflows y `WINDOWS.md` pasaron de Node 20 a **Node 22**; con Node 20,
+`npm ci` falla. Si el equipo de desarrollo tiene Node 20, hay que actualizarlo.
+
+Pendiente para su propia rama, sin prisa: `vitest` 2→4 y `eslint` 9→10, ambos
+majors de herramientas que no se empaquetan.
+
 ## 6. Checklist de release (adaptado a app de escritorio)
 
 ### Pre-release

@@ -11,7 +11,8 @@ Windows, hay que correr la app **nativa en Windows**.
 
 ## 0. Requisitos en Windows
 
-- **Node.js 20+** instalado en Windows (no el de WSL): https://nodejs.org
+- **Node.js 22.12+** instalado en Windows (no el de WSL): https://nodejs.org
+  (Electron 43 lo exige en `engines`; con Node 20, `npm ci` falla.)
 - Verifica en **PowerShell** (no en la terminal de WSL): `node -v` y `npm -v`.
 
 ## 1. Tener el código en una carpeta nativa de Windows
