@@ -10,6 +10,8 @@ App activa: **[`apps/desktop`](apps/desktop)** — Electron + React 19 + TypeScr
 
 ## Descargas
 
+**Página del proyecto: [grizaceo.github.io/Singevery](https://grizaceo.github.io/Singevery/)** — qué hace, capturas y descarga directa.
+
 [![Latest release](https://img.shields.io/github/v/release/Grizaceo/Singevery?label=latest)](https://github.com/Grizaceo/Singevery/releases/latest)
 
 Descarga el instalador de Windows desde **[GitHub Releases](https://github.com/Grizaceo/Singevery/releases/latest)** (`Singevery-Setup-x.y.z.exe`).

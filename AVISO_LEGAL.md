@@ -31,7 +31,6 @@ Shazam es una marca de Apple Inc. Musixmatch, AudD, Letras.mus.br, LRCLIB, Windo
 * Singevery **no tiene servidores propios**: no recopila, transmite ni vende datos personales a los desarrolladores.
 * Para identificar canciones se envían **huellas/fragmentos de audio** capturados del micrófono o del audio del sistema a los servicios de reconocimiento (Shazam vía cliente no oficial, o AudD si lo configuras). El audio solo se usa para la identificación.
 * Las consultas de letras envían título y artista de la canción a los servicios de letras.
-* El modo "TV" y el micrófono remoto funcionan **solo dentro de tu red local (LAN)**.
 * La caché de letras, ajustes y offsets se guarda localmente en tu equipo (carpeta de datos de usuario de la aplicación).
 
 ## 6. Uso aceptable

@@ -49,16 +49,7 @@ Esto es útil sobre todo con videos musicales (la versión del video puede traer
 
 En el panel **Ajustes** puedes cambiar: tamaño de letra, opacidad, **alineación**, **color de letra** (con contraste automático opcional), modo espejo (para teleprompter físico/reflejo) y el modo fantasma para que el widget no estorbe. Arrastra el widget desde su asa para moverlo y usa el borde para redimensionarlo.
 
-## 7. Modo TV y micrófono del teléfono (opcional)
-
-En Ajustes → **"Modo TV (extensión remota)"**:
-
-* **TV — letras en pantalla grande**: abre la dirección indicada (o escanea el código QR) en el navegador de una TV/tablet conectada a la **misma red WiFi** y verás la letra en grande.
-* **Teléfono — micrófono remoto**: escanea el QR con tu teléfono y su micrófono pasa a ser el "oído" de la app — ideal si el PC está lejos del parlante.
-
-Todo esto funciona solo dentro de tu red local; nada se publica a internet.
-
-## 8. Reconocimiento alternativo con AudD (opcional, avanzado)
+## 7. Reconocimiento alternativo con AudD (opcional, avanzado)
 
 Sin configurar nada, Singevery reconoce con su motor principal. Si quieres un segundo motor de respaldo (AudD, servicio externo con cuenta propia):
 
@@ -68,11 +59,42 @@ Sin configurar nada, Singevery reconoce con su motor principal. Si quieres un se
 
 Si esto te suena complicado, puedes ignorarlo: la app funciona sin AudD.
 
+## 8. Usar Singevery mientras juegas
+
+El widget flota encima del juego y **deja pasar los clics**, así que no estorba
+mientras cantas. El problema es que, con un juego en primer plano, el juego se
+queda con el mouse: el widget no recibe el paso del cursor y por eso no se
+puede agarrar con el ratón. Para eso están los atajos, que **no dependen del
+mouse**:
+
+| Atajo | Qué hace |
+|-------|----------|
+| **Ctrl+Alt+T** | Modo tangible: el widget se vuelve agarrable (y vuelve a dejar pasar los clics al pulsarlo otra vez) |
+| **Ctrl+Alt+↑ ↓ ← →** | Mueve el widget 40 px, aunque el juego tenga el mouse |
+| **Ctrl+Alt+S** | Expandir e identificar la canción (SING) |
+
+Mientras el modo tangible está activo aparece un aviso abajo recordando cómo
+salir.
+
+### Limitación conocida: pantalla completa exclusiva
+
+Si el juego corre en **pantalla completa exclusiva**, Windows le entrega el
+control del monitor y **ninguna** aplicación puede dibujarse encima —
+Singevery tampoco. No es algo que la app pueda resolver: los overlays que sí
+aparecen en ese modo (Steam, Discord) se inyectan dentro del propio juego, algo
+que los anti-cheat suelen bloquear.
+
+La solución es cambiar el juego a **pantalla completa sin bordes** (o *borderless
+windowed*), una opción presente en casi todos los juegos actuales y sin coste de
+rendimiento apreciable. En ese modo el widget se ve y los atajos funcionan.
+
 ## 9. Problemas frecuentes
 
 * **"Buscando letra..." no encuentra nada**: no todas las canciones tienen letra sincronizada en las fuentes disponibles; prueba con la versión de estudio (los remixes/lives fallan más).
 * **Identifica mal la canción**: detén y vuelve a iniciar la escucha; con el micrófono, acércalo al parlante.
 * **No pasa nada con "Audio del sistema"**: asegúrate de que la música suene en el mismo PC. Si suena fuera del PC, usa el modo Micrófono.
+* **No veo el widget sobre un juego**: cambia el juego a pantalla completa **sin bordes** (ver sección 8).
+* **No puedo agarrar el widget para moverlo**: pulsa **Ctrl+Alt+T** o muévelo con **Ctrl+Alt+flechas**.
 * **La letra aparece y luego salta a otra canción**: la app confirma dos veces antes de cambiar de canción; si pasa, suele ser porque el audio ambiente confundió al reconocedor — detén y reinicia la escucha.
 
 ## 10. Legal y licencias
