@@ -356,3 +356,117 @@ describe('splitForMyMemory — tope de 500 bytes del parámetro q', () => {
     }
   });
 });
+
+// ============================================================================
+// Plazos. Un fetch sin tope no falla: se queda esperando, y con él la promesa
+// del IPC y el spinner del renderer. Estas pruebas fijan que SIEMPRE se rinde.
+// ============================================================================
+
+/** fetch que nunca responde pero obedece el abort, como haría uno real. */
+function colgado() {
+  return vi.fn(
+    (_url: string, init?: { signal?: AbortSignal }) =>
+      new Promise((_resolve, reject) => {
+        init?.signal?.addEventListener('abort', () => {
+          reject(Object.assign(new Error('The operation was aborted'), { name: 'AbortError' }));
+        });
+      }),
+  );
+}
+
+/** fetch que responde bien, pero tarda `demoraMs` (en tiempo simulado). */
+function lento(demoraMs: number, respuesta: () => unknown) {
+  return vi.fn(
+    (_url: string, init?: { signal?: AbortSignal }) =>
+      new Promise((resolve, reject) => {
+        const timer = setTimeout(() => resolve(respuesta()), demoraMs);
+        init?.signal?.addEventListener('abort', () => {
+          clearTimeout(timer);
+          reject(Object.assign(new Error('The operation was aborted'), { name: 'AbortError' }));
+        });
+      }),
+  );
+}
+
+describe('plazos de traducción', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
+  it('MyMemory se rinde con un mensaje legible si el servicio no responde', async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal('fetch', colgado());
+
+    const promesa = translateLines(['hello'], {
+      provider: 'mymemory',
+      apiKey: '',
+      targetLang: 'es',
+    });
+    await vi.advanceTimersByTimeAsync(60_000);
+    const res = await promesa;
+
+    expect(res.ok).toBe(false);
+    expect(res.error).toMatch(/MyMemory no respondió en \d+ s/);
+  });
+
+  it('el modelo local se rinde en vez de esperar para siempre', async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal('fetch', colgado());
+
+    const promesa = translateLines(['hello'], LOCAL_CONFIG);
+    await vi.advanceTimersByTimeAsync(400_000);
+    const res = await promesa;
+
+    expect(res.ok).toBe(false);
+    expect(res.error).toMatch(/no terminó en \d+ s/);
+  });
+
+  it('DeepL se rinde con su propio mensaje', async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal('fetch', colgado());
+
+    const promesa = translateLines(['hello'], {
+      provider: 'deepl',
+      apiKey: 'clave:fx',
+      targetLang: 'es',
+    });
+    await vi.advanceTimersByTimeAsync(90_000);
+    const res = await promesa;
+
+    expect(res.ok).toBe(false);
+    expect(res.error).toMatch(/DeepL no respondió en \d+ s/);
+  });
+
+  it('corta la canción entera cuando cada petición va lenta pero responde', async () => {
+    vi.useFakeTimers();
+    // 10 s por petición: ninguna vence su plazo individual (20 s), pero la
+    // suma de una canción larga sí revienta el presupuesto total.
+    vi.stubGlobal('fetch', lento(10_000, () => myMemoryOk('x', 'en')));
+
+    const lineas = Array.from({ length: 60 }, (_, i) => `linea ${i}`);
+    const promesa = translateLines(lineas, {
+      provider: 'mymemory',
+      apiKey: '',
+      targetLang: 'es',
+    });
+    await vi.advanceTimersByTimeAsync(400_000);
+    const res = await promesa;
+
+    expect(res.ok).toBe(false);
+    expect(res.error).toMatch(/tardó más de \d+ s y se canceló/);
+  });
+
+  it('cancelar desde fuera se distingue de un timeout', async () => {
+    const controller = new AbortController();
+    vi.stubGlobal('fetch', colgado());
+
+    const promesa = translateLines(['hello'], LOCAL_CONFIG, controller.signal);
+    controller.abort();
+    const res = await promesa;
+
+    expect(res.ok).toBe(false);
+    expect(res.error).toBe('Traducción cancelada');
+  });
+});

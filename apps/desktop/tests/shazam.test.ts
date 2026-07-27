@@ -1,6 +1,10 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import { mapShazamResponse, parseShazamPositionMs } from '../electron/services/recognition/shazamProvider';
-import type { ShazamApiResponse } from '../electron/services/recognition/shazamApi';
+import {
+  sendShazamRecognizeRequest,
+  SHAZAM_TIMEOUT_MS,
+  type ShazamApiResponse,
+} from '../electron/services/recognition/shazamApi';
 
 describe('parseShazamPositionMs', () => {
   it('convierte offset en segundos a ms', () => {
@@ -41,5 +45,36 @@ describe('mapShazamResponse', () => {
 
   it('devuelve null si faltan campos obligatorios', () => {
     expect(mapShazamResponse({ track: { title: 'Only Title' } })).toBeNull();
+  });
+});
+
+// ============================================================================
+// Plazo. Igual que AudD: sin tope, el reconocimiento se cuelga sin salida.
+// ============================================================================
+
+describe('plazo de Shazam', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  it('se rinde con un mensaje legible si Shazam no responde', async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        (_url: string, init?: { signal?: AbortSignal }) =>
+          new Promise((_resolve, reject) => {
+            init?.signal?.addEventListener('abort', () => {
+              reject(Object.assign(new Error('aborted'), { name: 'AbortError' }));
+            });
+          }),
+      ),
+    );
+
+    const promesa = sendShazamRecognizeRequest({ uri: 'data:audio/vnd.shazam.sig;base64,AA', samplems: 3000 });
+    const esperado = expect(promesa).rejects.toThrow(/Shazam no respondió en \d+ s/);
+    await vi.advanceTimersByTimeAsync(SHAZAM_TIMEOUT_MS + 1000);
+    await esperado;
   });
 });

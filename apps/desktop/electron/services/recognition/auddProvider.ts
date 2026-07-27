@@ -1,8 +1,16 @@
 import type { TrackMatch } from '../../../src/types';
 import { getAuddToken } from '../env';
+import { deadline, isAbortError, seconds } from '../http';
 import type { RecognitionProvider } from './provider';
 
 const AUDD_URL = 'https://api.audd.io/';
+
+/**
+ * Tope para AudD. Más holgado que el de Shazam porque aquí se SUBE el audio
+ * completo (unos cientos de KB), no una huella: con subida lenta, 15 s se
+ * quedaban cortos. Sin tope, una red caída deja el reconocimiento colgado.
+ */
+export const AUDD_TIMEOUT_MS = 25_000;
 
 interface AuddResult {
   artist?: string;
@@ -59,8 +67,22 @@ export async function identifyFromAudd(
   form.append('file', blob, extensionForMime(mimeType));
   form.append('return', 'apple_music,spotify');
 
-  const response = await fetch(AUDD_URL, { method: 'POST', body: form });
-  const raw = await response.text();
+  const dl = deadline(AUDD_TIMEOUT_MS);
+  let raw: string;
+  let response: Response;
+  try {
+    response = await fetch(AUDD_URL, { method: 'POST', body: form, signal: dl.signal });
+    raw = await response.text();
+  } catch (err) {
+    if (dl.timedOut) {
+      throw new Error(`AudD no respondió en ${seconds(AUDD_TIMEOUT_MS)} s`);
+    }
+    if (isAbortError(err)) throw new Error('Reconocimiento cancelado');
+    throw err;
+  } finally {
+    dl.dispose();
+  }
+
   if (!response.ok) {
     throw new Error(`AudD HTTP ${response.status}: ${raw.slice(0, 120)}`);
   }

@@ -8,7 +8,33 @@
 //   - deepl / google: mejor calidad, requieren clave del usuario.
 // ============================================================================
 
+import { deadline, isAbortError, seconds } from './http';
+
 export type TranslationProvider = 'mymemory' | 'local' | 'deepl' | 'google';
+
+/**
+ * Tope por PETICIÓN. El modelo local es el caso raro: una canción entera en una
+ * sola generación por CPU puede tardar minutos legítimamente, así que su plazo
+ * mide en minutos mientras los servicios web miden en decenas de segundos.
+ */
+const REQUEST_TIMEOUT_MS: Record<TranslationProvider, number> = {
+  mymemory: 20_000,
+  deepl: 30_000,
+  google: 30_000,
+  local: 180_000,
+};
+
+/**
+ * Tope para TODA la traducción de una canción. MyMemory manda una petición por
+ * línea, así que sin un presupuesto global el peor caso serían decenas de
+ * timeouts encadenados: minutos de spinner antes de rendirse.
+ */
+const TOTAL_BUDGET_MS: Record<TranslationProvider, number> = {
+  mymemory: 150_000,
+  deepl: 60_000,
+  google: 60_000,
+  local: 300_000,
+};
 
 export interface TranslationConfig {
   provider: TranslationProvider;
@@ -140,11 +166,24 @@ async function myMemoryRequest(
   // `de` (email válido) sube la cuota diaria de 5.000 a 50.000 caracteres.
   if (email) params.set('de', email);
 
-  const res = await fetch(`${MYMEMORY_URL}?${params.toString()}`, { signal });
-  if (!res.ok) {
-    throw new Error(`MyMemory HTTP ${res.status}`);
+  const dl = deadline(REQUEST_TIMEOUT_MS.mymemory, signal);
+  let res: Response;
+  let payload: MyMemoryResponse;
+  try {
+    res = await fetch(`${MYMEMORY_URL}?${params.toString()}`, { signal: dl.signal });
+    if (!res.ok) {
+      throw new Error(`MyMemory HTTP ${res.status}`);
+    }
+    payload = (await res.json()) as MyMemoryResponse;
+  } catch (err) {
+    if (dl.timedOut) {
+      throw new Error(`MyMemory no respondió en ${seconds(REQUEST_TIMEOUT_MS.mymemory)} s`);
+    }
+    throw err;
+  } finally {
+    dl.dispose();
   }
-  return readMyMemory((await res.json()) as MyMemoryResponse);
+  return readMyMemory(payload);
 }
 
 /** Traduce una línea completa (troceándola si excede el límite). */
@@ -285,9 +324,12 @@ async function callLocalModel(
   model: string,
   signal?: AbortSignal,
 ): Promise<string> {
-  let res: Response;
+  // El plazo envuelve la petición Y la lectura del cuerpo: con `stream: false`
+  // el runtime puede tener la conexión abierta y en silencio mientras genera.
+  const dl = deadline(REQUEST_TIMEOUT_MS.local, signal);
+  let connected = false;
   try {
-    res = await fetch(endpoint, {
+    const res = await fetch(endpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -297,35 +339,47 @@ async function callLocalModel(
         temperature: 0,
         stream: false,
       }),
-      signal,
+      signal: dl.signal,
     });
+    connected = true;
+
+    if (res.status === 404) {
+      throw new Error(
+        `El runtime local no conoce el modelo "${model}". Descárgalo primero ` +
+          `(con Ollama: ollama pull ${model}).`,
+      );
+    }
+    if (!res.ok) {
+      const detail = await res.text().catch(() => '');
+      throw new Error(`Modelo local ${res.status}${detail ? `: ${detail.slice(0, 120)}` : ''}`);
+    }
+
+    const data = (await res.json()) as {
+      choices?: { message?: { content?: string } }[];
+    };
+    const content = data.choices?.[0]?.message?.content;
+    if (typeof content !== 'string' || !content.trim()) {
+      throw new Error('El modelo local devolvió una respuesta vacía');
+    }
+    return content;
   } catch (err) {
-    if (err instanceof Error && err.name === 'AbortError') throw err;
+    if (dl.timedOut) {
+      throw new Error(
+        `El modelo local no terminó en ${seconds(REQUEST_TIMEOUT_MS.local)} s. ` +
+          'Prueba con un modelo más pequeño, o con GPU.',
+      );
+    }
+    if (isAbortError(err)) throw err;
+    // Solo es "no se pudo conectar" si el fallo ocurrió ANTES de la respuesta;
+    // si ya conectamos, el error de arriba es más informativo y hay que dejarlo.
+    if (connected) throw err;
     throw new Error(
       `No se pudo conectar con el modelo local en ${endpoint}. ` +
         '¿Está el runtime abierto? (por ejemplo, que Ollama esté corriendo)',
     );
+  } finally {
+    dl.dispose();
   }
-
-  if (res.status === 404) {
-    throw new Error(
-      `El runtime local no conoce el modelo "${model}". Descárgalo primero ` +
-        `(con Ollama: ollama pull ${model}).`,
-    );
-  }
-  if (!res.ok) {
-    const detail = await res.text().catch(() => '');
-    throw new Error(`Modelo local ${res.status}${detail ? `: ${detail.slice(0, 120)}` : ''}`);
-  }
-
-  const data = (await res.json()) as {
-    choices?: { message?: { content?: string } }[];
-  };
-  const content = data.choices?.[0]?.message?.content;
-  if (typeof content !== 'string' || !content.trim()) {
-    throw new Error('El modelo local devolvió una respuesta vacía');
-  }
-  return content;
 }
 
 async function translateWithLocal(
@@ -383,24 +437,34 @@ async function translateWithDeepL(
     body.append('text', line);
   }
 
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: body.toString(),
-    signal,
-  });
+  const dl = deadline(REQUEST_TIMEOUT_MS.deepl, signal);
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: body.toString(),
+      signal: dl.signal,
+    });
 
-  if (!res.ok) {
-    const detail = await res.text().catch(() => '');
-    throw new Error(`DeepL ${res.status}${detail ? `: ${detail.slice(0, 120)}` : ''}`);
-  }
+    if (!res.ok) {
+      const detail = await res.text().catch(() => '');
+      throw new Error(`DeepL ${res.status}${detail ? `: ${detail.slice(0, 120)}` : ''}`);
+    }
 
-  const data = (await res.json()) as { translations?: { text: string }[] };
-  const out = data.translations?.map((t) => t.text) ?? [];
-  if (out.length !== lines.length) {
-    throw new Error(`DeepL devolvió ${out.length} líneas, se esperaban ${lines.length}`);
+    const data = (await res.json()) as { translations?: { text: string }[] };
+    const out = data.translations?.map((t) => t.text) ?? [];
+    if (out.length !== lines.length) {
+      throw new Error(`DeepL devolvió ${out.length} líneas, se esperaban ${lines.length}`);
+    }
+    return out;
+  } catch (err) {
+    if (dl.timedOut) {
+      throw new Error(`DeepL no respondió en ${seconds(REQUEST_TIMEOUT_MS.deepl)} s`);
+    }
+    throw err;
+  } finally {
+    dl.dispose();
   }
-  return out;
 }
 
 async function translateWithGoogle(
@@ -410,30 +474,40 @@ async function translateWithGoogle(
   signal?: AbortSignal,
 ): Promise<string[]> {
   const url = `${GOOGLE_URL}?key=${encodeURIComponent(apiKey)}`;
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      q: lines,
-      target: targetLang.trim().toLowerCase() || 'es',
-      format: 'text',
-    }),
-    signal,
-  });
+  const dl = deadline(REQUEST_TIMEOUT_MS.google, signal);
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        q: lines,
+        target: targetLang.trim().toLowerCase() || 'es',
+        format: 'text',
+      }),
+      signal: dl.signal,
+    });
 
-  if (!res.ok) {
-    const detail = await res.text().catch(() => '');
-    throw new Error(`Google Translate ${res.status}${detail ? `: ${detail.slice(0, 120)}` : ''}`);
-  }
+    if (!res.ok) {
+      const detail = await res.text().catch(() => '');
+      throw new Error(`Google Translate ${res.status}${detail ? `: ${detail.slice(0, 120)}` : ''}`);
+    }
 
-  const data = (await res.json()) as {
-    data?: { translations?: { translatedText: string }[] };
-  };
-  const out = data.data?.translations?.map((t) => t.translatedText) ?? [];
-  if (out.length !== lines.length) {
-    throw new Error(`Google devolvió ${out.length} líneas, se esperaban ${lines.length}`);
+    const data = (await res.json()) as {
+      data?: { translations?: { translatedText: string }[] };
+    };
+    const out = data.data?.translations?.map((t) => t.translatedText) ?? [];
+    if (out.length !== lines.length) {
+      throw new Error(`Google devolvió ${out.length} líneas, se esperaban ${lines.length}`);
+    }
+    return out;
+  } catch (err) {
+    if (dl.timedOut) {
+      throw new Error(`Google Translate no respondió en ${seconds(REQUEST_TIMEOUT_MS.google)} s`);
+    }
+    throw err;
+  } finally {
+    dl.dispose();
   }
-  return out;
 }
 
 /** Traduce las líneas de una letra con el proveedor configurado. */
@@ -454,26 +528,43 @@ export async function translateLines(
     return { ok: false, error: 'Falta la API key de traducción (Ajustes → Traducción)' };
   }
 
+  // Presupuesto para TODA la canción, por encima del plazo de cada petición:
+  // sin él, un proveedor lento línea a línea encadena timeouts hasta el infinito.
+  const budget = deadline(TOTAL_BUDGET_MS[config.provider], signal);
+
   try {
     let translations: string[];
     if (config.provider === 'google') {
-      translations = await translateWithGoogle(lines, key, config.targetLang, signal);
+      translations = await translateWithGoogle(lines, key, config.targetLang, budget.signal);
     } else if (config.provider === 'deepl') {
-      translations = await translateWithDeepL(lines, key, config.targetLang, signal);
+      translations = await translateWithDeepL(lines, key, config.targetLang, budget.signal);
     } else if (config.provider === 'local') {
       translations = await translateWithLocal(
         lines,
         config.localEndpoint?.trim() || DEFAULT_LOCAL_ENDPOINT,
         config.localModel?.trim() || DEFAULT_LOCAL_MODEL,
         config.targetLang,
-        signal,
+        budget.signal,
       );
     } else {
-      translations = await translateWithMyMemory(lines, key, config.targetLang, signal);
+      translations = await translateWithMyMemory(lines, key, config.targetLang, budget.signal);
     }
     return { ok: true, translations };
   } catch (err) {
+    if (budget.timedOut) {
+      return {
+        ok: false,
+        error:
+          `La traducción tardó más de ${seconds(TOTAL_BUDGET_MS[config.provider])} s y se canceló. ` +
+          'Inténtalo otra vez o cambia de proveedor en Ajustes → Traducción.',
+      };
+    }
+    if (isAbortError(err)) {
+      return { ok: false, error: 'Traducción cancelada' };
+    }
     const message = err instanceof Error ? err.message : 'Error de traducción';
     return { ok: false, error: message };
+  } finally {
+    budget.dispose();
   }
 }

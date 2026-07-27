@@ -1,3 +1,12 @@
+import { deadline, isAbortError, seconds } from '../http';
+
+/**
+ * Tope para la llamada a Shazam. Sin él, una red que no responde deja el IPC
+ * `recognition:identify` sin resolver y la app clavada en "Identificando...".
+ * 15 s es holgado: la huella ya viaja comprimida y el servicio responde en ~1-2 s.
+ */
+export const SHAZAM_TIMEOUT_MS = 15_000;
+
 /** Headers HTTP para la API no oficial de Shazam (amp.shazam.com). */
 export function shazamRequestHeaders(language = 'en-US'): Record<string, string> {
   return {
@@ -71,19 +80,33 @@ export async function sendShazamRecognizeRequest(
     geolocation: {},
   });
 
-  const response = await fetch(buildRecognizeUrl(), {
-    method: 'POST',
-    headers: shazamRequestHeaders(language),
-    body,
-  });
+  // El plazo cubre también la lectura del cuerpo: un servidor puede aceptar la
+  // conexión y luego no mandar nada, que es igual de fatal que no responder.
+  const dl = deadline(SHAZAM_TIMEOUT_MS);
+  try {
+    const response = await fetch(buildRecognizeUrl(), {
+      method: 'POST',
+      headers: shazamRequestHeaders(language),
+      body,
+      signal: dl.signal,
+    });
 
-  if (!response.ok) {
-    const text = await response.text();
-    throw new Error(`Shazam HTTP ${response.status}: ${text.slice(0, 120)}`);
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(`Shazam HTTP ${response.status}: ${text.slice(0, 120)}`);
+    }
+
+    const data = (await response.json()) as ShazamApiResponse;
+    if (!data.matches || data.matches.length === 0) return null;
+    if (!data.track?.title || !data.track?.subtitle) return null;
+    return data;
+  } catch (err) {
+    if (dl.timedOut) {
+      throw new Error(`Shazam no respondió en ${seconds(SHAZAM_TIMEOUT_MS)} s`);
+    }
+    if (isAbortError(err)) throw new Error('Reconocimiento cancelado');
+    throw err;
+  } finally {
+    dl.dispose();
   }
-
-  const data = (await response.json()) as ShazamApiResponse;
-  if (!data.matches || data.matches.length === 0) return null;
-  if (!data.track?.title || !data.track?.subtitle) return null;
-  return data;
 }
