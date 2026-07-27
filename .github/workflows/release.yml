@@ -32,12 +32,34 @@ jobs:
         working-directory: apps/desktop
         run: npm ci
 
-      - name: Build SMTC sidecar
-        run: dotnet publish native/smtc/EspejoSmtc.csproj -c Release -r win-x64 --self-contained false -o native/smtc/dist
-
-      - name: Package Windows installer
+      # Puerta de calidad: un instalador que va a manos de terceros no debería
+      # publicarse con los tests en rojo.
+      - name: Lint
         working-directory: apps/desktop
-        run: npm run package
+        run: npm run lint
+
+      - name: Test
+        working-directory: apps/desktop
+        run: npm test
+
+      # package:full compila el sidecar AUTOCONTENIDO (--self-contained true) y
+      # luego empaqueta. Antes este workflow hacía su propio `dotnet publish`
+      # con --self-contained false: el instalador resultante exigía .NET 8 en la
+      # máquina del usuario y, sin él, SMTC moría en silencio (adiós pausa/seek
+      # instantáneos). Un solo comando = una sola fuente de verdad.
+      - name: Package Windows installer (sidecar autocontenido)
+        working-directory: apps/desktop
+        run: npm run package:full
+
+      # Si el sidecar no quedó dentro del paquete, el instalador "funciona"
+      # pero pierde la mejor fuente de sincronía. Mejor fallar aquí.
+      - name: Verify SMTC sidecar was bundled
+        shell: pwsh
+        run: |
+          if (-not (Test-Path native/smtc/dist/espejo-smtc.exe)) {
+            throw "espejo-smtc.exe no se generó: el instalador quedaría sin SMTC."
+          }
+          Write-Host "Sidecar OK:" (Get-Item native/smtc/dist/espejo-smtc.exe).Length "bytes"
 
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2

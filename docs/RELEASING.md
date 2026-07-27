@@ -3,7 +3,8 @@
 ## Prerequisites
 
 - Version bumped in `apps/desktop/package.json` (and `package-lock.json` if you changed deps).
-- SMTC sidecar builds cleanly: `dotnet publish native/smtc/EspejoSmtc.csproj -c Release -r win-x64 -o native/smtc/dist`.
+- SMTC sidecar builds cleanly **self-contained**: `dotnet publish native/smtc/EspejoSmtc.csproj -c Release -r win-x64 --self-contained true -o native/smtc/dist` (or just `npm run build:smtc`).
+  `--self-contained true` is not optional for public builds: without it the sidecar needs .NET 8 installed on the user's machine and dies silently when it isn't, losing instant pause/seek.
 - CI green on `main` (lint, tests, build).
 
 ## Cut a release
@@ -22,8 +23,9 @@
    ```
 4. **GitHub Actions** (`release.yml`) builds on `windows-latest`:
    - `npm ci` in `apps/desktop`
-   - `dotnet publish` for the SMTC sidecar
-   - `npm run package` → NSIS installer
+   - `npm run lint` + `npm test` (quality gate — no red tests reach users)
+   - `npm run package:full` → self-contained SMTC sidecar + NSIS installer
+   - verifies `native/smtc/dist/espejo-smtc.exe` exists before publishing
    - Uploads `Singevery-Setup-X.Y.Z.exe` plus `docs/demo-readme.mp4` and `docs/demo.mp4` to [GitHub Releases](https://github.com/Grizaceo/Singevery/releases) (linked from the README; the inline demo is the GIF in `docs/demo.gif`).
 
 The README embeds **`docs/demo.gif`** inline (GitHub does not play MP4 from release URLs without downloading). For a native MP4 player in the README, edit it once on github.com and drag `docs/demo-readme.mp4` into the editor — GitHub uploads it to `user-attachments` and inserts a playable URL.
@@ -35,13 +37,16 @@ If you add or replace demo videos on an **existing** release without cutting a n
 ### Windows (native)
 
 ```powershell
-.\native\smtc\build.ps1
 cd apps\desktop
 npm ci
-npm run package
+npm run package:full
 ```
 
 Installer: `apps/desktop/release/Singevery-Setup-<version>.exe`.
+
+`package:full` = sidecar autocontenido + build + avisos de terceros + instalador.
+Usa `npm run package` (sin `:full`) solo si ya compilaste el sidecar y no cambió;
+para cualquier build que salga de tu equipo, usa siempre `package:full`.
 
 ### Docker (reproducible, Linux/macOS host)
 

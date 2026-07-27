@@ -1,0 +1,797 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Singevery — Canta con la letra sincronizada</title>
+<meta name="description" data-i18n-attr="content" data-i18n="meta.desc"
+      content="Teleprompter transparente para cantar: reconoce la canción que suena y muestra la letra sincronizada, con furigana, romaji y traducción." />
+<link rel="icon" href="icon.png" />
+
+<!-- Open Graph / redes -->
+<meta property="og:type" content="website" />
+<meta property="og:title" content="Singevery — Canta con la letra sincronizada" />
+<meta property="og:description" content="Reconoce la canción que suena y muestra la letra sincronizada sobre tu escritorio. Furigana, romaji y traducción lado a lado." />
+<meta property="og:url" content="https://grizaceo.github.io/Singevery/" />
+<meta property="og:image" content="https://grizaceo.github.io/Singevery/demo-poster.jpg" />
+<meta name="twitter:card" content="summary_large_image" />
+
+<style>
+  :root {
+    --bg: #0b0b10;
+    --bg-soft: #12121a;
+    --panel: rgba(255, 255, 255, 0.045);
+    --border: rgba(255, 255, 255, 0.11);
+    --text: #f2f2f7;
+    --muted: #a3a3b2;
+    --accent: #7c5cff;
+    --accent-2: #22d3ee;
+    --sung: rgba(242, 242, 247, 0.38);
+    --radius: 14px;
+    --maxw: 1080px;
+  }
+
+  * { box-sizing: border-box; }
+
+  html { scroll-behavior: smooth; }
+
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    line-height: 1.65;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* Resplandor de fondo, guiño al overlay de la app. */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    background:
+      radial-gradient(60rem 34rem at 50% -12%, rgba(124, 92, 255, 0.20), transparent 65%),
+      radial-gradient(40rem 26rem at 88% 8%, rgba(34, 211, 238, 0.11), transparent 60%);
+    pointer-events: none;
+  }
+
+  a { color: inherit; }
+
+  .wrap {
+    width: 100%;
+    max-width: var(--maxw);
+    margin: 0 auto;
+    padding: 0 1.25rem;
+  }
+
+  /* ---------- Barra superior ---------- */
+  header.top {
+    position: sticky;
+    top: 0;
+    z-index: 50;
+    background: rgba(11, 11, 16, 0.82);
+    backdrop-filter: blur(14px);
+    border-bottom: 1px solid var(--border);
+  }
+
+  .top-inner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 0.7rem 1.25rem;
+    max-width: var(--maxw);
+    margin: 0 auto;
+  }
+
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    text-decoration: none;
+  }
+
+  .brand img { width: 26px; height: 26px; border-radius: 6px; }
+
+  .top-actions { display: flex; align-items: center; gap: 0.5rem; }
+
+  /* Selector de idioma */
+  .lang {
+    display: inline-flex;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    overflow: hidden;
+  }
+
+  .lang button {
+    background: transparent;
+    color: var(--muted);
+    border: 0;
+    padding: 0.32rem 0.7rem;
+    font: inherit;
+    font-size: 0.78rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.18s ease, color 0.18s ease;
+  }
+
+  .lang button[aria-pressed='true'] { background: rgba(255, 255, 255, 0.12); color: var(--text); }
+  .lang button:hover { color: var(--text); }
+
+  /* ---------- Botones ---------- */
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    padding: 0.78rem 1.35rem;
+    border-radius: 11px;
+    border: 1px solid var(--border);
+    font-weight: 600;
+    font-size: 0.95rem;
+    text-decoration: none;
+    cursor: pointer;
+    transition: transform 0.16s ease, box-shadow 0.16s ease, background 0.16s ease;
+  }
+
+  .btn:hover { transform: translateY(-1px); }
+
+  .btn-primary {
+    background: linear-gradient(135deg, var(--accent), #5b8cff);
+    border-color: transparent;
+    color: #fff;
+    box-shadow: 0 8px 26px rgba(124, 92, 255, 0.32);
+  }
+
+  .btn-primary:hover { box-shadow: 0 12px 32px rgba(124, 92, 255, 0.44); }
+
+  .btn-ghost { background: var(--panel); color: var(--text); }
+  .btn-ghost:hover { background: rgba(255, 255, 255, 0.09); }
+
+  .btn-sm { padding: 0.42rem 0.85rem; font-size: 0.83rem; }
+
+  /* ---------- Hero ---------- */
+  .hero { padding: 4.5rem 0 2.5rem; text-align: center; }
+
+  .eyebrow {
+    display: inline-block;
+    padding: 0.28rem 0.8rem;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--panel);
+    color: var(--muted);
+    font-size: 0.76rem;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    margin-bottom: 1.1rem;
+  }
+
+  h1 {
+    margin: 0 0 0.9rem;
+    font-size: clamp(2.3rem, 6vw, 3.9rem);
+    line-height: 1.08;
+    letter-spacing: -0.03em;
+    font-weight: 800;
+  }
+
+  h1 .grad {
+    background: linear-gradient(120deg, var(--accent), var(--accent-2));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
+  .sub {
+    max-width: 42rem;
+    margin: 0 auto 1.9rem;
+    color: var(--muted);
+    font-size: clamp(1rem, 2.2vw, 1.16rem);
+  }
+
+  .cta-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    justify-content: center;
+    align-items: center;
+  }
+
+  .cta-note {
+    margin-top: 0.9rem;
+    color: var(--muted);
+    font-size: 0.85rem;
+  }
+
+  /* ---------- Demo ---------- */
+  .demo {
+    margin: 2.6rem auto 0;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+    background: var(--bg-soft);
+    box-shadow: 0 24px 70px rgba(0, 0, 0, 0.55);
+  }
+
+  .demo img { display: block; width: 100%; height: auto; }
+
+  /* ---------- Secciones ---------- */
+  section { padding: 3.4rem 0; }
+
+  h2 {
+    font-size: clamp(1.5rem, 3.4vw, 2.1rem);
+    letter-spacing: -0.02em;
+    margin: 0 0 0.55rem;
+    font-weight: 750;
+  }
+
+  .section-sub { color: var(--muted); margin: 0 0 2rem; max-width: 46rem; }
+
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(255px, 1fr));
+    gap: 1rem;
+  }
+
+  .card {
+    padding: 1.4rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--panel);
+  }
+
+  .card h3 { margin: 0.55rem 0 0.45rem; font-size: 1.04rem; font-weight: 700; }
+  .card p { margin: 0; color: var(--muted); font-size: 0.93rem; }
+  .card .ico { font-size: 1.5rem; line-height: 1; }
+
+  /* ---------- Maqueta de texto paralelo ---------- */
+  .parallel {
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--bg-soft);
+    padding: 1.5rem;
+    overflow-x: auto;
+  }
+
+  .parallel-head {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1.6rem;
+    padding-bottom: 0.5rem;
+    margin-bottom: 0.9rem;
+    border-bottom: 1px solid var(--border);
+    color: var(--muted);
+    font-size: 0.68rem;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+  }
+
+  .p-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1.6rem;
+    padding: 0.22rem 0;
+    white-space: nowrap;
+  }
+
+  .p-row .l { text-align: right; }
+  .p-row .r { text-align: left; font-style: italic; color: #c8dcff; }
+  .p-row.dim { opacity: 0.42; font-size: 0.92em; }
+  .p-row.now { font-weight: 700; font-size: 1.12em; }
+  .p-row.now .r { color: #dbe7ff; }
+  .sung { color: var(--sung); font-weight: inherit; }
+
+  /* ---------- Tabla ---------- */
+  .table-wrap {
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow-x: auto;
+    background: var(--panel);
+  }
+
+  table { border-collapse: collapse; width: 100%; min-width: 480px; }
+
+  th, td {
+    text-align: left;
+    padding: 0.82rem 1.1rem;
+    border-bottom: 1px solid var(--border);
+    font-size: 0.93rem;
+  }
+
+  th { color: var(--muted); font-size: 0.76rem; text-transform: uppercase; letter-spacing: 0.07em; }
+  tbody tr:last-child td { border-bottom: 0; }
+  td strong { font-weight: 650; }
+
+  /* ---------- Pasos ---------- */
+  .steps { counter-reset: s; display: grid; gap: 1rem; }
+
+  .step {
+    position: relative;
+    padding: 1.15rem 1.3rem 1.15rem 3.6rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--panel);
+  }
+
+  .step::before {
+    counter-increment: s;
+    content: counter(s);
+    position: absolute;
+    left: 1.15rem;
+    top: 1.1rem;
+    width: 1.75rem;
+    height: 1.75rem;
+    display: grid;
+    place-items: center;
+    border-radius: 50%;
+    background: linear-gradient(135deg, var(--accent), #5b8cff);
+    font-size: 0.85rem;
+    font-weight: 700;
+    color: #fff;
+  }
+
+  .step h3 { margin: 0 0 0.2rem; font-size: 1rem; font-weight: 700; }
+  .step p { margin: 0; color: var(--muted); font-size: 0.93rem; }
+
+  kbd {
+    padding: 0.12rem 0.42rem;
+    border: 1px solid var(--border);
+    border-bottom-width: 2px;
+    border-radius: 6px;
+    background: rgba(255, 255, 255, 0.08);
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 0.85em;
+  }
+
+  /* ---------- Aviso ---------- */
+  .notice {
+    display: flex;
+    gap: 0.9rem;
+    padding: 1.15rem 1.3rem;
+    border: 1px solid rgba(245, 200, 90, 0.30);
+    border-radius: var(--radius);
+    background: rgba(245, 200, 90, 0.07);
+  }
+
+  .notice .ico { font-size: 1.2rem; line-height: 1.4; }
+  .notice p { margin: 0.3rem 0 0; color: var(--muted); font-size: 0.92rem; }
+  .notice strong { color: var(--text); }
+
+  /* ---------- CTA final ---------- */
+  .final {
+    text-align: center;
+    padding: 3.2rem 1.5rem;
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    background:
+      radial-gradient(30rem 16rem at 50% 0%, rgba(124, 92, 255, 0.16), transparent 70%),
+      var(--panel);
+  }
+
+  /* ---------- Footer ---------- */
+  footer {
+    border-top: 1px solid var(--border);
+    padding: 2.2rem 0 3rem;
+    color: var(--muted);
+    font-size: 0.87rem;
+  }
+
+  .foot-links { display: flex; flex-wrap: wrap; gap: 1.2rem; margin-bottom: 0.9rem; }
+  .foot-links a { text-decoration: none; border-bottom: 1px solid transparent; }
+  .foot-links a:hover { border-bottom-color: var(--muted); }
+
+  /* Solo se muestra el idioma activo. */
+  [data-lang-block] { display: none; }
+  [data-lang-block].is-active { display: block; }
+
+  @media (max-width: 560px) {
+    .hero { padding-top: 3rem; }
+    .p-row, .parallel-head { grid-template-columns: 1fr; gap: 0.1rem; }
+    .p-row .l, .p-row .r { text-align: left; }
+    .parallel-head { display: none; }
+    .btn { width: 100%; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    html { scroll-behavior: auto; }
+    .btn:hover { transform: none; }
+  }
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="top-inner">
+    <a class="brand" href="#top">
+      <img src="icon.png" alt="" />
+      <span>Singevery</span>
+    </a>
+    <div class="top-actions">
+      <div class="lang" role="group" aria-label="Idioma / Language">
+        <button type="button" data-set-lang="es" aria-pressed="true">ES</button>
+        <button type="button" data-set-lang="en" aria-pressed="false">EN</button>
+      </div>
+      <a class="btn btn-ghost btn-sm" href="https://github.com/Grizaceo/Singevery" target="_blank" rel="noopener">GitHub</a>
+    </div>
+  </div>
+</header>
+
+<main id="top">
+
+  <!-- =================== HERO =================== -->
+  <div class="wrap hero">
+    <span class="eyebrow" data-i18n="hero.eyebrow">Windows · Gratis y de código abierto</span>
+    <h1>
+      <span data-i18n="hero.title1">Canta cualquier canción,</span><br />
+      <span class="grad" data-i18n="hero.title2">aunque no leas el idioma</span>
+    </h1>
+    <p class="sub" data-i18n="hero.sub">
+      Singevery escucha lo que suena en tu PC, reconoce la canción y muestra la letra
+      sincronizada sobre el escritorio — con furigana, romaji y traducción al lado.
+      No importa si viene de Spotify, YouTube o cualquier otra cosa.
+    </p>
+
+    <div class="cta-row">
+      <a class="btn btn-primary" id="download"
+         href="https://github.com/Grizaceo/Singevery/releases/latest">
+        <span data-i18n="hero.download">Descargar para Windows</span>
+      </a>
+      <a class="btn btn-ghost" href="#how" data-i18n="hero.how">Cómo funciona</a>
+    </div>
+    <p class="cta-note" data-i18n="hero.note">
+      Windows 10/11 · <span id="relmeta"></span>El reconocimiento funciona sin registrarse ni poner ninguna clave.
+    </p>
+
+    <div class="demo">
+      <img src="demo.gif" alt="Singevery reconociendo una canción y mostrando la letra sincronizada"
+           loading="lazy" width="760" height="428" />
+    </div>
+  </div>
+
+  <!-- =================== QUÉ HACE =================== -->
+  <section class="wrap" id="features">
+    <h2 data-i18n="feat.title">Qué hace</h2>
+    <p class="section-sub" data-i18n="feat.sub">
+      Un teleprompter transparente que se queda encima de lo que estés haciendo,
+      sin taparte la pantalla.
+    </p>
+
+    <div class="grid">
+      <div class="card">
+        <div class="ico">🎧</div>
+        <h3 data-i18n="feat.1.h">Reconoce lo que suena</h3>
+        <p data-i18n="feat.1.p">Identifica la canción desde el audio del sistema o el micrófono. No necesita saber qué reproductor usas.</p>
+      </div>
+      <div class="card">
+        <div class="ico">⏱️</div>
+        <h3 data-i18n="feat.2.h">Letra sincronizada</h3>
+        <p data-i18n="feat.2.p">Resaltado tipo karaoke que avanza con la música, y se corrige solo si se va desfasando.</p>
+      </div>
+      <div class="card">
+        <div class="ico">👻</div>
+        <h3 data-i18n="feat.3.h">Overlay transparente</h3>
+        <p data-i18n="feat.3.p">Flota sobre el escritorio y deja pasar los clics mientras cantas. Se arrastra y se personaliza.</p>
+      </div>
+      <div class="card">
+        <div class="ico">あ</div>
+        <h3 data-i18n="feat.4.h">Ayudas de lectura</h3>
+        <p data-i18n="feat.4.p">Furigana, romaji, pinyin o romanización según el idioma — sin destruir la letra original.</p>
+      </div>
+      <div class="card">
+        <div class="ico">🌐</div>
+        <h3 data-i18n="feat.5.h">Traducción lado a lado</h3>
+        <p data-i18n="feat.5.p">Letra y traducción en columnas, iluminándose a la par. Para entender lo que cantas.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- =================== TEXTO PARALELO =================== -->
+  <section class="wrap">
+    <h2 data-i18n="par.title">Entiende lo que cantas</h2>
+    <p class="section-sub" data-i18n="par.sub">
+      La letra a la izquierda, su significado a la derecha, avanzando juntas.
+      Sirve para ir asociando palabras sin dejar de cantar.
+    </p>
+
+    <div class="parallel">
+      <div class="parallel-head">
+        <span data-i18n="par.left">Letra</span>
+        <span data-i18n="par.right">Traducción</span>
+      </div>
+      <div class="p-row dim"><span class="l">yume no you ni</span><span class="r" data-i18n="par.l1">como en un sueño</span></div>
+      <div class="p-row now">
+        <span class="l"><span class="sung">kimi no koe ga</span> kikoeru</span>
+        <span class="r"><span class="sung" data-i18n="par.l2a">tu voz</span> <span data-i18n="par.l2b">puedo escuchar</span></span>
+      </div>
+      <div class="p-row dim"><span class="l">mou ichido</span><span class="r" data-i18n="par.l3">una vez más</span></div>
+    </div>
+  </section>
+
+  <!-- =================== IDIOMAS =================== -->
+  <section class="wrap">
+    <h2 data-i18n="lang.title">Idiomas que no se leen fácil</h2>
+    <p class="section-sub" data-i18n="lang.sub">
+      La app detecta el sistema de escritura y genera la lectura encima del texto,
+      igual que el furigana japonés.
+    </p>
+
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th data-i18n="lang.th1">Idioma</th>
+            <th data-i18n="lang.th2">Qué muestra</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td><strong data-i18n="lang.jp">Japonés</strong></td><td data-i18n="lang.jp.d">Furigana sobre los kanji, romaji, o todo en hiragana</td></tr>
+          <tr><td><strong data-i18n="lang.ko">Coreano</strong></td><td data-i18n="lang.ko.d">Romanización revisada, palabra por palabra</td></tr>
+          <tr><td><strong data-i18n="lang.zh">Chino</strong></td><td data-i18n="lang.zh.d">Pinyin por carácter, con o sin tonos</td></tr>
+          <tr><td><strong data-i18n="lang.ru">Cirílico</strong></td><td data-i18n="lang.ru.d">Romanización latina sobre cada palabra</td></tr>
+          <tr><td><strong data-i18n="lang.other">Otros</strong></td><td data-i18n="lang.other.d">Transliteración latina cuando se puede</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- =================== CÓMO FUNCIONA =================== -->
+  <section class="wrap" id="how">
+    <h2 data-i18n="how.title">Cómo se usa</h2>
+    <p class="section-sub" data-i18n="how.sub">Tres pasos, sin configurar nada.</p>
+
+    <div class="steps">
+      <div class="step">
+        <h3 data-i18n="how.1.h">Pon música</h3>
+        <p data-i18n="how.1.p">Spotify, YouTube, un video, lo que sea que suene en el PC.</p>
+      </div>
+      <div class="step">
+        <h3 data-i18n="how.2.h">Aprieta SING</h3>
+        <p data-i18n="how.2.p">Clic en la pastilla flotante o el atajo <kbd>Ctrl</kbd> + <kbd>Alt</kbd> + <kbd>S</kbd>.</p>
+      </div>
+      <div class="step">
+        <h3 data-i18n="how.3.h">Canta</h3>
+        <p data-i18n="how.3.p">La letra aparece sincronizada. Elige el modo de lectura y ajusta el tamaño o el color a tu gusto.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- =================== HONESTIDAD =================== -->
+  <section class="wrap">
+    <h2 data-i18n="fine.title">Lo que conviene saber antes</h2>
+    <p class="section-sub" data-i18n="fine.sub">
+      Sin letra chica: esto es lo que te vas a encontrar.
+    </p>
+
+    <div class="grid">
+      <div class="notice">
+        <span class="ico">🛡️</span>
+        <div>
+          <strong data-i18n="fine.1.h">Windows va a mostrar un aviso</strong>
+          <p data-i18n="fine.1.p">El instalador no está firmado con un certificado de código, así que SmartScreen dirá "Windows protegió tu PC". Pulsa <em>Más información → Ejecutar de todos modos</em>. El código es abierto y puedes revisarlo.</p>
+        </div>
+      </div>
+      <div class="notice">
+        <span class="ico">🔑</span>
+        <div>
+          <strong data-i18n="fine.2.h">La traducción pide tu propia clave</strong>
+          <p data-i18n="fine.2.p">Reconocer canciones y mostrar la letra funciona sin configurar nada. Para traducir necesitas una clave de DeepL o Google Translate, que se pega en Ajustes.</p>
+        </div>
+      </div>
+      <div class="notice">
+        <span class="ico">🪟</span>
+        <div>
+          <strong data-i18n="fine.3.h">Por ahora solo Windows</strong>
+          <p data-i18n="fine.3.p">La sincronización fina se apoya en el reproductor del sistema de Windows 10/11. Todavía no hay versión de macOS, Linux ni móvil.</p>
+        </div>
+      </div>
+      <div class="notice">
+        <span class="ico">🎮</span>
+        <div>
+          <strong data-i18n="fine.5.h">Sobre jugar con el overlay</strong>
+          <p data-i18n="fine.5.p">Funciona encima de juegos en <em>pantalla completa sin bordes</em>, y se mueve con <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+flechas aunque el juego tenga el mouse. En <em>pantalla completa exclusiva</em> Windows no deja dibujar nada encima: ahí hay que cambiar el juego a sin bordes.</p>
+        </div>
+      </div>
+      <div class="notice">
+        <span class="ico">📄</span>
+        <div>
+          <strong data-i18n="fine.4.h">Las letras son de terceros</strong>
+          <p data-i18n="fine.4.p">Singevery no aloja letras: las busca en servicios públicos y las guarda en tu equipo para no repetir la consulta. Los derechos son de sus autores.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- =================== CTA FINAL =================== -->
+  <section class="wrap">
+    <div class="final">
+      <h2 data-i18n="final.title">Pruébalo con la canción que tengas sonando</h2>
+      <p class="section-sub" style="margin: 0 auto 1.6rem;" data-i18n="final.sub">
+        Gratis, de código abierto, sin cuenta ni registro.
+      </p>
+      <div class="cta-row">
+        <a class="btn btn-primary" href="https://github.com/Grizaceo/Singevery/releases/latest">
+          <span data-i18n="final.download">Descargar para Windows</span>
+        </a>
+        <a class="btn btn-ghost" href="https://github.com/Grizaceo/Singevery/blob/main/GUIA_DE_USO.md"
+           target="_blank" rel="noopener" data-i18n="final.guide">Leer la guía de uso</a>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <div class="foot-links">
+      <a href="https://github.com/Grizaceo/Singevery" target="_blank" rel="noopener">GitHub</a>
+      <a href="https://github.com/Grizaceo/Singevery/releases" target="_blank" rel="noopener" data-i18n="foot.releases">Versiones</a>
+      <a href="https://github.com/Grizaceo/Singevery/blob/main/GUIA_DE_USO.md" target="_blank" rel="noopener" data-i18n="foot.guide">Guía de uso</a>
+      <a href="https://github.com/Grizaceo/Singevery/blob/main/AVISO_LEGAL.md" target="_blank" rel="noopener" data-i18n="foot.legal">Aviso legal</a>
+      <a href="https://github.com/Grizaceo/Singevery/issues" target="_blank" rel="noopener" data-i18n="foot.issues">Reportar un problema</a>
+    </div>
+    <p data-i18n="foot.copy">
+      Singevery — licencia MIT. Hecho por Gris. No afiliado a Spotify, YouTube, Shazam ni Apple.
+    </p>
+  </div>
+</footer>
+
+<script>
+(function () {
+  'use strict';
+
+  // ---------------------------------------------------------------------
+  // i18n — un diccionario por clave. El HTML trae el español; al pasar a EN
+  // se sustituye el contenido de cada [data-i18n] y se restaura al volver.
+  // ---------------------------------------------------------------------
+  var EN = {
+    'meta.desc': 'Transparent karaoke teleprompter: recognizes the song playing and shows synced lyrics, with furigana, romaji and translation.',
+    'hero.eyebrow': 'Windows · Free and open source',
+    'hero.title1': 'Sing any song,',
+    'hero.title2': "even if you can't read the language",
+    'hero.sub': 'Singevery listens to what plays on your PC, recognizes the song and shows synced lyrics over your desktop — with furigana, romaji and translation side by side. Works with Spotify, YouTube or anything else.',
+    'hero.download': 'Download for Windows',
+    'hero.how': 'How it works',
+    'hero.note': 'Windows 10/11 · <span id="relmeta"></span>Recognition works with no sign-up and no API key.',
+    'feat.title': 'What it does',
+    'feat.sub': 'A transparent teleprompter that stays on top of whatever you are doing, without covering your screen.',
+    'feat.1.h': 'Knows what is playing',
+    'feat.1.p': 'Identifies the song from system audio or the microphone. It does not need to know which player you use.',
+    'feat.2.h': 'Synced lyrics',
+    'feat.2.p': 'Karaoke-style highlighting that follows the music and corrects itself when it drifts.',
+    'feat.3.h': 'Transparent overlay',
+    'feat.3.p': 'Floats above your desktop and lets clicks through while you sing. Draggable and customizable.',
+    'feat.4.h': 'Reading aids',
+    'feat.4.p': 'Furigana, romaji, pinyin or romanization depending on the language — the original lyrics stay intact.',
+    'feat.5.h': 'Side-by-side translation',
+    'feat.5.p': 'Lyrics and meaning in parallel columns, lighting up together. To understand what you sing.',
+    'par.title': 'Understand what you sing',
+    'par.sub': 'Lyrics on the left, meaning on the right, moving together. Pick up words without stopping to look them up.',
+    'par.left': 'Lyrics',
+    'par.right': 'Translation',
+    'par.l1': 'like in a dream',
+    'par.l2a': 'your voice',
+    'par.l2b': 'I can hear',
+    'par.l3': 'one more time',
+    'lang.title': 'Languages that are hard to read',
+    'lang.sub': 'The app detects the writing system and renders the reading above the text, the way Japanese furigana works.',
+    'lang.th1': 'Language',
+    'lang.th2': 'What you get',
+    'lang.jp': 'Japanese',
+    'lang.jp.d': 'Furigana above kanji, romaji, or everything in hiragana',
+    'lang.ko': 'Korean',
+    'lang.ko.d': 'Revised Romanization, word by word',
+    'lang.zh': 'Chinese',
+    'lang.zh.d': 'Pinyin per character, with or without tones',
+    'lang.ru': 'Cyrillic',
+    'lang.ru.d': 'Latin romanization above each word',
+    'lang.other': 'Others',
+    'lang.other.d': 'Latin transliteration where possible',
+    'how.title': 'How to use it',
+    'how.sub': 'Three steps, nothing to configure.',
+    'how.1.h': 'Play music',
+    'how.1.p': 'Spotify, YouTube, a video — anything playing on your PC.',
+    'how.2.h': 'Hit SING',
+    'how.2.p': 'Click the floating pill or press <kbd>Ctrl</kbd> + <kbd>Alt</kbd> + <kbd>S</kbd>.',
+    'how.3.h': 'Sing',
+    'how.3.p': 'Lyrics show up in sync. Pick your reading mode and tweak size or color to taste.',
+    'fine.title': 'Worth knowing first',
+    'fine.sub': 'No fine print: here is what you will run into.',
+    'fine.1.h': 'Windows will show a warning',
+    'fine.1.p': 'The installer is not signed with a code certificate, so SmartScreen will say "Windows protected your PC". Click <em>More info → Run anyway</em>. The source is open and you can review it.',
+    'fine.2.h': 'Translation needs your own key',
+    'fine.2.p': 'Recognizing songs and showing lyrics works out of the box. Translation requires a DeepL or Google Translate key, pasted into Settings.',
+    'fine.3.h': 'Windows only for now',
+    'fine.3.p': 'Fine-grained sync relies on the Windows 10/11 system media player. There is no macOS, Linux or mobile build yet.',
+    'fine.4.h': 'Lyrics come from third parties',
+    'fine.4.p': 'Singevery does not host lyrics: it looks them up on public services and caches them on your machine. Rights belong to their authors.',
+    'fine.5.h': 'About gaming with the overlay',
+    'fine.5.p': 'Works on top of games in <em>borderless fullscreen</em>, and moves with <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+arrows even when the game holds the mouse. In <em>exclusive fullscreen</em> Windows lets nothing draw on top: switch the game to borderless.',
+    'final.title': 'Try it with whatever is playing right now',
+    'final.sub': 'Free, open source, no account needed.',
+    'final.download': 'Download for Windows',
+    'final.guide': 'Read the user guide',
+    'foot.releases': 'Releases',
+    'foot.guide': 'User guide',
+    'foot.legal': 'Legal notice',
+    'foot.issues': 'Report an issue',
+    'foot.copy': 'Singevery — MIT license. Made by Gris. Not affiliated with Spotify, YouTube, Shazam or Apple.'
+  };
+
+  var nodes = Array.prototype.slice.call(document.querySelectorAll('[data-i18n]'));
+  var ES = {};
+  nodes.forEach(function (el) {
+    var key = el.getAttribute('data-i18n');
+    var attr = el.getAttribute('data-i18n-attr');
+    ES[key] = attr ? el.getAttribute(attr) : el.innerHTML;
+  });
+
+  function applyLang(lang) {
+    var dict = lang === 'en' ? EN : ES;
+    nodes.forEach(function (el) {
+      var key = el.getAttribute('data-i18n');
+      var value = dict[key];
+      if (value == null) return;
+      var attr = el.getAttribute('data-i18n-attr');
+      if (attr) el.setAttribute(attr, value);
+      else el.innerHTML = value;
+    });
+    document.documentElement.lang = lang;
+    document.title =
+      lang === 'en'
+        ? 'Singevery — Sing along with synced lyrics'
+        : 'Singevery — Canta con la letra sincronizada';
+    Array.prototype.forEach.call(document.querySelectorAll('[data-set-lang]'), function (b) {
+      b.setAttribute('aria-pressed', String(b.getAttribute('data-set-lang') === lang));
+    });
+    try { localStorage.setItem('singevery.lang', lang); } catch (e) { /* modo privado */ }
+    showRelease(); // el nodo de versión vive dentro de un texto traducible
+  }
+
+  Array.prototype.forEach.call(document.querySelectorAll('[data-set-lang]'), function (btn) {
+    btn.addEventListener('click', function () {
+      applyLang(btn.getAttribute('data-set-lang'));
+    });
+  });
+
+  // Idioma inicial: preferencia guardada, si no el del navegador.
+  var initial = null;
+  try { initial = localStorage.getItem('singevery.lang'); } catch (e) { /* noop */ }
+  if (!initial) {
+    initial = (navigator.language || 'es').toLowerCase().indexOf('es') === 0 ? 'es' : 'en';
+  }
+  if (initial === 'en') applyLang('en');
+
+  // ---------------------------------------------------------------------
+  // Versión publicada. El botón ya apunta a /releases/latest (funciona sin
+  // JS); esto solo añade el número y el enlace directo al .exe si existe.
+  // ---------------------------------------------------------------------
+  var release = null;
+
+  function showRelease() {
+    if (!release) return;
+    var slot = document.getElementById('relmeta');
+    if (slot) slot.textContent = release.tag + ' · ';
+    var btn = document.getElementById('download');
+    if (btn && release.url) btn.setAttribute('href', release.url);
+  }
+
+  fetch('https://api.github.com/repos/Grizaceo/Singevery/releases/latest', {
+    headers: { Accept: 'application/vnd.github+json' }
+  })
+    .then(function (r) { return r.ok ? r.json() : null; })
+    .then(function (data) {
+      if (!data || !data.tag_name) return;
+      var asset = (data.assets || []).filter(function (a) {
+        return /\.exe$/i.test(a.name || '');
+      })[0];
+      release = { tag: data.tag_name, url: asset ? asset.browser_download_url : null };
+      showRelease();
+    })
+    .catch(function () { /* sin red o límite de API: el enlace estático sirve igual */ });
+})();
+</script>
+</body>
+</html>
