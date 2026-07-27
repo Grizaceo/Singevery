@@ -66,22 +66,44 @@ Opciones, de menor a mayor costo:
 > Verificar precios y requisitos al momento de ejecutar: cambian seguido.
 
 ### 1.2 Claves de API — decidir el modelo 🔴
-Hoy la traducción exige que el usuario pegue su propia API key de DeepL/Google,
-y AudD requiere token. Un usuario común no va a sacar credenciales. Hay que
-elegir explícitamente:
-- **BYOK** (lo actual): gratis de operar, pero la traducción y el respaldo AudD
-  quedan fuera del alcance del usuario promedio. Requiere que la UI explique
-  bien qué funciona sin key (Shazam + letras sí funcionan).
-- **Proxy propio**: un backend mínimo con las keys del proyecto y rate limiting
-  por instalación. Mejor UX, pero implica costo variable, términos de uso y
-  responsabilidad sobre el tráfico.
+Hoy la traducción exige que el usuario pegue su propia API key de DeepL/Google.
+Un usuario común no va a sacar credenciales, así que la funcionalidad queda
+muerta para casi todos. Opciones, investigadas en jul-2026:
+
+- **Proveedor gratuito sin clave, como opción por defecto** (recomendado).
+  **MyMemory** (`api.mymemory.translated.net`) funciona sin registro ni clave:
+  5.000 caracteres/día anónimo, 50.000 si se manda un email en el parámetro
+  `de=`. Tiene un límite de **500 bytes por petición**, así que hay que trocear
+  — nuestra traducción hoy manda la canción entera en un lote y habría que
+  partirla por líneas. Con ~1.500 caracteres por canción eso da del orden de 3
+  canciones/día anónimo y ~30 con email. Calidad inferior a DeepL, suficiente
+  para entender de qué habla el verso. Encaja como default con DeepL/Google
+  como mejora opcional para quien tenga clave.
+- **LibreTranslate**: código abierto y auto-hospedable, sin clave si corre en
+  tu máquina o servidor. Sin límites al auto-hospedar, pero implica un servidor
+  (o pedirle al usuario que lo instale, lo que devuelve la fricción).
+- **Proxy propio**: un backend mínimo con las claves del proyecto y rate
+  limiting por instalación. La mejor UX, pero implica costo variable, términos
+  de uso y responsabilidad sobre el tráfico ajeno.
+- **BYOK** (lo actual): cero costo de operación, pero la traducción queda fuera
+  del alcance del usuario promedio.
+
+**Nota importante:** esto solo afecta a la traducción. Reconocer la canción y
+mostrar la letra sincronizada ya funciona sin ninguna clave (Shazam + cadena de
+proveedores de letras), y AudD es solo un respaldo opcional.
 
 Decisión pendiente; condiciona el mensaje de la web.
 
 ### 1.3 Auto-actualización
-Sin updater, cada corrección exige que el usuario vuelva a descargar. `electron-updater`
-se integra con GitHub Releases y el flujo de tags ya existente. Requiere firma
-para funcionar sin fricción (ver 1.1).
+Hoy, cada corrección obliga al usuario a volver a la web, descargar el `.exe` y
+reinstalar a mano. En la práctica eso significa que la gente se queda con la
+versión que instaló el primer día y nunca recibe los arreglos.
+
+`electron-updater` (del mismo autor que electron-builder, ya en el proyecto) se
+engancha a GitHub Releases y al flujo de tags que ya existe: la app consulta si
+hay versión nueva, la descarga en segundo plano y la instala al reiniciar.
+Requiere que el instalador esté **firmado** para no disparar el aviso en cada
+actualización (ver 1.1), así que va después de esa decisión.
 
 ---
 
