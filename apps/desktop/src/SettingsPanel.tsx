@@ -16,9 +16,14 @@ const PROVIDER_OPTIONS: { value: RecognitionProviderMode; label: string; hint: s
   { value: 'audd', label: 'AudD', hint: 'Requiere AUDD_API_TOKEN' },
 ];
 
-const TRANSLATION_PROVIDERS: { value: TranslationSettings['provider']; label: string }[] = [
-  { value: 'deepl', label: 'DeepL' },
-  { value: 'google', label: 'Google Translate v2' },
+const TRANSLATION_PROVIDERS: {
+  value: TranslationSettings['provider'];
+  label: string;
+  hint: string;
+}[] = [
+  { value: 'mymemory', label: 'MyMemory', hint: 'Sin clave, listo para usar' },
+  { value: 'deepl', label: 'DeepL', hint: 'Mejor calidad, con tu clave' },
+  { value: 'google', label: 'Google', hint: 'Con tu clave' },
 ];
 
 const TEXT_COLOR_PRESETS: { value: string; label: string }[] = [
@@ -67,7 +72,7 @@ export function SettingsPanel({
   const [display, setDisplay] = useState<DisplaySettings>(DEFAULT_DISPLAY);
   const [provider, setProvider] = useState<RecognitionProviderMode>('auto');
   const [translation, setTranslation] = useState<TranslationSettings>({
-    provider: 'deepl',
+    provider: 'mymemory',
     apiKey: '',
     targetLang: 'es',
   });
@@ -118,6 +123,10 @@ export function SettingsPanel({
   }, []);
 
   if (!open || !window.api) return null;
+
+  // MyMemory no pide credenciales: el campo pasa a ser un email opcional que
+  // solo sirve para subir la cuota diaria.
+  const isKeyless = translation.provider === 'mymemory';
 
   return (
     <div className="settings-backdrop" onClick={onClose} role="presentation">
@@ -223,8 +232,8 @@ export function SettingsPanel({
         <section className="settings-section">
           <span className="settings-label settings-group-title">Traducción</span>
           <p className="settings-hint">
-            Necesaria solo para el botón T del widget. Reconocer la canción y mostrar la letra
-            funciona sin configurar nada.
+            Afecta solo al botón T del widget. Reconocer la canción y mostrar la letra funciona sin
+            configurar nada.
           </p>
           <div className="settings-provider-list">
             {TRANSLATION_PROVIDERS.map((opt) => (
@@ -232,23 +241,50 @@ export function SettingsPanel({
                 key={opt.value}
                 type="button"
                 className={`settings-provider-btn${translation.provider === opt.value ? ' active' : ''}`}
+                title={opt.hint}
                 onClick={() => void patchTranslation({ provider: opt.value })}
               >
                 <strong>{opt.label}</strong>
+                <span>{opt.hint}</span>
               </button>
             ))}
           </div>
-          <label className="settings-label" htmlFor="translation-key">
-            API key
-          </label>
-          <input
-            id="translation-key"
-            className="settings-text-input"
-            type="password"
-            value={translation.apiKey}
-            placeholder={translation.provider === 'deepl' ? 'DeepL auth key' : 'Google API key'}
-            onChange={(e) => void patchTranslation({ apiKey: e.target.value })}
-          />
+
+          {isKeyless ? (
+            <>
+              <label className="settings-label" htmlFor="translation-key">
+                Tu email (opcional)
+              </label>
+              <input
+                id="translation-key"
+                className="settings-text-input"
+                type="email"
+                value={translation.apiKey}
+                placeholder="tucorreo@ejemplo.com"
+                onChange={(e) => void patchTranslation({ apiKey: e.target.value })}
+              />
+              <p className="settings-hint">
+                MyMemory funciona sin nada, con un tope de ~5.000 caracteres al día (unas 3
+                canciones). Poner un email válido lo sube a 50.000 (~30 canciones). No se envía a
+                ningún otro sitio.
+              </p>
+            </>
+          ) : (
+            <>
+              <label className="settings-label" htmlFor="translation-key">
+                API key
+              </label>
+              <input
+                id="translation-key"
+                className="settings-text-input"
+                type="password"
+                value={translation.apiKey}
+                placeholder={translation.provider === 'deepl' ? 'DeepL auth key' : 'Google API key'}
+                onChange={(e) => void patchTranslation({ apiKey: e.target.value })}
+              />
+            </>
+          )}
+
           <label className="settings-label" htmlFor="translation-lang">
             Idioma destino
           </label>

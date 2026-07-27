@@ -117,7 +117,9 @@ export type ReadingMode = 'original' | 'furigana' | 'romaji' | 'furigana_romaji'
  */
 export type TranslationView = 'off' | 'below' | 'side';
 
-export type TranslationProvider = 'deepl' | 'google';
+/** 'mymemory' no requiere credenciales: es el que hace que la traducción
+ *  funcione recién instalada la app. */
+export type TranslationProvider = 'mymemory' | 'deepl' | 'google';
 
 export interface TranslationSettings {
   provider: TranslationProvider;

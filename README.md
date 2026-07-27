@@ -81,17 +81,24 @@ El color elegido se aplica a toda la jerarquía visual (línea actual, adyacente
 
 ## Traducción
 
-Traducción **lazy por lote**: al activar **T**, se traducen todas las líneas de la canción en una sola petición y el resultado se cachea en disco.
+Al activar **T** se traduce la canción completa y el resultado se cachea en disco.
+El botón cicla entre tres vistas: sin traducción → bajo la línea actual → **texto
+paralelo** (letra y traducción en columnas, iluminándose a la par).
+
+**Funciona sin configurar nada.** El proveedor por defecto es **MyMemory**, que no
+pide registro ni clave. Su cuota gratuita es de ~5.000 caracteres al día (unas 3
+canciones); poniendo un email en Ajustes sube a 50.000 (~30 canciones).
 
 Configura en **Ajustes (⚙) → Traducción**:
 
 | Campo | Descripción |
 |-------|-------------|
-| **Proveedor** | DeepL (default) o Google Translate v2 |
-| **API key** | Tu clave del proveedor elegido |
+| **Proveedor** | MyMemory (default, sin clave) · DeepL o Google con tu clave |
+| **Email / API key** | En MyMemory, email opcional para subir la cuota. En DeepL/Google, tu clave |
 | **Idioma destino** | Código ISO (default `es`) |
 
-Sin API key, el toggle **T** avisa y enlaza a Ajustes. La traducción aparece bajo la línea actual (`Traducción: …`).
+DeepL y Google dan mejor calidad y no tienen el tope diario, pero requieren que
+consigas una credencial.
 
 ## Estructura del repo
 
@@ -126,7 +133,7 @@ npm run dev:kill          # Si no abre tras Ctrl+C: mata Electron + puerto 5173
    AUDD_API_TOKEN=tu_token
    ```
 
-3. Opcional: en **Ajustes → Traducción**, configura DeepL o Google para ver traducciones al cantar.
+3. Opcional: en **Ajustes → Traducción**, pon tu email (sube la cuota gratuita) o una clave de DeepL/Google para mejor calidad.
 
 4. Atajo global **Ctrl+Alt+S** o clic en la pill **SING** para expandir e identificar.
 
@@ -140,7 +147,7 @@ Guía completa: [`apps/desktop/WINDOWS.md`](apps/desktop/WINDOWS.md).
 | **Shazam** | Solo cliente no oficial |
 | **AudD** | Requiere `AUDD_API_TOKEN` en `.env` |
 
-Selector en **Ajustes (⚙)** del widget. También ahí: opacidad, **color de letra**, fuente, traducción (DeepL/Google) y pinyin con/sin tonos.
+Selector en **Ajustes (⚙)** del widget. También ahí: opacidad, **color de letra**, fuente, traducción (MyMemory sin clave, o DeepL/Google) y pinyin con/sin tonos.
 
 ## Scripts útiles
 

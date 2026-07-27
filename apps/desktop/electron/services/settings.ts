@@ -110,7 +110,9 @@ export const DEFAULT_DISPLAY_SETTINGS: DisplaySettings = {
 export const DEFAULT_RECOGNITION_PROVIDER: RecognitionProviderMode = 'auto';
 
 export const DEFAULT_TRANSLATION_SETTINGS: TranslationSettings = {
-  provider: 'deepl',
+  // Sin clave: la traducción tiene que funcionar sin que el usuario consiga
+  // credenciales. DeepL/Google quedan como mejora opcional.
+  provider: 'mymemory',
   apiKey: '',
   targetLang: 'es',
 };
@@ -238,7 +240,10 @@ function normalizeRecognitionProvider(value: unknown): RecognitionProviderMode {
 
 function normalizeTranslationSettings(raw?: Partial<TranslationSettings>): TranslationSettings {
   return {
-    provider: raw?.provider === 'google' ? 'google' : 'deepl',
+    provider:
+      raw?.provider === 'google' || raw?.provider === 'deepl' || raw?.provider === 'mymemory'
+        ? raw.provider
+        : DEFAULT_TRANSLATION_SETTINGS.provider,
     apiKey: typeof raw?.apiKey === 'string' ? raw.apiKey : DEFAULT_TRANSLATION_SETTINGS.apiKey,
     targetLang:
       typeof raw?.targetLang === 'string' && raw.targetLang.trim()
