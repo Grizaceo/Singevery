@@ -94,6 +94,34 @@ proveedores de letras), y AudD es solo un respaldo opcional.
 
 Decisión pendiente; condiciona el mensaje de la web.
 
+### 1.2.b Traducción local (a explorar si MyMemory no convence)
+
+La intuición es correcta: **existe un Gemma especializado en traducir**
+(`translategemma-4b-it-4bit`), y hay varias opciones locales maduras en 2026.
+Ordenadas por encaje con esta app:
+
+| Opción | Tamaño | Nota |
+|---|---|---|
+| **Opus-MT** (Helsinki-NLP) | ~300 MB por par de idiomas | Lo más rápido; no es un LLM general, hace solo traducción. Corre en CPU sin drama. |
+| **NLLB-200** (Meta) | 1.3B ≈ 3 GB VRAM | 200+ idiomas, pensado para traducción. Cubre lo raro. |
+| **TranslateGemma 4B** (4-bit) | ~2-3 GB | Gemma afinado para traducir. Mejor calidad de las tres, más peso. |
+
+**Ventajas reales para Singevery:** sin cuota, sin red, sin latencia de ida y
+vuelta, y sin mandar las letras a un tercero — que es un punto de privacidad
+que hoy hay que declarar en el aviso legal.
+
+**El obstáculo no es técnico, es de distribución.** El instalador hoy pesa
+decenas de MB; meter un modelo lo lleva a cientos de MB o GB. La forma sensata
+sería **descarga opcional bajo demanda**: la app arranca con MyMemory y ofrece
+"traducir sin conexión" bajando el modelo una vez. Eso implica gestionar
+descarga, verificación de integridad, almacenamiento y una ruta de inferencia
+(`transformers.js` / ONNX Runtime / CTranslate2 vía sidecar, como ya se hace
+con el de SMTC).
+
+Decisión: **esperar al veredicto de calidad de MyMemory en uso real** antes de
+invertir aquí. Si MyMemory alcanza, esto no hace falta; si no, Opus-MT es el
+primer candidato por tamaño y velocidad.
+
 ### 1.3 Auto-actualización
 Hoy, cada corrección obliga al usuario a volver a la web, descargar el `.exe` y
 reinstalar a mano. En la práctica eso significa que la gente se queda con la
