@@ -145,8 +145,9 @@ Hoy, cada corrección obliga al usuario a volver a la web, descargar el `.exe` y
 reinstalar a mano. En la práctica eso significa que la gente se queda con la
 versión que instaló el primer día y nunca recibe los arreglos.
 
-`electron-updater` (del mismo autor que electron-builder, ya en el proyecto) se
-engancha a GitHub Releases y al flujo de tags que ya existe: la app consulta si
+`electron-updater` (del mismo autor que electron-builder, **todavía no
+instalado**: no está en `package.json` ni hay bloque `publish` en
+`electron-builder.yml`) se engancha a GitHub Releases y al flujo de tags que ya existe: la app consulta si
 hay versión nueva, la descarga en segundo plano y la instala al reiniciar.
 Requiere que el instalador esté **firmado** para no disparar el aviso en cada
 actualización (ver 1.1), así que va después de esa decisión.

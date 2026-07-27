@@ -1,10 +1,13 @@
 name: CI
 
+# Corre en TODA rama, no solo en main: durante julio de 2026 el trabajo vivió en
+# una rama paralela y 11 commits llegaron al momento de publicar sin haber
+# pasado nunca por CI. La red de seguridad no sirve si solo mira una rama.
 on:
   push:
-    branches: [main]
+    branches: ['**']
   pull_request:
-    branches: [main]
+  workflow_dispatch:
 
 jobs:
   test-and-build:

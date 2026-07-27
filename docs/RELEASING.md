@@ -56,7 +56,42 @@ para cualquier build que salga de tu equipo, usa siempre `package:full`.
 
 Uses `electronuserland/builder:wine` + .NET 8 SDK. Same output path: `apps/desktop/release/`.
 
+## Smoke test — mandatory before publishing
+
+Vitest cannot see anything that breaks **because of packaging**: files read with
+`fs` from inside the `.asar`, native/WASM binaries, sidecar paths. Those are
+exactly the things that fail in a build and work in dev. Run this on Windows,
+ideally on a machine **without** Node or the .NET SDK installed:
+
+- [ ] Installer opens, shows the license, installs; desktop and Start Menu shortcuts work.
+- [ ] App launches; icon and name look right.
+- [ ] Recognises a song via **system audio**, then via **microphone**.
+- [ ] SMTC reacts to pause/seek → proves the self-contained sidecar shipped.
+- [ ] A **Japanese** song shows furigana and romaji → proves `asarUnpack` of the
+      kuromoji dictionary (`node_modules/kuromoji/dict/**`) worked.
+- [ ] Recognition works at all → proves the shazamio-core `.wasm` was unpacked.
+- [ ] Translate with MyMemory, and with a local runtime (Ollama) if available.
+- [ ] Close and reopen: settings, per-track offsets and lyrics cache persist.
+- [ ] Uninstall leaves nothing running.
+
+Any red line here is a **stop**: do not publish the tag.
+
+## Rollback
+
+There is no server to roll back. For a desktop app, rolling back means:
+
+1. Mark the bad release as **pre-release** (or delete it) on GitHub, so
+   `releases/latest` serves the previous installer again — the landing page and
+   the README badge follow `latest` automatically.
+2. Open an issue describing the symptom so people who already installed it know.
+3. Fix forward with a patch tag (`vX.Y.Z+1`); never re-tag an existing version.
+
+Roll back if, on a clean machine: the app does not start, it recognises nothing,
+lyrics never appear, or the installer is flagged as malware by a mainstream AV.
+
 ## Notes
 
 - The installer is **unsigned**. Windows SmartScreen may warn on first run; choose **More info → Run anyway**.
+  Publish the installer's **SHA-256** in the release notes so wary users can verify it:
+  `Get-FileHash apps\desktop\release\Singevery-Setup-<version>.exe -Algorithm SHA256`
 - AudD is optional (`AUDD_API_TOKEN` in `.env`); Shazam works without API keys. `.env` is excluded from the packaged app.

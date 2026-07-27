@@ -61,11 +61,23 @@ jobs:
           }
           Write-Host "Sidecar OK:" (Get-Item native/smtc/dist/espejo-smtc.exe).Length "bytes"
 
+      # Sin firma de código, el hash es lo único que permite a alguien
+      # desconfiado verificar que el .exe que bajó es el que se publicó aquí.
+      - name: Compute installer SHA-256
+        shell: pwsh
+        run: |
+          $exe = Get-ChildItem apps/desktop/release/Singevery-Setup-*.exe | Select-Object -First 1
+          $hash = (Get-FileHash $exe.FullName -Algorithm SHA256).Hash
+          Write-Host "SHA-256: $hash"
+          "### Verificación`n`nSHA-256 de ``$($exe.Name)``:`n`n``````$hash```````n" |
+            Out-File -FilePath release-notes.md -Encoding utf8
+
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           draft: false
           generate_release_notes: true
+          body_path: release-notes.md
           files: |
             apps/desktop/release/Singevery-Setup-*.exe
             docs/demo-readme.mp4

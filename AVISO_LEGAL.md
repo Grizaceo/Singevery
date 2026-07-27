@@ -26,17 +26,28 @@ El acceso a cada servicio de letras queda sujeto a sus propios términos y condi
 
 Shazam es una marca de Apple Inc. Musixmatch, AudD, Letras.mus.br, LRCLIB, Windows y las demás marcas mencionadas pertenecen a sus respectivos titulares y se usan solo con fines descriptivos (indicar compatibilidad o fuente de datos). Su mención **no implica afiliación ni respaldo**.
 
-## 5. Privacidad
+## 5. Traducción de letras
+
+La traducción es **opcional** y solo se ejecuta cuando pulsas el botón **T**. Al activarla, **el texto completo de la letra sale de tu equipo** hacia el proveedor que tengas configurado en *Ajustes → Traducción*:
+
+* **MyMemory** (proveedor por defecto, de Translated S.r.l.). Es una **memoria de traducción colaborativa**: según sus [términos y condiciones](https://mymemory.translated.net/terms-and-conditions), Translated conserva de forma indefinida cada segmento enviado, lo procesa para crear estadísticas y mejorar sus servicios, puede licenciarlo a socios externos y, al no marcarse como privado, se considera **"Public Data"** sobre el que Translated declara plena titularidad. Si mandas un email en Ajustes para ampliar la cuota diaria, ese email viaja en cada consulta. Sus términos se rigen por la ley italiana.
+* **DeepL o Google Translate**, si configuras tu propia clave: se aplican sus respectivos términos y políticas de privacidad, y la letra se envía a sus servidores.
+* **Modelo local** (Ollama, LM Studio, llama.cpp server, Jan): la letra **no sale de tu equipo**. Es la única opción sin envío a terceros y la recomendada si te importa la privacidad o el estatus de la letra.
+
+Las letras son obras protegidas (ver §2). Enviar una letra a un servicio de traducción colaborativo implica aportarla a un archivo de terceros; **si eso te preocupa, usa el proveedor local o no actives la traducción**. La aplicación no traduce nada por su cuenta.
+
+## 6. Privacidad
 
 * Singevery **no tiene servidores propios**: no recopila, transmite ni vende datos personales a los desarrolladores.
 * Para identificar canciones se envían **huellas/fragmentos de audio** capturados del micrófono o del audio del sistema a los servicios de reconocimiento (Shazam vía cliente no oficial, o AudD si lo configuras). El audio solo se usa para la identificación.
 * Las consultas de letras envían título y artista de la canción a los servicios de letras.
+* La traducción, si la activas, envía el texto de la letra a un tercero (ver §5).
 * La caché de letras, ajustes y offsets se guarda localmente en tu equipo (carpeta de datos de usuario de la aplicación).
 
-## 6. Uso aceptable
+## 7. Uso aceptable
 
 Esta aplicación está pensada para acompañar el canto en un contexto personal o doméstico. La ejecución pública de obras musicales (por ejemplo, un local comercial con karaoke) puede requerir licencias de las entidades de gestión correspondientes en tu país; obtenerlas es responsabilidad de quien realiza la ejecución pública, no del software.
 
-## 7. Contacto
+## 8. Contacto
 
 Proyecto: https://github.com/Grizaceo/Singevery — para consultas o solicitudes de retiro, abre un issue en el repositorio.
