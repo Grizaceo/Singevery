@@ -13,9 +13,9 @@
 }
 
 .pitch-badge.pitch-active .pitch-toggle {
-  background: color-mix(in srgb, var(--accent, #4a9eff) 25%, transparent);
-  color: var(--accent, #4a9eff);
-  border-color: color-mix(in srgb, var(--accent, #4a9eff) 60%, transparent);
+  background: color-mix(in srgb, var(--chrome-accent, #60a5fa) 25%, transparent);
+  color: var(--chrome-accent, #60a5fa);
+  border-color: color-mix(in srgb, var(--chrome-accent, #60a5fa) 60%, transparent);
 }
 
 .pitch-readout {

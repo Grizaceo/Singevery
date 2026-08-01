@@ -221,12 +221,25 @@ function setupMediaPermissions(): void {
 }
 
 function setupSystemAudioCapture(): void {
-  session.defaultSession.setDisplayMediaRequestHandler((_request, callback) => {
-    // La app SOLO necesita el loopback de audio; nunca devolvemos video.
-    // Capturar la pantalla completa hace que Windows notifique la captura y
-    // Spotify (contenido protegido) pausa la reproducción. El loopback solo
-    // (callback({ audio: 'loopback' })) mantiene el audio sin tocar la pantalla.
-    callback({ audio: 'loopback' });
+  session.defaultSession.setDisplayMediaRequestHandler((request, callback) => {
+    // Video = el PROPIO frame del widget (transparente) + audio loopback.
+    //
+    // Por qué NO pantalla completa: capturar la pantalla hace que Windows
+    // notifique la captura y Spotify (contenido protegido) pausa la
+    // reproducción al reconocer música.
+    //
+    // Por qué NO solo audio: el loopback de Electron necesita un track de
+    // video activo para enviar audio (comentario original de capture.ts e
+    // issue electron #49607). Capturar request.frame (la propia app, que es
+    // transparente y no muestra contenido ajeno) da ese track sin capturar
+    // nada que dispare protección de contenido.
+    if (request.frame) {
+      callback({ video: request.frame, audio: 'loopback' });
+    } else {
+      // Frame no disponible (raro): caer a solo audio; si el loopback llega
+      // en silencio, es preferible a no capturar nada.
+      callback({ audio: 'loopback' });
+    }
   });
 }
 

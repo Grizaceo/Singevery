@@ -241,25 +241,50 @@ async function detectSourceLang(
   signal?: AbortSignal,
 ): Promise<string> {
   // Detección por script Unicode (determinista, sin red, sin cuota).
+  // Dos niveles:
+  //   1. Por línea: proporción de caracteres del script, no presencia de uno.
+  //   2. Voto global: el KANA es señal inequívoca de japonés — si CUALQUIER
+  //      línea tiene kana, la canción es japonesa (los estribillos bilingües
+  //      "I love you ずっと" no la desvían al latín).
   const count = { japanese: 0, korean: 0, chinese: 0, cyrillic: 0, latin: 0, other: 0 };
-  const HAS_KANA = /[\u3040-\u309F\u30A0-\u30FF]/;
-  const HAS_CJK = /[\u4E00-\u9FFF]/;
-  const HAS_KOREAN = /[\uAC00-\uD7AF]/;
-  const HAS_CYRILLIC = /[\u0400-\u04FF\u0500-\u052F]/;
+  const KANA_RE = /[\u3040-\u309F\u30A0-\u30FF]/g;
+  const CJK_RE = /[\u4E00-\u9FFF]/g;
+  const KOREAN_RE = /[\uAC00-\uD7AF]/g;
+  const CYRILLIC_RE = /[\u0400-\u04FF\u0500-\u052F]/g;
+  // eslint-disable-next-line no-control-regex
+  const NON_ASCII_RE = /[^\x00-\x7F\s\d.,!?'"()[\]-]/g;
+
+  let anyKana = false;
 
   for (const line of lines) {
     if (!line.trim()) continue;
-    if (HAS_KANA.test(line)) { count.japanese++; continue; }
-    if (HAS_KOREAN.test(line)) { count.korean++; continue; }
-    if (HAS_CJK.test(line)) { count.chinese++; continue; }
-    if (HAS_CYRILLIC.test(line)) { count.cyrillic++; continue; }
-    // eslint-disable-next-line no-control-regex
-    if (/[^\x00-\x7F\s\d.,!?'"()[\]-]/.test(line)) {
-      // Caracteres no-ASCII pero fuera de los rangos anteriores.
-      count.other++;
+    // Número de caracteres por script dentro de la línea.
+    const kana = line.match(KANA_RE)?.length ?? 0;
+    const cjk = line.match(CJK_RE)?.length ?? 0;
+    const korean = line.match(KOREAN_RE)?.length ?? 0;
+    const cyrillic = line.match(CYRILLIC_RE)?.length ?? 0;
+    const nonAscii = line.match(NON_ASCII_RE)?.length ?? 0;
+    if (kana > 0) anyKana = true;
+    const totalScript = kana + cjk + korean + cyrillic + nonAscii;
+    if (totalScript === 0) {
+      count.latin++;
       continue;
     }
-    count.latin++;
+
+    // Kana presente: señal inequívoca de japonés.
+    if (kana > 0) {
+      count.japanese++;
+      continue;
+    }
+    // CJK sin kana: ambiguo (kanji japonés vs hanzi chino). El voto global
+    // lo resuelve: si alguna línea tenía kana, toda la canción es japonesa.
+    if (cjk > 0) {
+      count.chinese++;
+      continue;
+    }
+    if (korean > 0) { count.korean++; continue; }
+    if (cyrillic > 0) { count.cyrillic++; continue; }
+    count.other++;
   }
 
   // Encontrar el script con más líneas (desempatar: first-hit).
@@ -270,6 +295,10 @@ async function detectSourceLang(
   }
 
   if (bestCount === 0) return 'Autodetect';
+
+  // Voto global: kana en cualquier línea ⇒ japonés, aunque el conteo por
+  // línea favorezca chino (kanji sin kana en muchas líneas) o latín.
+  if (anyKana) return 'ja';
 
   switch (best) {
     case 'japanese': return 'ja';

@@ -83,8 +83,10 @@ function createLevelMeter(stream: MediaStream): LevelMeter | null {
 }
 
 /**
- * Mantiene vivo el stream de pantalla (con video) mientras se captura solo audio.
- * En Windows el loopback de Electron deja de enviar audio si se detienen los tracks de video.
+ * Mantiene vivo el stream de captura mientras se usa solo su audio.
+ * El handler en main.ts entrega video = frame propio del widget + loopback;
+ * este objeto conserva el stream para no re-adquirir en cada ciclo (re-adquirir
+ * getDisplayMedia dispararía el selector de captura de Windows cada vez).
  */
 export class SystemAudioSession {
   private displayStream: MediaStream | null = null;

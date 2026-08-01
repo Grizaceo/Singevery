@@ -34,8 +34,13 @@ export function usePitchMonitor(): {
   const bufRef = useRef<Float32Array<ArrayBuffer> | null>(null);
   const rafRef = useRef<number | null>(null);
   const runningRef = useRef(false);
+  /** Token de generación: invalida start() en vuelo cuando stop() corre. */
+  const genRef = useRef(0);
 
   const stop = useCallback(() => {
+    // Invalidar cualquier start() pendiente: si está en el await de
+    // getUserMedia, al volver verá el token cambiado y abortará.
+    genRef.current += 1;
     runningRef.current = false;
     if (rafRef.current != null) {
       cancelAnimationFrame(rafRef.current);
@@ -57,10 +62,11 @@ export function usePitchMonitor(): {
 
   const start = useCallback(async () => {
     setError(null);
+    const gen = genRef.current;
     try {
       const stream = await openMicrophoneStream();
-      if (runningRef.current) {
-        // Ya había uno corriendo: cerrar el recién abierto.
+      // stop() corrió mientras esperábamos el stream: abortar.
+      if (gen !== genRef.current || runningRef.current) {
         stream.getTracks().forEach((track) => track.stop());
         return;
       }
@@ -70,9 +76,21 @@ export function usePitchMonitor(): {
         (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
       if (!Ctx) {
         setError('Web Audio no disponible');
+        stream.getTracks().forEach((track) => track.stop());
         return;
       }
       const ctx = new Ctx();
+      // El contexto puede arrancar 'suspended' hasta un gesto de usuario;
+      // el click en el badge lo es, pero asegurar running evita analyser mudo.
+      if (ctx.state === 'suspended') {
+        await ctx.resume().catch(() => {});
+      }
+      if (gen !== genRef.current) {
+        // stop() durante el resume: limpiar y abortar.
+        await ctx.close().catch(() => {});
+        stream.getTracks().forEach((track) => track.stop());
+        return;
+      }
       const source = ctx.createMediaStreamSource(stream);
       const analyser = ctx.createAnalyser();
       analyser.fftSize = 2048;
