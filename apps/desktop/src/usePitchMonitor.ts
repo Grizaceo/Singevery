@@ -34,7 +34,7 @@ export function usePitchMonitor(): {
   const [active, setActive] = useState(false);
   const [pitch, setPitch] = useState<PitchResult | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [window, setWindow] = useState<MelodyPoint[]>([]);
+  const [pitchWindow, setPitchWindow] = useState<MelodyPoint[]>([]);
 
   const streamRef = useRef<MediaStream | null>(null);
   const ctxRef = useRef<AudioContext | null>(null);
@@ -69,7 +69,7 @@ export function usePitchMonitor(): {
     streamRef.current = null;
     setActive(false);
     setPitch(null);
-    setWindow([]);
+    setPitchWindow([]);
     windowRef.current = [];
   }, []);
 
@@ -137,7 +137,7 @@ export function usePitchMonitor(): {
           // Actualizar el estado a ~10 Hz (no en cada frame: evita re-render
           // continuo del badge; el comparador no necesita 60 fps).
           if (windowRef.current.length % 3 === 0) {
-            setWindow([...windowRef.current]);
+            setPitchWindow([...windowRef.current]);
           }
         }
         rafRef.current = requestAnimationFrame(sample);
@@ -154,7 +154,6 @@ export function usePitchMonitor(): {
       }
       setActive(false);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- setters de useState son estables
   }, []);
 
   // Cleanup al desmontar.
@@ -171,5 +170,5 @@ export function usePitchMonitor(): {
     };
   }, []);
 
-  return { active, pitch, error, window, start, stop };
+  return { active, pitch, error, window: pitchWindow, start, stop };
 }
