@@ -1,6 +1,7 @@
 import { RecognitionControls } from './RecognitionControls';
 import { SyncControls } from './SyncControls';
 import { ResizeGrip } from './ResizeGrip';
+import { PitchMonitorBadge } from './PitchMonitor';
 import type { RecognitionState } from './useRecognition';
 import type { DesktopApi } from './types';
 import './ChromeBars.css';
@@ -17,6 +18,7 @@ export function ChromeBottomBar({ recognition, api }: ChromeBottomBarProps) {
         <RecognitionControls recognition={recognition} />
       </div>
       <div className="chrome-bar-group">
+        <PitchMonitorBadge />
         <SyncControls />
         <ResizeGrip api={api} />
       </div>

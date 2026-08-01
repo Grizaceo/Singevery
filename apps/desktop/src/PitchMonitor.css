@@ -1,0 +1,59 @@
+/* Práctica vocal (P0) — badge del monitor de tono en la bottom bar. */
+
+.pitch-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-right: 4px;
+}
+
+.pitch-toggle {
+  font-size: 1em;
+  line-height: 1;
+}
+
+.pitch-badge.pitch-active .pitch-toggle {
+  background: color-mix(in srgb, var(--accent, #4a9eff) 25%, transparent);
+  color: var(--accent, #4a9eff);
+  border-color: color-mix(in srgb, var(--accent, #4a9eff) 60%, transparent);
+}
+
+.pitch-readout {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  font-size: 0.85em;
+  white-space: nowrap;
+  min-width: 52px;
+  justify-content: center;
+}
+
+.pitch-readout strong {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+}
+
+.pitch-cents {
+  opacity: 0.75;
+  font-size: 0.85em;
+  font-variant-numeric: tabular-nums;
+}
+
+.pitch-readout.pitch-on-key {
+  border-color: color-mix(in srgb, #3ddc84 50%, transparent);
+  color: #3ddc84;
+}
+
+.pitch-readout.pitch-on-key .pitch-cents {
+  color: #3ddc84;
+  opacity: 0.9;
+}
+
+.pitch-none {
+  opacity: 0.45;
+  letter-spacing: 0.1em;
+}

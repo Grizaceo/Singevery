@@ -122,7 +122,7 @@ export class SystemAudioSession {
   }
 }
 
-async function openMicrophoneStream(): Promise<MediaStream> {
+export async function openMicrophoneStream(): Promise<MediaStream> {
   try {
     return await navigator.mediaDevices.getUserMedia({
       audio: {
