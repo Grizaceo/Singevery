@@ -1,0 +1,54 @@
+/* Mini-curva de entonación por línea (práctica vocal). */
+
+.melody-strip {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  min-width: 56px;
+  max-width: 90px;
+  height: 100%;
+  justify-content: center;
+}
+
+.melody-bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 44px;
+  width: 100%;
+}
+
+.melody-bar {
+  flex: 1 1 0;
+  min-width: 2px;
+  border-radius: 1px;
+  background: rgba(255, 255, 255, 0.18);
+  transition: background 0.15s ease, height 0.2s ease;
+}
+
+.melody-bar-current {
+  background: #60a5fa;
+  box-shadow: 0 0 4px rgba(96, 165, 250, 0.6);
+}
+
+.melody-note {
+  font-size: 0.72em;
+  font-variant-numeric: tabular-nums;
+  color: #60a5fa;
+  letter-spacing: 0.03em;
+  line-height: 1;
+}
+
+.melody-empty {
+  opacity: 0.35;
+  font-size: 0.8em;
+}
+
+/* En la columna paralela (side) la tira va junto a la traducción. */
+.line-col-melody {
+  min-width: 56px;
+  max-width: 90px;
+  display: flex;
+  align-items: center;
+}

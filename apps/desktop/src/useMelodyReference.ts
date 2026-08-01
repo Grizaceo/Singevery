@@ -16,8 +16,14 @@ import { extractMelody, smoothMelody, toReferencePoints, type MelodyPoint } from
  */
 
 const CACHE_KEY_PREFIX = 'espejo.melodyRef.v1.';
-/** Segundos de loopback a capturar para la referencia. */
-const CAPTURE_SECONDS = 30;
+/** Segundos de loopback a capturar para la referencia (audio ÚTIL, sin silencio). */
+const CAPTURE_TARGET_SECONDS = 24;
+/** Duración de cada chunk de captura. */
+const CHUNK_SECONDS = 6;
+/** Máximo de chunks intentados (silencio o fallos). 8 × 6 s = 48 s de tope. */
+const MAX_CHUNKS = 8;
+/** Mínimo de audio útil para aceptar la referencia. */
+const MIN_USEFUL_SECONDS = 8;
 /** Tamaño máximo de caché persistida (canciones). */
 const MAX_CACHE_ENTRIES = 50;
 
@@ -96,6 +102,7 @@ export type MelodyCaptureStatus = 'idle' | 'capturing' | 'ready' | 'error';
 export function useMelodyReference(
   trackKey: string | null,
   enabled: boolean,
+  getPositionMs: () => number | null = () => null,
 ): {
   reference: MelodyPoint[] | null;
   status: MelodyCaptureStatus;
@@ -120,21 +127,72 @@ export function useMelodyReference(
     setError(null);
     const session = new SystemAudioSession();
     try {
-      const { blob } = await recordChunk('system', CAPTURE_SECONDS * 1000, undefined, session);
-      const arrayBuffer = await blob.arrayBuffer();
       const AudioCtx =
         window.AudioContext ??
         (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-      const ctx = new AudioCtx();
-      let melody: MelodyPoint[];
-      try {
-        const decoded = await ctx.decodeAudioData(arrayBuffer.slice(0));
-        const channel = decoded.getChannelData(0);
-        melody = smoothMelody(extractMelody(channel, decoded.sampleRate));
-      } finally {
-        await ctx.close().catch(() => {});
+
+      // Captura por chunks: descarta silencios y acumula solo audio útil.
+      // Sin esto, si el loopback no recibe señal (silencio, app muteada) la
+      // captura de 30 s produce una referencia vacía y falla al final.
+      const chunks: Float32Array[] = [];
+      let usefulSeconds = 0;
+      let silentChunks = 0;
+      let sampleRate = 48000;
+
+      // Ancla temporal: posición de la canción cuando empieza la captura, para
+      // alinear la melodía con los timestamps absolutos de las líneas. Si no
+      // hay posición (sin canción), se usa 0 y la melodía queda relativa.
+      const anchorMs = getPositionMs() ?? 0;
+
+      for (let i = 0; i < MAX_CHUNKS && usefulSeconds < CAPTURE_TARGET_SECONDS; i++) {
+        const { blob, level } = await recordChunk(
+          'system',
+          CHUNK_SECONDS * 1000,
+          undefined,
+          session,
+        );
+        // Nivel casi nulo: chunk en silencio, descartar sin gastar decode.
+        if (level < 0.005) {
+          silentChunks++;
+          continue;
+        }
+        const arrayBuffer = await blob.arrayBuffer();
+        const ctx = new AudioCtx();
+        try {
+          const decoded = await ctx.decodeAudioData(arrayBuffer.slice(0));
+          sampleRate = decoded.sampleRate;
+          chunks.push(decoded.getChannelData(0));
+          usefulSeconds += decoded.duration;
+        } finally {
+          await ctx.close().catch(() => {});
+        }
       }
 
+      if (usefulSeconds < MIN_USEFUL_SECONDS) {
+        setStatus('error');
+        setError(
+          silentChunks > 0
+            ? 'No se capturó audio del sistema (silencio). Reproduce la canción y vuelve a intentar.'
+            : 'No se pudo capturar el audio del sistema. Revisa que la app tenga permiso de captura.',
+        );
+        return;
+      }
+
+      // Concatenar los chunks útiles en un solo buffer.
+      const total = chunks.reduce((acc, c) => acc + c.length, 0);
+      const combined = new Float32Array(total);
+      let offset = 0;
+      for (const c of chunks) {
+        combined.set(c, offset);
+        offset += c.length;
+      }
+
+      // Extraer melodía y desplazar los timestamps al tiempo absoluto de la
+      // canción (anchor + tiempo relativo del buffer combinado).
+      const melody = smoothMelody(extractMelody(combined, sampleRate)).map((p) => ({
+        ...p,
+        timeMs: p.timeMs + anchorMs,
+      }));
       const ref = toReferencePoints(melody);
       if (ref.length < 10) {
         setStatus('error');
@@ -153,7 +211,9 @@ export function useMelodyReference(
       session.release();
       busyRef.current = false;
     }
-  }, []);
+    // getPositionMs es estable (useCallback en App): incluirla para la regla
+    // de exhaustive-deps sin provocar recapturas.
+  }, [getPositionMs]);
 
   // Al cambiar la canción: marcar si hace falta captura. Este effect NO hace
   // setState síncrono: solo actualiza refs; el estado deriva de la caché vía

@@ -10,6 +10,8 @@ import { useReadingMode } from './useReadingMode';
 import { useTranslationView } from './useTranslationToggle';
 import { useAutoStart } from './useAutoStart';
 import { useRecognition } from './useRecognition';
+import { usePitchMonitor } from './usePitchMonitor';
+import { useMelodyReference } from './useMelodyReference';
 import { RenderModelProvider, useRenderModel } from './renderModelContext';
 import { detectScriptFromLines } from './scriptDetect';
 import './App.css';
@@ -40,7 +42,27 @@ function AppContent() {
   const autoStartedRef = useRef(false);
   const [autoStart, setAutoStart] = useAutoStart();
 
+  // Clave de pista para la referencia melódica del pitch (P1): solo cuando hay
+  // canción identificada y en pantalla. Declarada con los demás hooks (nunca
+  // después de un return condicional).
+  const trackKey = useMemo(() => {
+    if (model.status !== 'DISPLAYING' || !model.track_title) return null;
+    const artist = (model.track_artist ?? '').trim().toLowerCase();
+    const title = model.track_title.trim().toLowerCase();
+    if (!title) return null;
+    return artist ? `${artist}__${title}` : title;
+  }, [model.status, model.track_title, model.track_artist]);
+
   const recognition = useRecognition();
+  const pitchMonitor = usePitchMonitor();
+  // Posición actual de la canción para anclar la melodía de referencia
+  // (el ref se actualiza en un effect; el hook de melodía lo lee al capturar).
+  const positionRef = useRef<number | null>(null);
+  useEffect(() => {
+    positionRef.current = model.position_ms ?? null;
+  }, [model.position_ms]);
+  const getPositionMs = useCallback(() => positionRef.current, []);
+  const melodyRef = useMelodyReference(trackKey, pitchMonitor.active, getPositionMs);
 
   // Arranque automático: escuchar el audio del sistema apenas abre. Se queda
   // en modo pastilla mientras no reconozca nada; al identificar la canción, el
@@ -175,16 +197,6 @@ function AppContent() {
     ]);
   }, [model]);
 
-  // Clave de pista para la referencia melódica del pitch (P1): solo cuando hay
-  // canción identificada y en pantalla.
-  const trackKey = useMemo(() => {
-    if (model.status !== 'DISPLAYING' || !model.track_title) return null;
-    const artist = (model.track_artist ?? '').trim().toLowerCase();
-    const title = model.track_title.trim().toLowerCase();
-    if (!title) return null;
-    return artist ? `${artist}__${title}` : title;
-  }, [model.status, model.track_title, model.track_artist]);
-
   if (collapsed) {
     return <Pill onSing={handleSing} />;
   }
@@ -197,6 +209,8 @@ function AppContent() {
         translationView={translationView}
         chromeHidden={chromeHidden}
         ghost={ghost}
+        melody={melodyRef.reference}
+        pitchActive={pitchMonitor.active}
       />
       {tangible && (
         <div className="tangible-badge" role="status">
@@ -229,7 +243,12 @@ function AppContent() {
           onCollapse={handleCollapse}
           onOpenSettings={() => setSettingsOpen(true)}
         />
-        <ChromeBottomBar recognition={recognition} api={window.api} trackKey={trackKey} />
+        <ChromeBottomBar
+          recognition={recognition}
+          api={window.api}
+          pitchMonitor={pitchMonitor}
+          melodyRef={melodyRef}
+        />
         {import.meta.env.DEV && <DebugLyricsInput />}
       </div>
       <SettingsPanel

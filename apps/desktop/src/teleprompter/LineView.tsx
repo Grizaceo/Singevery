@@ -2,6 +2,8 @@ import React from 'react';
 import type { ReadingMode, RenderLine, TranslationView } from '../types';
 import { splitAtFraction, splitSegmentsAtFraction } from '../lineHighlight';
 import { WordsView } from './WordsView';
+import { MelodyStrip } from '../MelodyStrip';
+import type { MelodyPoint } from '../audio/melody';
 
 type Tier = 'current' | 'adjacent' | 'far';
 
@@ -14,6 +16,10 @@ interface LineViewProps {
   wordProgress?: number;
   /** off = sin traducción; below = bajo la línea actual; side = columna paralela. */
   translationView?: TranslationView;
+  /** Melodía de referencia (práctica vocal). null = sin referencia. */
+  melody?: MelodyPoint[] | null;
+  /** true = monitor de pitch activo (muestra la columna de entonación). */
+  pitchActive?: boolean;
 }
 
 /** Texto con la parte ya cantada atenuada (resaltado interpolado). */
@@ -37,6 +43,8 @@ export const LineView = React.memo(function LineView({
   wordIndex,
   wordProgress,
   translationView = 'off',
+  melody = null,
+  pitchActive = false,
 }: LineViewProps) {
   const hasFurigana = !!line.furigana && line.furigana.length > 0;
   const hasRomaji = !!line.romaji;
@@ -57,6 +65,10 @@ export const LineView = React.memo(function LineView({
   const showTranslationBelow =
     translationView === 'below' && tier === 'current' && hasTranslation;
   const sideBySide = translationView === 'side';
+
+  // Entonación (práctica vocal): columna paralela con la melodía de la línea,
+  // avanzando como la traducción. Requiere timestamps de línea.
+  const showMelody = pitchActive && !!melody && melody.length > 0 && line.start_ms != null;
 
   let mainContent: React.ReactNode;
   if (mode === 'kana') {
@@ -112,10 +124,23 @@ export const LineView = React.memo(function LineView({
     mainContent = splitHighlighted(line.text, frac, highlight);
   }
 
-  // Vista de texto paralelo: dos columnas alineadas por línea. La traducción se
+  // Vista de texto paralelo: columnas alineadas por línea. La traducción se
   // ilumina con la MISMA fracción que la letra, para asociar tramo con tramo
   // (el orden de palabras entre idiomas no calza, así que es una guía visual,
-  // no una correspondencia palabra a palabra).
+  // no una correspondencia palabra a palabra). Con práctica vocal activa, la
+  // entonación (melodía de la línea) se añade como columna extra.
+  const melodyCol = showMelody ? (
+    <div className="line-col line-col-melody">
+      <MelodyStrip
+        melody={melody!}
+        startMs={line.start_ms!}
+        endMs={line.end_ms ?? null}
+        progress={tier === 'current' ? frac : undefined}
+        current={tier === 'current'}
+      />
+    </div>
+  ) : null;
+
   if (sideBySide) {
     return (
       <div className="line-row">
@@ -127,15 +152,19 @@ export const LineView = React.memo(function LineView({
             {hasTranslation ? splitHighlighted(translation, frac, highlight) : null}
           </p>
         </div>
+        {melodyCol}
       </div>
     );
   }
 
   return (
-    <>
-      <p className="line-main">{mainContent}</p>
-      {showRomajiBelow && <p className="line-romaji">{line.romaji}</p>}
-      {showTranslationBelow && <p className="line-translation">Traducción: {translation}</p>}
-    </>
+    <div className="line-row">
+      <div className="line-col line-col-main">
+        <p className="line-main">{mainContent}</p>
+        {showRomajiBelow && <p className="line-romaji">{line.romaji}</p>}
+        {showTranslationBelow && <p className="line-translation">Traducción: {translation}</p>}
+      </div>
+      {melodyCol}
+    </div>
   );
 });

@@ -102,6 +102,12 @@ export interface RenderLine {
   translation?: string;
   /** Palabras con timestamp (A2). Solo se usa para el resaltado por palabra. */
   words?: LyricWord[];
+  /**
+   * Timestamps de la línea (ms desde inicio de la canción). Se propagan al
+   * renderer para alinear la melodía de referencia (pitch) con cada línea.
+   */
+  start_ms?: number;
+  end_ms?: number | null;
 }
 
 /** Modo de lectura elegido por el usuario (estado del renderer, persistido). */
@@ -205,6 +211,11 @@ export interface RenderModel {
    * para que se pueda leer con anticipación.
    */
   fast_pace?: boolean;
+  /**
+   * Posición actual de la canción en ms (para alinear la melodía de
+   * referencia del pitch con los timestamps de las líneas).
+   */
+  position_ms?: number;
 }
 
 /** Fuente de audio para reconocimiento. */

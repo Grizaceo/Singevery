@@ -83,9 +83,28 @@ alcanza los tonos del intérprete, usando el micrófono integrado del PC
 - Aviso explícito: "La referencia melódica es una interpretación automática
   de la app, no la partitura oficial" (tooltip del badge).
 - Guía de ruido: "cuarto silencioso, micrófono a 15-30 cm, canta claro (no
-  susurres)"; la primera captura avisa "no cantes durante la captura (30 s)".
+  susurres)"; la primera captura avisa "no cantes durante la captura".
 - Clic derecho en ♪: recapturar referencia si salió pobre.
 - Estado visual: capturando (pulso), error, score (verde ≥70%).
+
+### P3.5 — Columna de entonación en el teleprompter (feedback 2026-08-01)
+- La melodía de referencia se muestra COMO UNA COLUMNA al lado de la letra,
+  avanzando igual que la traducción en paralelo: `MelodyStrip` (piano roll
+  minimalista por línea, altura = frecuencia, punto actual iluminado según el
+  progress de la línea, nota del momento como etiqueta).
+- RenderLine ahora propaga `start_ms`/`end_ms` y RenderModel `position_ms`
+  para anclar la melodía al tiempo absoluto de la canción.
+- La columna aparece cuando el monitor de pitch está activo y hay melodía;
+  en modo 'side' convive con la traducción (3 columnas).
+
+### P3.6 — Captura robusta al silencio (feedback 2026-08-01)
+- La captura ya no es un bloque fijo de 30 s: graba chunks de 6 s, descarta
+  los silenciosos (level < 0.005) y acumula hasta ~24 s de audio ÚTIL
+  (máx. 8 chunks = 48 s de tope).
+- Si no se captura nada útil, error claro: "No se capturó audio del sistema
+  (silencio). Reproduce la canción y vuelve a intentar."
+- La melodía se ancla a la posición de la canción (position_ms) para que la
+  columna avance sincronizada con la letra.
 
 ### P4 — Encuesta de comprensión de la guía (pendiente)
 - [ ] Mini-encuesta/feedback en app: ¿entendiste cómo usar la práctica vocal?

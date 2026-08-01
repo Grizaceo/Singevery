@@ -1,11 +1,14 @@
 import { useMemo } from 'react';
-import { usePitchMonitor } from './usePitchMonitor';
-import { useMelodyReference } from './useMelodyReference';
 import { matchWindow } from './audio/compare';
+import type { usePitchMonitor } from './usePitchMonitor';
+import type { useMelodyReference } from './useMelodyReference';
 import './PitchMonitor.css';
 
 /**
  * Badge de práctica vocal (P0-P3 de SWAP-PITCH-001).
+ *
+ * Recibe el monitor de pitch y la referencia melódica como props (App los
+ * levanta para compartirlos con la columna de entonación del teleprompter).
  *
  * - P0: monitor de pitch del micrófono en vivo (nota + cents).
  * - P1: referencia melódica extraída de la PROPIA canción (loopback) — la app
@@ -15,8 +18,8 @@ import './PitchMonitor.css';
  *   y en ambiente silencioso; el micrófono integrado alcanza.
  */
 interface PitchMonitorBadgeProps {
-  /** Clave de pista normalizada (artist__title) o null si no hay canción. */
-  trackKey: string | null;
+  pitchMonitor: ReturnType<typeof usePitchMonitor>;
+  melodyRef: ReturnType<typeof useMelodyReference>;
 }
 
 /** Texto de la guía de uso (P3) — aparece en el tooltip y al capturar. */
@@ -24,14 +27,11 @@ const GUIDE_TEXT =
   'Práctica vocal: canta y compara tu tono con la melodía de la canción. ' +
   'La referencia es una interpretación automática de la app, no la partitura oficial. ' +
   'Para mejor precisión: cuarto silencioso, micrófono a 15-30 cm, canta claro (no susurres). ' +
-  'La primera vez por canción se capturan 30 s de la pista como referencia — no cantes durante la captura.';
+  'La primera vez por canción se capturan ~24 s de la pista como referencia (descarta silencios) — reproduce la canción y no cantes durante la captura.';
 
-export function PitchMonitorBadge({ trackKey }: PitchMonitorBadgeProps) {
-  const { active, pitch, error, window: pitchWindow, start, stop } = usePitchMonitor();
-  const { reference, status: refStatus, error: refError, recapture } = useMelodyReference(
-    trackKey,
-    active,
-  );
+export function PitchMonitorBadge({ pitchMonitor, melodyRef }: PitchMonitorBadgeProps) {
+  const { active, pitch, error, window: pitchWindow, start, stop } = pitchMonitor;
+  const { reference, status: refStatus, error: refError, recapture } = melodyRef;
 
   const toggle = (): void => {
     if (active) stop();
@@ -45,7 +45,6 @@ export function PitchMonitorBadge({ trackKey }: PitchMonitorBadgeProps) {
   }, [active, reference, pitchWindow]);
 
   const score = match ? Math.round(match.score * 100) : null;
-  const targetNote = match?.targetFreq != null ? freqToNoteName(match.targetFreq) : null;
 
   // Desviación: >0 = agudo, <0 = grave. Solo se pinta si hay nota.
   const centsLabel = pitch ? `${pitch.cents > 0 ? '+' : ''}${pitch.cents}¢` : null;
@@ -53,7 +52,7 @@ export function PitchMonitorBadge({ trackKey }: PitchMonitorBadgeProps) {
 
   const statusLabel =
     refStatus === 'capturing'
-      ? '🎵 capturando referencia (30 s, no cantes)…'
+      ? '🎵 capturando referencia…'
       : refStatus === 'error'
         ? '⚠ referencia no disponible'
         : refStatus === 'ready' && active
@@ -95,7 +94,7 @@ export function PitchMonitorBadge({ trackKey }: PitchMonitorBadgeProps) {
           ) : (
             <span className="pitch-none">—</span>
           )}
-          {score != null && targetNote && (
+          {score != null && (
             <span className={`pitch-score${score >= 70 ? ' pitch-score-good' : ''}`}>
               {statusLabel}
             </span>
@@ -106,12 +105,4 @@ export function PitchMonitorBadge({ trackKey }: PitchMonitorBadgeProps) {
       )}
     </div>
   );
-}
-
-/** Nota musical más cercana a una frecuencia (para mostrar la objetivo). */
-function freqToNoteName(freq: number): string {
-  const midiFloat = 69 + 12 * Math.log2(freq / 440);
-  const midi = Math.round(midiFloat);
-  const names = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
-  return names[((midi % 12) + 12) % 12] + (Math.floor(midi / 12) - 1);
 }

@@ -1033,6 +1033,7 @@ export class StateStore {
       ...this.resolveHandleAppearance(),
       track_title: this.trackTitle,
       track_artist: this.trackArtist,
+      position_ms: Math.round(this.currentPosition()),
     };
     this.emit(full);
   }

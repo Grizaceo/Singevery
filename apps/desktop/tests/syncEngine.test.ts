@@ -29,14 +29,20 @@ describe('SyncEngine', () => {
   it('devuelve la línea 1 a los 500ms', () => {
     const model = engine.getRenderModel(500);
     expect(model.current_line.text).toBe('Line 1');
-    expect(model.next_lines).toEqual([{ text: 'Line 2' }, { text: 'Line 3' }]);
+    expect(model.next_lines).toEqual([
+      { text: 'Line 2', start_ms: 1000, end_ms: 2000 },
+      { text: 'Line 3', start_ms: 2000, end_ms: 3000 },
+    ]);
   });
 
   it('devuelve la línea 2 a los 1500ms con contexto', () => {
     const model = engine.getRenderModel(1500);
     expect(model.current_line.text).toBe('Line 2');
-    expect(model.previous_lines).toEqual([{ text: 'Line 1' }]);
-    expect(model.next_lines).toEqual([{ text: 'Line 3' }, { text: 'Line 4' }]);
+    expect(model.previous_lines).toEqual([{ text: 'Line 1', start_ms: 0, end_ms: 1000 }]);
+    expect(model.next_lines).toEqual([
+      { text: 'Line 3', start_ms: 2000, end_ms: 3000 },
+      { text: 'Line 4', start_ms: 3000, end_ms: 4000 },
+    ]);
   });
 
   it('devuelve la línea 4 al final sin próximas', () => {
@@ -64,7 +70,7 @@ describe('SyncEngine', () => {
     e.setLyrics(withIntro);
     const model = e.getRenderModel(1000);
     expect(model.current_line.text).toBe('...');
-    expect(model.next_lines).toEqual([{ text: 'Primera' }]);
+    expect(model.next_lines).toEqual([{ text: 'Primera', start_ms: 5000, end_ms: 8000 }]);
     expect(model.status).toBe('IDLE');
   });
 
@@ -222,7 +228,7 @@ describe('SyncEngine anticipación adaptativa', () => {
     // Posición real 5600 (línea 5), pero con lead 450 → ya muestra L6.
     const m = e.getRenderModel(5600);
     expect(m.current_line.text).toBe('L6');
-    expect(m.previous_lines.at(-1)).toEqual({ text: 'L5' });
+    expect(m.previous_lines.at(-1)).toEqual({ text: 'L5', start_ms: 5000 });
     expect(m.fast_pace).toBe(true);
   });
 

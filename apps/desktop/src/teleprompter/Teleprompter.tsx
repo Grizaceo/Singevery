@@ -2,6 +2,7 @@ import React from 'react';
 import type { ReadingMode, RenderModel, TranslationView } from '../types';
 import { LineView } from './LineView';
 import { splitPreviousTiers, splitNextTiers, tierSizes } from './teleprompterHelpers';
+import type { MelodyPoint } from '../audio/melody';
 import '../Teleprompter.css';
 
 interface Props {
@@ -10,6 +11,10 @@ interface Props {
   translationView?: TranslationView;
   chromeHidden?: boolean;
   ghost?: boolean;
+  /** Melodía de referencia (práctica vocal). null = sin referencia. */
+  melody?: MelodyPoint[] | null;
+  /** true = monitor de pitch activo (columnas de entonación visibles). */
+  pitchActive?: boolean;
 }
 
 // La prop `ghost` queda en la interfaz por compatibilidad (App la pasa), pero
@@ -19,6 +24,8 @@ export const Teleprompter = React.memo(function Teleprompter({
   readingMode,
   translationView = 'off',
   chromeHidden = false,
+  melody = null,
+  pitchActive = false,
 }: Props) {
   const containerStyle: React.CSSProperties = {
     transform: model.mirror_mode ? 'scaleX(-1)' : 'none',
@@ -64,6 +71,8 @@ export const Teleprompter = React.memo(function Teleprompter({
                   mode={readingMode}
                   tier="far"
                   translationView={translationView}
+                  melody={melody}
+                  pitchActive={pitchActive}
                 />
               ))}
             </div>
@@ -76,6 +85,8 @@ export const Teleprompter = React.memo(function Teleprompter({
                   mode={readingMode}
                   tier="adjacent"
                   translationView={translationView}
+                  melody={melody}
+                  pitchActive={pitchActive}
                 />
               ))}
             </div>
@@ -89,6 +100,8 @@ export const Teleprompter = React.memo(function Teleprompter({
                 wordIndex={model.current_word_index}
                 wordProgress={model.current_word_progress}
                 translationView={translationView}
+                melody={melody}
+                pitchActive={pitchActive}
               />
             </div>
 
@@ -103,6 +116,8 @@ export const Teleprompter = React.memo(function Teleprompter({
                   mode={readingMode}
                   tier="adjacent"
                   translationView={translationView}
+                  melody={melody}
+                  pitchActive={pitchActive}
                 />
               ))}
             </div>
@@ -115,6 +130,8 @@ export const Teleprompter = React.memo(function Teleprompter({
                   mode={readingMode}
                   tier="far"
                   translationView={translationView}
+                  melody={melody}
+                  pitchActive={pitchActive}
                 />
               ))}
             </div>
