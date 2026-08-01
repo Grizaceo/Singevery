@@ -6,7 +6,9 @@ $ErrorActionPreference = 'Stop'
 $appDir = Split-Path -Parent $PSScriptRoot   # apps/desktop
 $desktop = [Environment]::GetFolderPath('Desktop')
 $electronExe = Join-Path $appDir 'node_modules\electron\dist\electron.exe'
-$icon = if (Test-Path $electronExe) { $electronExe } else { "$env:SystemRoot\System32\shell32.dll,167" }
+# Icono de la app: build/icon.ico (el handle ⋮⋮). Fallback: electron.exe.
+$appIcon = Join-Path $appDir 'build\icon.ico'
+$icon = if (Test-Path $appIcon) { $appIcon } elseif (Test-Path $electronExe) { $electronExe } else { "$env:SystemRoot\System32\shell32.dll,167" }
 
 $shell = New-Object -ComObject WScript.Shell
 

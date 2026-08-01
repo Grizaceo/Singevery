@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+  <!-- Fondo del handle: rounded-rect oscuro -->
+  <rect x="28" y="78" width="200" height="100" rx="28" ry="28"
+        fill="#111114" stroke="#444444" stroke-width="4"/>
+  <!-- 6 puntos en grid 2 columnas × 3 filas (⋮⋮) -->
+  <circle cx="104" cy="98" r="10" fill="#999999"/>
+  <circle cx="104" cy="128" r="10" fill="#999999"/>
+  <circle cx="104" cy="158" r="10" fill="#999999"/>
+  <circle cx="152" cy="98" r="10" fill="#999999"/>
+  <circle cx="152" cy="128" r="10" fill="#999999"/>
+  <circle cx="152" cy="158" r="10" fill="#999999"/>
+</svg>
