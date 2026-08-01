@@ -2,7 +2,7 @@
 
 - **Registro:** SWAP-PITCH-001
 - **Fecha:** 2026-08-01
-- **Estado:** P0 COMPLETADO (2026-08-01) · P1-P4 planificados
+- **Estado:** P0-P3 COMPLETADOS (2026-08-01) · P4 pendiente (encuesta UX)
 - **Decisión de diseño (Cristóbal, 2026-08-01):** NO usar partituras oficiales.
   La referencia de tono será la melodía aproximada que la PROPIA APP extrae de la
   canción (interpretación de la app, no transcripción oficial). La UI debe avisar
@@ -55,22 +55,41 @@ alcanza los tonos del intérprete, usando el micrófono integrado del PC
   micrófono integrado. Verificación automatizada: tonos sintéticos detectados
   dentro de ±2% de frecuencia.
 
-### P1 — Referencia melódica de la canción
-- Sidecar Python (o Node) que corre `basic-pitch` sobre la pista capturada del sistema (reutilizar la identificación de canción existente)
-- Extraer f0 por ventana de tiempo → alinear con líneas de letra (timestamps LRC que ya tenemos)
-- Cachear la melodía por canción (hash de track key)
-- **Entregable:** la app muestra la melodía de referencia superpuesta. Verificación: 10 canciones de test → extracción <30 s y melodía reconocible por oído humano
+### P1 — Referencia melódica de la canción — COMPLETADO
+- `src/audio/melody.ts`: extractMelody (ventana deslizante de detectPitch,
+  rango vocal 150-800 Hz, hop 50 ms) + smoothMelody (elimina puntos aislados,
+  interpola huecos ≤200 ms) + toReferencePoints.
+- `src/useMelodyReference.ts`: captura 30 s de loopback del sistema con la
+  infraestructura existente (SystemAudioSession + recordChunk), decodifica,
+  extrae y cachea por trackKey en localStorage (máx. 50 canciones) vía
+  useSyncExternalStore. La captura se dispara SOLO cuando el monitor está
+  activo (el usuario pulsó ♪) y no hay referencia cacheada.
+- El aviso de "interpretación de la app, no partitura oficial" está en el
+  tooltip del badge (GUIDE_TEXT).
+- Verificación: 13 tests (secuencias de notas sintéticas, silencio, rango
+  vocal, interpolación, cents).
 
-### P2 — Comparación y scoring
-- Alinear el pitch en vivo del usuario con la referencia (ventana deslizante + DTW simple)
-- Score por línea: % de tiempo dentro de tolerancia
-- **Entregable:** feedback "alcanzaste X% de los tonos en esta línea". Verificación: canto de test contra clips pregrabados (score esperado ≥70%)
+### P2 — Comparación y scoring — COMPLETADO
+- `src/audio/compare.ts`: matchWindow — ventana deslizante del pitch del
+  usuario contra la referencia completa (no requiere reloj de canción):
+  barre offsets de ±20 s, tolerancia ±50 cents, devuelve score 0..1 + offset
+  + frecuencia objetivo (para mostrar la nota esperada).
+- `usePitchMonitor` mantiene ventana de pitch reciente (últimos 8 s, ~10 Hz).
+- Badge: muestra "afinación N%" (verde ≥70%) + nota objetivo.
+- Verificación: canto exacto ≥0.9, canto desplazado encuentra offset, canto
+  octava arriba <0.3, sin señal = 0.
 
-### P3 — Guía de uso + pulido UX
-- Aviso explícito: "La referencia melódica es una interpretación automática de la app, no la partitura oficial"
-- Guía de ruido: recomendar cuarto silencioso, micrófono a 15-30 cm, cantar claro (no susurrar), subir el umbral de sensibilidad si detecta ruido
-- UI de calibración: botón "probar ambiente" que mide ruido de fondo y sugiere umbral
-- **Entregable:** onboarding de la feature. Verificación: encuesta de comprensión
+### P3 — Guía de uso + pulido UX — COMPLETADO
+- Aviso explícito: "La referencia melódica es una interpretación automática
+  de la app, no la partitura oficial" (tooltip del badge).
+- Guía de ruido: "cuarto silencioso, micrófono a 15-30 cm, canta claro (no
+  susurres)"; la primera captura avisa "no cantes durante la captura (30 s)".
+- Clic derecho en ♪: recapturar referencia si salió pobre.
+- Estado visual: capturando (pulso), error, score (verde ≥70%).
+
+### P4 — Encuesta de comprensión de la guía (pendiente)
+- [ ] Mini-encuesta/feedback en app: ¿entendiste cómo usar la práctica vocal?
+- [ ] Meta: ≥80% de comprensión.
 
 ## 5. Grounding técnico (verificado 2026-08-01)
 

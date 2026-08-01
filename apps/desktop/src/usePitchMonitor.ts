@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { openMicrophoneStream } from './audio/capture';
 import { detectPitch, type PitchResult } from './audio/pitch';
+import type { MelodyPoint } from './audio/melody';
 
 /**
  * usePitchMonitor — monitor continuo de pitch del micrófono (P0 de
@@ -14,19 +15,26 @@ import { detectPitch, type PitchResult } from './audio/pitch';
  *   active   — el monitor está corriendo
  *   pitch    — último PitchResult detectado (null si silencio/ruido)
  *   error    — error de permisos/hardware
+ *   window   — ventana de pitch reciente (últimos ~8 s) para el comparador P2
  *   start()  — abre el micrófono y arranca el muestreo
  *   stop()   — cierra todo
  */
+
+/** Ventana de pitch reciente conservada para el comparador (ms). */
+const PITCH_WINDOW_MS = 8000;
+
 export function usePitchMonitor(): {
   active: boolean;
   pitch: PitchResult | null;
   error: string | null;
+  window: MelodyPoint[];
   start: () => Promise<void>;
   stop: () => void;
 } {
   const [active, setActive] = useState(false);
   const [pitch, setPitch] = useState<PitchResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [window, setWindow] = useState<MelodyPoint[]>([]);
 
   const streamRef = useRef<MediaStream | null>(null);
   const ctxRef = useRef<AudioContext | null>(null);
@@ -36,6 +44,9 @@ export function usePitchMonitor(): {
   const runningRef = useRef(false);
   /** Token de generación: invalida start() en vuelo cuando stop() corre. */
   const genRef = useRef(0);
+  /** Inicio del muestreo (para timestamps relativos de la ventana). */
+  const startedAtRef = useRef(0);
+  const windowRef = useRef<MelodyPoint[]>([]);
 
   const stop = useCallback(() => {
     // Invalidar cualquier start() pendiente: si está en el await de
@@ -58,6 +69,8 @@ export function usePitchMonitor(): {
     streamRef.current = null;
     setActive(false);
     setPitch(null);
+    setWindow([]);
+    windowRef.current = [];
   }, []);
 
   const start = useCallback(async () => {
@@ -102,6 +115,7 @@ export function usePitchMonitor(): {
       analyserRef.current = analyser;
       bufRef.current = new Float32Array(analyser.fftSize);
       runningRef.current = true;
+      startedAtRef.current = performance.now();
       setActive(true);
 
       const sample = (): void => {
@@ -110,7 +124,21 @@ export function usePitchMonitor(): {
         const an = analyserRef.current;
         if (buf && an) {
           an.getFloatTimeDomainData(buf);
-          setPitch(detectPitch(buf, ctx.sampleRate));
+          const result = detectPitch(buf, ctx.sampleRate);
+          setPitch(result);
+
+          // Mantener la ventana de pitch reciente para el comparador P2.
+          const now = performance.now() - startedAtRef.current;
+          windowRef.current.push({ timeMs: Math.round(now), freq: result?.freq ?? null });
+          const cutoff = now - PITCH_WINDOW_MS;
+          while (windowRef.current.length > 0 && windowRef.current[0].timeMs < cutoff) {
+            windowRef.current.shift();
+          }
+          // Actualizar el estado a ~10 Hz (no en cada frame: evita re-render
+          // continuo del badge; el comparador no necesita 60 fps).
+          if (windowRef.current.length % 3 === 0) {
+            setWindow([...windowRef.current]);
+          }
         }
         rafRef.current = requestAnimationFrame(sample);
       };
@@ -126,6 +154,7 @@ export function usePitchMonitor(): {
       }
       setActive(false);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- setters de useState son estables
   }, []);
 
   // Cleanup al desmontar.
@@ -142,5 +171,5 @@ export function usePitchMonitor(): {
     };
   }, []);
 
-  return { active, pitch, error, start, stop };
+  return { active, pitch, error, window, start, stop };
 }

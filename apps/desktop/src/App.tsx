@@ -175,6 +175,16 @@ function AppContent() {
     ]);
   }, [model]);
 
+  // Clave de pista para la referencia melódica del pitch (P1): solo cuando hay
+  // canción identificada y en pantalla.
+  const trackKey = useMemo(() => {
+    if (model.status !== 'DISPLAYING' || !model.track_title) return null;
+    const artist = (model.track_artist ?? '').trim().toLowerCase();
+    const title = model.track_title.trim().toLowerCase();
+    if (!title) return null;
+    return artist ? `${artist}__${title}` : title;
+  }, [model.status, model.track_title, model.track_artist]);
+
   if (collapsed) {
     return <Pill onSing={handleSing} />;
   }
@@ -219,7 +229,7 @@ function AppContent() {
           onCollapse={handleCollapse}
           onOpenSettings={() => setSettingsOpen(true)}
         />
-        <ChromeBottomBar recognition={recognition} api={window.api} />
+        <ChromeBottomBar recognition={recognition} api={window.api} trackKey={trackKey} />
         {import.meta.env.DEV && <DebugLyricsInput />}
       </div>
       <SettingsPanel

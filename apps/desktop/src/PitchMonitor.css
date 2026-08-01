@@ -57,3 +57,38 @@
   opacity: 0.45;
   letter-spacing: 0.1em;
 }
+
+/* Score de afinación contra la referencia (P2). */
+.pitch-score {
+  margin-left: 4px;
+  padding: 1px 6px;
+  border-radius: 8px;
+  font-size: 0.82em;
+  background: rgba(255, 255, 255, 0.08);
+  opacity: 0.85;
+}
+
+.pitch-score-good {
+  background: color-mix(in srgb, #3ddc84 20%, transparent);
+  color: #3ddc84;
+  opacity: 1;
+}
+
+.pitch-capturing {
+  margin-left: 4px;
+  font-size: 0.8em;
+  opacity: 0.8;
+  animation: pitch-pulse 1.2s ease-in-out infinite;
+}
+
+.pitch-err {
+  margin-left: 4px;
+  font-size: 0.8em;
+  color: #f87171;
+  opacity: 0.9;
+}
+
+@keyframes pitch-pulse {
+  0%, 100% { opacity: 0.5; }
+  50% { opacity: 1; }
+}

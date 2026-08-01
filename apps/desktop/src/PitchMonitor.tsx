@@ -1,41 +1,87 @@
+import { useMemo } from 'react';
 import { usePitchMonitor } from './usePitchMonitor';
+import { useMelodyReference } from './useMelodyReference';
+import { matchWindow } from './audio/compare';
 import './PitchMonitor.css';
 
 /**
- * Badge de práctica vocal (P0 de SWAP-PITCH-001).
+ * Badge de práctica vocal (P0-P3 de SWAP-PITCH-001).
  *
- * Botón que activa el monitor de pitch del micrófono. Cuando está activo,
- * muestra la nota cantada en vivo (A4, C4, ...) con la desviación en cents.
- * Sin señal clara muestra "—" (silencio/ruido/susurro).
- *
- * La referencia melódica de la canción es P1; esto es solo el pitch del
- * usuario, para validar que el micrófono integrado alcanza.
+ * - P0: monitor de pitch del micrófono en vivo (nota + cents).
+ * - P1: referencia melódica extraída de la PROPIA canción (loopback) — la app
+ *   avisa que es una interpretación automática, no la partitura oficial.
+ * - P2: score contra la referencia (ventana deslizante, ±50 cents).
+ * - P3: guía de uso — la referencia se captura SIN cantar (30 s de loopback)
+ *   y en ambiente silencioso; el micrófono integrado alcanza.
  */
-export function PitchMonitorBadge() {
-  const { active, pitch, error, start, stop } = usePitchMonitor();
+interface PitchMonitorBadgeProps {
+  /** Clave de pista normalizada (artist__title) o null si no hay canción. */
+  trackKey: string | null;
+}
+
+/** Texto de la guía de uso (P3) — aparece en el tooltip y al capturar. */
+const GUIDE_TEXT =
+  'Práctica vocal: canta y compara tu tono con la melodía de la canción. ' +
+  'La referencia es una interpretación automática de la app, no la partitura oficial. ' +
+  'Para mejor precisión: cuarto silencioso, micrófono a 15-30 cm, canta claro (no susurres). ' +
+  'La primera vez por canción se capturan 30 s de la pista como referencia — no cantes durante la captura.';
+
+export function PitchMonitorBadge({ trackKey }: PitchMonitorBadgeProps) {
+  const { active, pitch, error, window: pitchWindow, start, stop } = usePitchMonitor();
+  const { reference, status: refStatus, error: refError, recapture } = useMelodyReference(
+    trackKey,
+    active,
+  );
 
   const toggle = (): void => {
     if (active) stop();
     else void start();
   };
 
+  // Score contra la referencia (P2): ventana de pitch del usuario vs melodía.
+  const match = useMemo(() => {
+    if (!active || !reference || pitchWindow.length < 5) return null;
+    return matchWindow(pitchWindow, reference, { toleranceCents: 50, maxOffsetMs: 20000 });
+  }, [active, reference, pitchWindow]);
+
+  const score = match ? Math.round(match.score * 100) : null;
+  const targetNote = match?.targetFreq != null ? freqToNoteName(match.targetFreq) : null;
+
   // Desviación: >0 = agudo, <0 = grave. Solo se pinta si hay nota.
   const centsLabel = pitch ? `${pitch.cents > 0 ? '+' : ''}${pitch.cents}¢` : null;
   const onKey = pitch && Math.abs(pitch.cents) <= 50;
 
+  const statusLabel =
+    refStatus === 'capturing'
+      ? '🎵 capturando referencia (30 s, no cantes)…'
+      : refStatus === 'error'
+        ? '⚠ referencia no disponible'
+        : refStatus === 'ready' && active
+          ? score != null
+            ? `afinación ${score}%`
+            : 'escuchando…'
+          : null;
+
+  const title = [
+    GUIDE_TEXT,
+    refError ? `\nError de referencia: ${refError}` : null,
+    refStatus === 'ready' ? '\nClic derecho: recapturar referencia' : null,
+  ]
+    .filter(Boolean)
+    .join('\n');
+
   return (
-    <div className={`pitch-badge${active ? ' pitch-active' : ''}`} title={error ?? undefined}>
+    <div className={`pitch-badge${active ? ' pitch-active' : ''}`} title={error ?? title}>
       <button
         type="button"
         className="chrome-button pitch-toggle"
         onClick={toggle}
+        onContextMenu={(e) => {
+          e.preventDefault();
+          if (refStatus === 'ready') recapture();
+        }}
         aria-pressed={active}
-        title={
-          error ??
-          (active
-            ? 'Monitor de tono activo — canta y mira tu nota. Clic para detener'
-            : 'Práctica vocal: detecta tu tono con el micrófono (P0)')
-        }
+        title={error ?? (active ? 'Monitor de tono activo — clic para detener' : 'Práctica vocal (♪)')}
       >
         ♪
       </button>
@@ -49,8 +95,23 @@ export function PitchMonitorBadge() {
           ) : (
             <span className="pitch-none">—</span>
           )}
+          {score != null && targetNote && (
+            <span className={`pitch-score${score >= 70 ? ' pitch-score-good' : ''}`}>
+              {statusLabel}
+            </span>
+          )}
+          {refStatus === 'capturing' && <span className="pitch-capturing">{statusLabel}</span>}
+          {refStatus === 'error' && <span className="pitch-err">{statusLabel}</span>}
         </span>
       )}
     </div>
   );
+}
+
+/** Nota musical más cercana a una frecuencia (para mostrar la objetivo). */
+function freqToNoteName(freq: number): string {
+  const midiFloat = 69 + 12 * Math.log2(freq / 440);
+  const midi = Math.round(midiFloat);
+  const names = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+  return names[((midi % 12) + 12) % 12] + (Math.floor(midi / 12) - 1);
 }
