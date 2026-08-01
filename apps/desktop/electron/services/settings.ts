@@ -115,7 +115,7 @@ export const DEFAULT_TRANSLATION_SETTINGS: TranslationSettings = {
   // credenciales. El modelo local y DeepL/Google son mejoras opcionales.
   provider: 'mymemory',
   apiKey: '',
-  targetLang: 'es',
+  targetLang: 'en',
   localEndpoint: DEFAULT_LOCAL_ENDPOINT,
   localModel: DEFAULT_LOCAL_MODEL,
 };

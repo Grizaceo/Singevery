@@ -61,13 +61,12 @@ describe('translateLines', () => {
     expect(result.translations).toEqual(['hola']);
   });
 
-  it('MyMemory detecta el idioma una vez y lo reutiliza en todas las líneas', async () => {
+  it('MyMemory detecta japonés localmente (sin llamada Autodetect) y lo reutiliza', async () => {
     const urls: string[] = [];
     vi.stubGlobal(
       'fetch',
       vi.fn(async (url: string) => {
         urls.push(url);
-        // La primera llamada es la de detección (Autodetect).
         return myMemoryOk('traducida', 'ja');
       }),
     );
@@ -80,10 +79,14 @@ describe('translateLines', () => {
 
     expect(result.ok).toBe(true);
     expect(result.translations).toHaveLength(2);
-    expect(urls[0]).toContain('Autodetect');
-    // Tras detectar, el resto usa el idioma concreto: mejor calidad que dejar
-    // que autodetecte líneas sueltas de dos palabras.
-    expect(urls.slice(1).every((u) => u.includes('ja%7Ces'))).toBe(true);
+    // La detección local por script evita la llamada de detección (Autodetect):
+    // la primera petición ya va con ja|es. Esto ahorra cuota y evita que
+    // MyMemory devuelva el original sin traducir cuando detecta mal.
+    expect(urls.every((u) => !u.includes('Autodetect'))).toBe(true);
+    expect(urls[0]).toContain('ja%7Ces');
+    // Todas usan el idioma concreto: mejor calidad que autodetecte líneas
+    // sueltas de dos palabras.
+    expect(urls.every((u) => u.includes('ja%7Ces'))).toBe(true);
   });
 
   it('MyMemory no gasta cuota en líneas vacías', async () => {

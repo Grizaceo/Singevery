@@ -226,10 +226,13 @@ async function mapWithConcurrency<T>(
 }
 
 /**
- * MyMemory exige idioma origen. Se detecta UNA vez sobre la línea más larga
- * (las líneas sueltas de una letra son demasiado cortas para detectar bien:
- * un "Ah" o un "Hey!" puede salir en cualquier idioma) y se reutiliza para
- * todas. Si la detección falla, se deja que la API autodetecte línea a línea.
+ * Detecta el idioma origen usando heurísticas de script (regex unicode).
+ *
+ * Las líneas sueltas de una letra son demasiado cortas para detectar bien
+ * con una API de traducción: un "Ah" o "Hey!" puede salir en cualquier
+ * idioma. La detección local por script es instantánea, sin red y no gasta
+ * cuota. Solo se consulta MyMemory cuando el script es latín/other, donde
+ * la diferencia es, p. ej., inglés vs español.
  */
 async function detectSourceLang(
   lines: string[],
@@ -237,6 +240,52 @@ async function detectSourceLang(
   email: string,
   signal?: AbortSignal,
 ): Promise<string> {
+  // Detección por script Unicode (determinista, sin red, sin cuota).
+  const count = { japanese: 0, korean: 0, chinese: 0, cyrillic: 0, latin: 0, other: 0 };
+  const HAS_KANA = /[\u3040-\u309F\u30A0-\u30FF]/;
+  const HAS_CJK = /[\u4E00-\u9FFF]/;
+  const HAS_KOREAN = /[\uAC00-\uD7AF]/;
+  const HAS_CYRILLIC = /[\u0400-\u04FF\u0500-\u052F]/;
+
+  for (const line of lines) {
+    if (!line.trim()) continue;
+    if (HAS_KANA.test(line)) { count.japanese++; continue; }
+    if (HAS_KOREAN.test(line)) { count.korean++; continue; }
+    if (HAS_CJK.test(line)) { count.chinese++; continue; }
+    if (HAS_CYRILLIC.test(line)) { count.cyrillic++; continue; }
+    // eslint-disable-next-line no-control-regex
+    if (/[^\x00-\x7F\s\d.,!?'"()[\]-]/.test(line)) {
+      // Caracteres no-ASCII pero fuera de los rangos anteriores.
+      count.other++;
+      continue;
+    }
+    count.latin++;
+  }
+
+  // Encontrar el script con más líneas (desempatar: first-hit).
+  let best = '';
+  let bestCount = 0;
+  for (const [script, c] of Object.entries(count)) {
+    if (c > bestCount) { best = script; bestCount = c; }
+  }
+
+  if (bestCount === 0) return 'Autodetect';
+
+  switch (best) {
+    case 'japanese': return 'ja';
+    case 'korean':    return 'ko';
+    case 'chinese':   return 'zh';
+    case 'cyrillic':  return 'ru';
+    case 'other':
+      // Script desconocido: intentar MyMemory como fallback.
+      break;
+    case 'latin':
+      // Latín: podría ser inglés, español, portugués, ... MyMemory
+      // detecta bien entre lenguas latinas.
+      break;
+  }
+
+  // Fallback: detección vía MyMemory (solo para casos latín/other/error).
   const sample = lines
     .filter((line) => line.trim())
     .sort((a, b) => b.length - a.length)[0];
@@ -292,7 +341,7 @@ export function parseNumberedTranslations(raw: string, expected: number): string
   const found = new Map<number, string>();
 
   for (const line of raw.split('\n')) {
-    const match = /^\s*(\d+)\s*[.)：:\-]\s*(.*)$/.exec(line);
+    const match = /^\s*(\d+)\s*[.)：:-]\s*(.*)$/.exec(line);
     if (!match) continue;
     const index = Number(match[1]);
     if (!Number.isInteger(index) || index < 1 || index > expected) continue;
