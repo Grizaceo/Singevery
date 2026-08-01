@@ -9,7 +9,7 @@
 // Fases 2-4 enchufarán reconocimiento + letras en StateStore.
 // ============================================================================
 
-import { app, BrowserWindow, ipcMain, shell, session, desktopCapturer, globalShortcut, screen } from 'electron';
+import { app, BrowserWindow, ipcMain, shell, session, globalShortcut, screen } from 'electron';
 import * as path from 'path';
 import { StateStore } from './core/stateStore';
 import { loadDotEnv } from './services/env';
@@ -222,17 +222,11 @@ function setupMediaPermissions(): void {
 
 function setupSystemAudioCapture(): void {
   session.defaultSession.setDisplayMediaRequestHandler((_request, callback) => {
-    desktopCapturer
-      .getSources({ types: ['screen'] })
-      .then((sources) => {
-        const primary = sources[0];
-        if (primary) {
-          callback({ video: primary, audio: 'loopback' });
-        } else {
-          callback({});
-        }
-      })
-      .catch(() => callback({}));
+    // La app SOLO necesita el loopback de audio; nunca devolvemos video.
+    // Capturar la pantalla completa hace que Windows notifique la captura y
+    // Spotify (contenido protegido) pausa la reproducción. El loopback solo
+    // (callback({ audio: 'loopback' })) mantiene el audio sin tocar la pantalla.
+    callback({ audio: 'loopback' });
   });
 }
 

@@ -94,9 +94,16 @@ export class SystemAudioSession {
       return new MediaStream(this.displayStream.getAudioTracks());
     }
 
+    // Video MÍNIMO (4×4 @ 1fps), no video:false ni video:true.
+    //   - video:true  → captura la pantalla completa: Windows notifica la
+    //     captura y Spotify (contenido protegido) PAUSA la reproducción.
+    //   - video:false → en algunas versiones de Electron el loopback deja de
+    //     llegar (issue #49607: sin track de video, el audio llega en silencio).
+    //   4×4 @ 1fps es el workaround documentado: mantiene el loopback vivo sin
+    //   capturar contenido visible que dispare la protección de Spotify.
     const displayStream = await navigator.mediaDevices.getDisplayMedia({
       audio: true,
-      video: true,
+      video: { width: 4, height: 4, frameRate: 1 },
     });
 
     const audioTracks = displayStream.getAudioTracks();
