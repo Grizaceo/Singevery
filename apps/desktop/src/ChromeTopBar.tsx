@@ -40,8 +40,10 @@ export function ChromeTopBar({
 }: ChromeTopBarProps) {
   const [importing, setImporting] = useState(false);
   const [importStatus, setImportStatus] = useState<string | null>(null);
-  // F5: qué controles mostrar según preferencias del usuario.
-  const [widgetControls] = useState(readWidgetControls);
+  // F5: qué controles mostrar según preferencias del usuario. Se lee en cada
+  // render (no en useState) para reflejar cambios hechos en Opciones sin
+  // remontar el widget.
+  const widgetControls = readWidgetControls();
 
   const importLyrics = async () => {
     if (!api || importing) return;

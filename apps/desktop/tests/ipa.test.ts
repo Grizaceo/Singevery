@@ -139,6 +139,29 @@ describe('kanaToIpa — passthrough', () => {
   });
 });
 
+describe('kanaToIpa — adversarial (P3)', () => {
+  it('kana raro: ゐ/ゑ y ヷ/ヸ/ヹ/ヺ', () => {
+    expect(kanaToIpa('ゐ')).toBe('i');
+    expect(kanaToIpa('ゑ')).toBe('e');
+    expect(kanaToIpa('ヷ')).toBe('va');
+    expect(kanaToIpa('ヸ')).toBe('vi');
+    expect(kanaToIpa('ヹ')).toBe('ve');
+    expect(kanaToIpa('ヺ')).toBe('vo');
+  });
+  it('texto mixto JP+EN: convierte kana y deja latín intacto', () => {
+    expect(kanaToIpa('アイドルmaster')).toBe('aidoɾɯmaster');
+    expect(kanaToIpa('ドラゴン Ball Z')).toBe('doɾaɡoɴ Ball Z');
+  });
+  it('katakana largo y sokuon + chōon combinados', () => {
+    // ン ante ピ (p) → /m/ por asimilación nasal (misma regla que せんぱい).
+    expect(kanaToIpa('コンピューター')).toBe('kompʲɯːtaː');
+    expect(kanaToIpa('バッテリー')).toBe('batteɾiː');
+  });
+  it('っっ doble sokuon no revienta', () => {
+    expect(kanaToIpa('あっっ')).toBe('aʔʔ');
+  });
+});
+
 describe('ipaForRuby', () => {
   it('convierte rt a IPA y conserva base', () => {
     const segments = [
