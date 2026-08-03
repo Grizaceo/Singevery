@@ -211,3 +211,53 @@
 
 .settings-advanced > summary:hover { opacity: 1; }
 .settings-advanced[open] > summary { opacity: 0.9; }
+
+.settings-support {
+  padding-top: 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.settings-support-actions {
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+
+.support-ticket-form {
+  margin-top: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--chrome-border);
+  border-radius: var(--chrome-radius);
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.support-ticket-form > summary {
+  cursor: pointer;
+  color: var(--chrome-text);
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.support-ticket-form > .settings-hint {
+  margin-top: 8px;
+}
+
+.settings-textarea {
+  min-height: 54px;
+  resize: vertical;
+  font-family: inherit;
+  line-height: 1.35;
+}
+
+.support-diagnostics-check {
+  align-items: flex-start;
+  margin: 4px 0 6px;
+  line-height: 1.3;
+}
+
+.settings-support-status {
+  margin-top: 8px;
+  padding: 7px 9px;
+  border-left: 2px solid var(--chrome-accent);
+  background: rgba(255, 255, 255, 0.04);
+  overflow-wrap: anywhere;
+}

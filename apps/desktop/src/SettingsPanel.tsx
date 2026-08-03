@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { DisplaySettings, ReadingSettings, RecognitionProviderMode, TranslationSettings } from './types';
+import { SupportTicketForm } from './SupportTicketForm';
 import './SettingsPanel.css';
 
 interface SettingsPanelProps {
@@ -80,6 +81,7 @@ export function SettingsPanel({
     localModel: 'translategemma:4b',
   });
   const [reading, setReading] = useState<ReadingSettings>({ pinyinToneType: 'none' });
+  const [diagnosticStatus, setDiagnosticStatus] = useState<string | null>(null);
 
   useEffect(() => {
     if (!open || !window.api) return;
@@ -123,6 +125,27 @@ export function SettingsPanel({
     setReading((prev) => ({ ...prev, ...partial }));
     const result = await window.api.setReadingSettings(partial);
     if (result.ok) setReading(result.reading);
+  }, []);
+
+  const exportDiagnostics = useCallback(async () => {
+    if (!window.api) return;
+    setDiagnosticStatus('Preparando diagnóstico…');
+    const result = await window.api.exportDiagnostics();
+    if (result.ok) setDiagnosticStatus(`Guardado en ${result.path ?? 'el archivo elegido'}`);
+    else if (result.canceled) setDiagnosticStatus(null);
+    else setDiagnosticStatus(result.error ?? 'No se pudo exportar el diagnóstico');
+  }, []);
+
+  const openPrivacy = useCallback(async () => {
+    if (!window.api) return;
+    const result = await window.api.openPrivacyNotice();
+    if (!result.ok) setDiagnosticStatus(result.error ?? 'No se pudo abrir el aviso de privacidad');
+  }, []);
+
+  const openBetaGuide = useCallback(async () => {
+    if (!window.api) return;
+    const result = await window.api.openBetaGuide();
+    if (!result.ok) setDiagnosticStatus(result.error ?? 'No se pudo abrir la guía beta');
   }, []);
 
   if (!open || !window.api) return null;
@@ -338,6 +361,31 @@ export function SettingsPanel({
           />
         </section>
 
+        <section className="settings-section settings-support">
+          <span className="settings-label settings-group-title">Ayuda y beta</span>
+          <div className="settings-row settings-support-actions">
+            <button type="button" className="chrome-button" onClick={() => void openBetaGuide()}>
+              Guía para testers
+            </button>
+            <button type="button" className="chrome-button" onClick={() => void exportDiagnostics()}>
+              Exportar diagnóstico
+            </button>
+            <button type="button" className="chrome-button" onClick={() => void openPrivacy()}>
+              Privacidad
+            </button>
+          </div>
+          <p className="settings-hint">
+            El diagnóstico guarda versión, estado técnico y logs redactados. No incluye audio ni
+            letras completas.
+          </p>
+          <SupportTicketForm onStatus={setDiagnosticStatus} />
+          {diagnosticStatus && (
+            <p className="settings-hint settings-support-status" role="status">
+              {diagnosticStatus}
+            </p>
+          )}
+        </section>
+
         {/* ---------------- Avanzado: plegado por defecto ----------------
             Todo lo que se configura una vez (o nunca) vive aquí, para que el
             panel no abrume: el widget, lo experimental y el motor. */}
@@ -418,7 +466,7 @@ export function SettingsPanel({
             </label>
             <p className="settings-hint">
               Si lo desactivas, tendrás que pulsar SING (o Ctrl+Alt+S) cada vez. El micrófono nunca
-              se activa solo.
+              se activa solo. En una instalación nueva esta opción viene desactivada.
             </p>
           </section>
 

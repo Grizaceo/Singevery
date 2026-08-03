@@ -57,6 +57,15 @@ const api = {
     ipcRenderer.invoke('lyrics:load', title, artist),
   retryLyrics: (title: string, artist: string): Promise<{ ok: boolean; error?: string }> =>
     ipcRenderer.invoke('lyrics:retry', title, artist),
+  importLyrics: (): Promise<{
+    ok: boolean;
+    canceled?: boolean;
+    title?: string;
+    artist?: string;
+    synced?: boolean;
+    lineCount?: number;
+    error?: string;
+  }> => ipcRenderer.invoke('lyrics:import'),
 
   setRecognitionPhase: (phase: 'LISTENING' | 'IDENTIFYING' | null): Promise<{ ok: boolean }> =>
     ipcRenderer.invoke('recognition:setPhase', phase),
@@ -140,6 +149,33 @@ const api = {
 
   requestTranslation: (): Promise<{ ok: boolean; error?: string }> =>
     ipcRenderer.invoke('lyrics:translate'),
+
+  exportDiagnostics: (): Promise<{
+    ok: boolean;
+    canceled?: boolean;
+    path?: string;
+    error?: string;
+  }> => ipcRenderer.invoke('diagnostics:export'),
+  createSupportTicket: (
+    draft: import('../src/types').SupportTicketDraft,
+  ): Promise<{
+    ok: boolean;
+    canceled?: boolean;
+    path?: string;
+    ticketId?: string;
+    issueOpened?: boolean;
+    warning?: string;
+    error?: string;
+  }> => ipcRenderer.invoke('support:createTicket', draft),
+  exportPracticeCsv: (csv: string): Promise<{
+    ok: boolean;
+    canceled?: boolean;
+    error?: string;
+  }> => ipcRenderer.invoke('practice:exportCsv', csv),
+  openBetaGuide: (): Promise<{ ok: boolean; error?: string }> =>
+    ipcRenderer.invoke('help:openBetaGuide'),
+  openPrivacyNotice: (): Promise<{ ok: boolean; error?: string }> =>
+    ipcRenderer.invoke('legal:openPrivacy'),
 
 };
 

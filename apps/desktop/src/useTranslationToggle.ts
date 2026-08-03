@@ -4,6 +4,7 @@ import type { TranslationView } from './types';
 const STORAGE_KEY = 'espejo.translationView';
 /** Clave previa (booleana). Se migra a 'below' para no perder la preferencia. */
 const LEGACY_STORAGE_KEY = 'espejo.showTranslation';
+const EXTERNAL_CONSENT_KEY = 'singevery.translation-external-consent.v1';
 const VALID: TranslationView[] = ['off', 'below', 'side'];
 
 function load(): TranslationView {
@@ -47,6 +48,21 @@ export function useTranslationView(): [
 
     setLoading(true);
     try {
+      const settings = await window.api.getTranslationSettings();
+      if (settings.translation.provider !== 'local') {
+        const alreadyAccepted = localStorage.getItem(EXTERNAL_CONSENT_KEY) === '1';
+        if (!alreadyAccepted) {
+          const accepted = window.confirm(
+            'Para traducir, el texto completo de la letra se enviará al proveedor externo ' +
+              'configurado. No se envía audio. ¿Quieres continuar y recordar esta decisión?',
+          );
+          if (!accepted) {
+            setView('off');
+            return;
+          }
+          localStorage.setItem(EXTERNAL_CONSENT_KEY, '1');
+        }
+      }
       const result = await window.api.requestTranslation();
       if (!result.ok) {
         setError(result.error ?? 'No se pudo traducir');

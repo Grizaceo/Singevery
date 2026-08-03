@@ -9,6 +9,8 @@ dist-electron/
 out/
 release/
 build/Release/
+build/smtc-dist/
+build/dotnet-artifacts/
 
 # Artefactos de compilación TS que terminan en src/ (tsconfig tiene noEmit,
 # pero tsc antiguo/vite puede dejar .js/.map sueltos). Solo hay .ts/.tsx en src/.

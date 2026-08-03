@@ -9,7 +9,9 @@
 // Fases 2-4 enchufarán reconocimiento + letras en StateStore.
 // ============================================================================
 
-import { app, BrowserWindow, ipcMain, shell, session, globalShortcut, screen } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, shell, session, globalShortcut, screen } from 'electron';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
 import * as path from 'path';
 import { StateStore } from './core/stateStore';
 import { loadDotEnv } from './services/env';
@@ -47,6 +49,16 @@ import {
 import type { RecognitionPhase } from './core/stateStore';
 import { setupContentSecurityPolicy } from './csp';
 import { AutoContrastService } from './services/autoContrast';
+import { getLogFilePath, initAppLogger, readRecentLog } from './services/appLogger';
+import { parseImportedLyrics } from './services/importLyrics';
+import { romanizeTimedLyrics } from './services/romanize';
+import {
+  buildSupportIssueUrl,
+  buildSupportTicketFile,
+  createSupportTicketId,
+  validateSupportTicketDraft,
+} from './services/supportTicket';
+import type { SupportTicketDraft } from '../src/types';
 
 const isDev = process.env.NODE_ENV === 'development' || !!process.env.VITE_DEV_SERVER_URL;
 const devServerUrl = process.env.VITE_DEV_SERVER_URL ?? 'http://localhost:5173';
@@ -74,6 +86,7 @@ let boundsSaveTimer: NodeJS.Timeout | null = null;
 
 /** Tamaño expandido por defecto (coincide con createWindow). */
 const EXPANDED_WIDTH = 760;
+const SUPPORT_ISSUES_URL = 'https://github.com/Grizaceo/Singevery/issues/new';
 const EXPANDED_HEIGHT = 560;
 /** Acelerador del atajo SING (expandir + reconocer). */
 const SING_ACCELERATOR = 'Ctrl+Alt+S';
@@ -81,6 +94,8 @@ const SING_ACCELERATOR = 'Ctrl+Alt+S';
 const TANGIBLE_ACCELERATOR = 'Ctrl+Alt+T';
 /** Píxeles que se mueve el widget con cada pulsación de flecha. */
 const MOVE_STEP_PX = 40;
+/** Límite defensivo para documentos de letra abiertos desde disco. */
+const MAX_IMPORTED_LYRICS_BYTES = 2 * 1024 * 1024;
 
 /**
  * Modo tangible forzado.
@@ -93,6 +108,50 @@ const MOVE_STEP_PX = 40;
  * click-through del renderer: manda el teclado.
  */
 let tangibleLock = false;
+
+function collectDiagnostics(includeRecentLog = true): Record<string, unknown> {
+  const cache = lyricsCache?.stats() ?? { entries: 0, negatives: 0, bytes: 0 };
+  return {
+    generatedAt: new Date().toISOString(),
+    app: {
+      name: app.getName(),
+      version: app.getVersion(),
+      packaged: app.isPackaged,
+    },
+    system: {
+      platform: process.platform,
+      arch: process.arch,
+      release: os.release(),
+      electron: process.versions.electron,
+      chrome: process.versions.chrome,
+      node: process.versions.node,
+    },
+    configuration: {
+      recognitionProvider:
+        appSettings?.recognitionProviderStore.get() ?? NULL_RECOGNITION_PROVIDER_STORE.get(),
+      translationProvider:
+        appSettings?.translationStore.get().provider ?? NULL_TRANSLATION_STORE.get().provider,
+      reading: appSettings?.readingStore.get() ?? NULL_READING_STORE.get(),
+      hasAuddToken: Boolean(process.env.AUDD_API_TOKEN),
+      smtcSidecarConfigured: Boolean(process.env.SMTC_SIDECAR),
+    },
+    cache,
+    logFile: includeRecentLog && getLogFilePath() ? path.basename(getLogFilePath()!) : null,
+    recentLog: includeRecentLog ? readRecentLog() : null,
+  };
+}
+
+async function openBundledDocument(filename: string): Promise<{ ok: boolean; error?: string }> {
+  const candidates = [
+    path.join(path.dirname(app.getPath('exe')), filename),
+    path.join(app.getAppPath(), filename),
+    path.join(process.cwd(), filename),
+  ];
+  const documentPath = candidates.find((candidate) => fs.existsSync(candidate));
+  if (!documentPath) return { ok: false, error: `No se encontró ${filename}` };
+  const error = await shell.openPath(documentPath);
+  return error ? { ok: false, error } : { ok: true };
+}
 
 function createWindow(): BrowserWindow {
   const windowed = process.platform === 'linux' || process.env.ESPEJO_WINDOWED === '1';
@@ -379,10 +438,90 @@ function registerIpcHandlers(): void {
   );
 
   ipcMain.handle(
+    'lyrics:import',
+    async (): Promise<{
+      ok: boolean;
+      canceled?: boolean;
+      title?: string;
+      artist?: string;
+      synced?: boolean;
+      lineCount?: number;
+      error?: string;
+    }> => {
+      if (!stateStore || !mainWindow) {
+        return { ok: false, error: 'La ventana todavía no está lista' };
+      }
+
+      try {
+        const selection = await dialog.showOpenDialog(mainWindow, {
+          title: 'Importar letra propia o autorizada',
+          properties: ['openFile'],
+          filters: [
+            { name: 'Letras LRC o texto', extensions: ['lrc', 'txt'] },
+            { name: 'Todos los archivos', extensions: ['*'] },
+          ],
+        });
+        if (selection.canceled || selection.filePaths.length === 0) {
+          return { ok: false, canceled: true };
+        }
+
+        const filePath = selection.filePaths[0];
+        const stats = await fs.promises.stat(filePath);
+        if (!stats.isFile()) return { ok: false, error: 'La selección no es un archivo' };
+        if (stats.size > MAX_IMPORTED_LYRICS_BYTES) {
+          return { ok: false, error: 'El archivo supera el máximo permitido de 2 MB' };
+        }
+
+        const content = await fs.promises.readFile(filePath, 'utf8');
+        const imported = parseImportedLyrics(content, path.basename(filePath));
+        const annotatedLyrics = await romanizeTimedLyrics(imported.lyrics);
+        stateStore.setImportedLyrics(annotatedLyrics, imported.title, imported.artist);
+        return {
+          ok: true,
+          title: imported.title,
+          artist: imported.artist,
+          synced: imported.lyrics.synced,
+          lineCount: imported.lyrics.lines.length,
+        };
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'No se pudo importar la letra';
+        console.warn('lyrics:import failed', message);
+        return { ok: false, error: message };
+      }
+    },
+  );
+
+  ipcMain.handle(
     'recognition:setPhase',
     (_event, phase: RecognitionPhase): { ok: boolean } => {
       stateStore?.setRecognitionPhase(phase);
       return { ok: true };
+    },
+  );
+
+  ipcMain.handle(
+    'practice:exportCsv',
+    async (_event, csv: string): Promise<{ ok: boolean; canceled?: boolean; error?: string }> => {
+      if (typeof csv !== 'string' || Buffer.byteLength(csv, 'utf8') > 1024 * 1024) {
+        return { ok: false, error: 'La colección de repaso no es válida' };
+      }
+      try {
+        const options = {
+          title: 'Exportar líneas de repaso',
+          defaultPath: `singevery-repaso-${new Date().toISOString().slice(0, 10)}.csv`,
+          filters: [{ name: 'Archivo CSV', extensions: ['csv'] }],
+        };
+        const result = mainWindow
+          ? await dialog.showSaveDialog(mainWindow, options)
+          : await dialog.showSaveDialog(options);
+        if (result.canceled || !result.filePath) return { ok: false, canceled: true };
+        await fs.promises.writeFile(result.filePath, csv, 'utf8');
+        return { ok: true };
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'No se pudo exportar el repaso';
+        console.warn('practice:exportCsv failed', message);
+        return { ok: false, error: message };
+      }
     },
   );
 
@@ -587,9 +726,113 @@ function registerIpcHandlers(): void {
     return stateStore.requestTranslation();
   });
 
+  ipcMain.handle(
+    'diagnostics:export',
+    async (): Promise<{ ok: boolean; canceled?: boolean; path?: string; error?: string }> => {
+      const options = {
+        title: 'Exportar diagnóstico de Singevery',
+        defaultPath: `Singevery-diagnostico-${new Date().toISOString().slice(0, 10)}.json`,
+        filters: [{ name: 'Diagnóstico JSON', extensions: ['json'] }],
+      };
+      const result = mainWindow
+        ? await dialog.showSaveDialog(mainWindow, options)
+        : await dialog.showSaveDialog(options);
+      if (result.canceled || !result.filePath) return { ok: false, canceled: true };
+
+      const report = collectDiagnostics();
+      try {
+        fs.writeFileSync(result.filePath, JSON.stringify(report, null, 2), 'utf8');
+        return { ok: true, path: result.filePath };
+      } catch (err) {
+        console.error('[diagnostics ERROR] No se pudo exportar:', err);
+        return {
+          ok: false,
+          error: err instanceof Error ? err.message : 'No se pudo guardar el diagnóstico',
+        };
+      }
+    },
+  );
+
+  ipcMain.handle(
+    'support:createTicket',
+    async (
+      _event,
+      input: SupportTicketDraft,
+    ): Promise<{
+      ok: boolean;
+      canceled?: boolean;
+      path?: string;
+      ticketId?: string;
+      issueOpened?: boolean;
+      warning?: string;
+      error?: string;
+    }> => {
+      const validation = validateSupportTicketDraft(input);
+      if (!validation.ok) return { ok: false, error: validation.error };
+
+      const draft = validation.value;
+      const now = new Date();
+      const ticketId = createSupportTicketId(now);
+      const filename = `Singevery-ticket-${ticketId}.json`;
+      const options = {
+        title: 'Guardar ticket de Singevery',
+        defaultPath: filename,
+        filters: [{ name: 'Ticket JSON', extensions: ['json'] }],
+      };
+      const result = mainWindow
+        ? await dialog.showSaveDialog(mainWindow, options)
+        : await dialog.showSaveDialog(options);
+      if (result.canceled || !result.filePath) return { ok: false, canceled: true };
+
+      const diagnostics = draft.includeDiagnostics ? collectDiagnostics() : null;
+      const ticket = buildSupportTicketFile(draft, ticketId, now.toISOString(), diagnostics);
+      try {
+        await fs.promises.writeFile(result.filePath, JSON.stringify(ticket, null, 2), 'utf8');
+      } catch (err) {
+        console.error('[support ERROR] No se pudo guardar el ticket:', err);
+        return {
+          ok: false,
+          error: err instanceof Error ? err.message : 'No se pudo guardar el ticket',
+        };
+      }
+
+      const platformLabel = `${process.platform} ${process.arch} ${os.release()}`;
+      const issueUrl = buildSupportIssueUrl(
+        SUPPORT_ISSUES_URL,
+        draft,
+        ticketId,
+        app.getVersion(),
+        platformLabel,
+      );
+      let issueOpened = false;
+      let warning: string | undefined;
+      try {
+        await shell.openExternal(issueUrl);
+        issueOpened = true;
+      } catch (err) {
+        warning = err instanceof Error ? err.message : 'No se pudo abrir el portal de soporte';
+        console.warn('[support] Ticket guardado, pero no se pudo abrir el portal:', warning);
+      }
+      shell.showItemInFolder(result.filePath);
+      return { ok: true, path: result.filePath, ticketId, issueOpened, warning };
+    },
+  );
+
+  ipcMain.handle('help:openBetaGuide', async (): Promise<{ ok: boolean; error?: string }> =>
+    openBundledDocument('GUIA_BETA_PROFESORES.md'),
+  );
+
+  ipcMain.handle(
+    'legal:openPrivacy',
+    async (): Promise<{ ok: boolean; error?: string }> => {
+      return openBundledDocument('PRIVACIDAD_Y_DATOS.md');
+    },
+  );
+
 }
 
 function bootstrap(): void {
+  initAppLogger(path.join(app.getPath('userData'), 'logs'), app.getVersion());
   loadDotEnv();
   setupContentSecurityPolicy(session.defaultSession);
   setupMediaPermissions();

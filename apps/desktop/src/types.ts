@@ -221,6 +221,26 @@ export interface RenderModel {
 /** Fuente de audio para reconocimiento. */
 export type AudioSource = 'microphone' | 'system';
 
+export type SupportTicketCategory =
+  | 'installation'
+  | 'startup'
+  | 'recognition'
+  | 'lyrics'
+  | 'pitch'
+  | 'translation'
+  | 'other';
+
+/** Datos escritos deliberadamente por la persona que reporta un fallo. */
+export interface SupportTicketDraft {
+  category: SupportTicketCategory;
+  testerAlias: string;
+  summary: string;
+  actual: string;
+  steps: string;
+  expected: string;
+  includeDiagnostics: boolean;
+}
+
 /** API expuesta por el preload script al renderer. */
 export interface DesktopApi {
   onRenderModel: (cb: (model: RenderModel) => void) => () => void;
@@ -239,6 +259,15 @@ export interface DesktopApi {
   onTangibleCommand: (cb: (locked: boolean) => void) => () => void;
   loadLyrics: (title: string, artist: string) => Promise<{ ok: boolean; error?: string }>;
   retryLyrics: (title: string, artist: string) => Promise<{ ok: boolean; error?: string }>;
+  importLyrics: () => Promise<{
+    ok: boolean;
+    canceled?: boolean;
+    title?: string;
+    artist?: string;
+    synced?: boolean;
+    lineCount?: number;
+    error?: string;
+  }>;
   setRecognitionPhase: (phase: 'LISTENING' | 'IDENTIFYING' | null) => Promise<{ ok: boolean }>;
   setRecognitionSource: (source: AudioSource | null) => Promise<{ ok: boolean }>;
   identifyAudio: (
@@ -293,6 +322,28 @@ export interface DesktopApi {
   ) => Promise<{ ok: boolean; reading: ReadingSettings }>;
 
   requestTranslation: () => Promise<{ ok: boolean; error?: string }>;
+  exportDiagnostics: () => Promise<{
+    ok: boolean;
+    canceled?: boolean;
+    path?: string;
+    error?: string;
+  }>;
+  createSupportTicket: (draft: SupportTicketDraft) => Promise<{
+    ok: boolean;
+    canceled?: boolean;
+    path?: string;
+    ticketId?: string;
+    issueOpened?: boolean;
+    warning?: string;
+    error?: string;
+  }>;
+  exportPracticeCsv: (csv: string) => Promise<{
+    ok: boolean;
+    canceled?: boolean;
+    error?: string;
+  }>;
+  openBetaGuide: () => Promise<{ ok: boolean; error?: string }>;
+  openPrivacyNotice: () => Promise<{ ok: boolean; error?: string }>;
 
   // Window controls
   close: () => Promise<{ ok: boolean }>;

@@ -1,12 +1,15 @@
 {
   "name": "singevery-desktop",
   "private": true,
-  "version": "0.2.0",
+  "version": "0.2.1-beta.1",
   "description": "Transparent desktop widget that recognizes music (Shazam/AudD) and shows synced karaoke lyrics with romaji — sing along without blocking your screen.",
   "author": "Gris",
   "license": "MIT",
   "main": "dist-electron/electron/main.js",
   "scripts": {
+    "check:secrets": "node scripts/check-secrets.cjs",
+    "prebuild": "npm run check:secrets",
+    "pretest": "npm run check:secrets",
     "dev": "vite",
     "dev:electron": "node scripts/dev-electron.cjs",
     "dev:electron:win": "concurrently -k \"npm:dev:vite\" \"npm:dev:wait-electron:win\"",
@@ -26,8 +29,12 @@
     "test:watch": "vitest",
     "lint": "eslint .",
     "notices": "node scripts/generate-third-party-notices.cjs",
-    "build:smtc": "dotnet publish ../../native/smtc -c Release -r win-x64 --self-contained true -o ../../native/smtc/dist",
-    "package": "npm run build && npm run notices && electron-builder --config electron-builder.yml",
+    "build:smtc": "dotnet publish ../../native/smtc/EspejoSmtc.csproj -c Release -r win-x64 --self-contained true -p:SelfContained=true --artifacts-path build/dotnet-artifacts -o build/smtc-dist",
+    "verify:package-inputs": "node scripts/verify-package.cjs --inputs",
+    "verify:package-output": "node scripts/verify-package.cjs --output",
+    "package": "npm run build && npm run notices && npm run verify:package-inputs && electron-builder --config electron-builder.yml && npm run verify:package-output",
+    "package:installer": "node scripts/edit-executable-metadata.cjs && electron-builder --prepackaged release/win-unpacked --config electron-builder.yml && npm run verify:package-output",
+    "package:signed": "npm run build && npm run notices && npm run verify:package-inputs && electron-builder --config electron-builder.yml && npm run verify:package-output",
     "package:full": "npm run build:smtc && npm run package"
   },
   "dependencies": {
