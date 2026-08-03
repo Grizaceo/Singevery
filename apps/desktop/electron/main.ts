@@ -1046,6 +1046,9 @@ if (!gotLock) {
     lyricsCache?.flush(); // escribe el índice pendiente (persist debounced)
     globalShortcut.unregisterAll();
     app.quit();
+    // Garantía anti-zombie: si quit() no completa (IO nativa colgada), forzar
+    // la salida. El flush de lyricsCache ya corrió síncronamente arriba.
+    setTimeout(() => app.exit(0), 1500).unref?.();
   });
 
   app.on('before-quit', () => {

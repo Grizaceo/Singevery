@@ -25,6 +25,9 @@
 // ============================================================================
 
 using System;
+using System.Diagnostics;
+using System.IO;
+using System.Runtime.InteropServices;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
@@ -46,6 +49,63 @@ class Program
     /// repetidos para la misma pista (los navegadores lo disparan varias veces).
     static string _lastTrackSig = "";
 
+    // ==========================================================================
+    // Detección de padre muerto (anti-zombie).
+    // Electron spawna este exe con stdio pipe. Si el proceso main muere (crash,
+    // force-kill en Task Manager, cierre forzado), en Windows el hijo queda
+    // HUÉRFANO: nadie lo mata, y como el heartbeat se emite SIEMPRE, la pipe
+    // rota provoca IOException en la primera escritura → Environment.Exit.
+    // El watcher (cada 2 s) es la red de seguridad para el caso sin medios:
+    // aunque el heartbeat se emita siempre, verifica activamente que el padre
+    // siga vivo. Sin esto, el exe quedaba vivo para siempre con su
+    // Task.Delay(Infinite) y un Timer de 1 s (ver docs/DIAGNOSTICO_ZOMBIES_2026-08-03.md).
+    // ==========================================================================
+    [StructLayout(LayoutKind.Sequential)]
+    struct PROCESS_BASIC_INFORMATION
+    {
+        public IntPtr Reserved1;
+        public IntPtr PebBaseAddress;
+        public IntPtr Reserved2_0;
+        public IntPtr Reserved2_1;
+        public IntPtr UniqueProcessId;
+        public IntPtr InheritedFromUniqueProcessId;
+    }
+
+    [DllImport("ntdll.dll")]
+    static extern int NtQueryInformationProcess(
+        IntPtr processHandle,
+        int processInformationClass,
+        ref PROCESS_BASIC_INFORMATION processInformation,
+        int processInformationLength,
+        out int returnLength);
+
+    static int GetParentProcessId(Process p)
+    {
+        var pbi = new PROCESS_BASIC_INFORMATION();
+        int ret = NtQueryInformationProcess(p.Handle, 0, ref pbi, Marshal.SizeOf(pbi), out _);
+        return ret == 0 ? (int)pbi.InheritedFromUniqueProcessId : -1;
+    }
+
+    static void StartParentWatcher(int parentPid)
+    {
+        if (parentPid <= 0) return; // no se pudo determinar el padre: sin watcher
+        var timer = new Timer(_ =>
+        {
+            try
+            {
+                // Process.GetProcessById lanza ArgumentException si no existe.
+                _ = Process.GetProcessById(parentPid);
+            }
+            catch (ArgumentException)
+            {
+                // El padre murió: el heartbeat ya fallará (pipe rota), pero
+                // terminamos de forma explícita y limpia.
+                Environment.Exit(0);
+            }
+        }, null, 2000, 2000);
+        GC.KeepAlive(timer);
+    }
+
     static async Task Main()
     {
         _mgr = await GlobalSystemMediaTransportControlsSessionManager.RequestAsync();
@@ -56,9 +116,18 @@ class Program
         // aunque la fuente (navegador) actualice su snapshot con poca frecuencia.
         var timer = new Timer(_ => EmitPosition(_mgr?.GetCurrentSession()), null, 1000, 1000);
 
+        // Heartbeat incondicional: sin sesión de medios el sidecar no escribe
+        // nada; si el padre murió, esta escritura rompe por la pipe rota y el
+        // proceso termina (anti-zombie, ver docs/DIAGNOSTICO_ZOMBIES_2026-08-03.md).
+        var hb = new Timer(_ => Write(new { type = "heartbeat" }), null, 5000, 5000);
+
+        // Watcher de padre muerto (red de seguridad, 2 s).
+        StartParentWatcher(GetParentProcessId(Process.GetCurrentProcess()));
+
         // Mantener vivo el proceso.
         await Task.Delay(Timeout.Infinite);
         GC.KeepAlive(timer);
+        GC.KeepAlive(hb);
     }
 
     static void Hook(GlobalSystemMediaTransportControlsSession? session)
@@ -189,8 +258,18 @@ class Program
     {
         lock (_lock)
         {
-            Console.WriteLine(JsonSerializer.Serialize(o));
-            Console.Out.Flush();
+            try
+            {
+                Console.WriteLine(JsonSerializer.Serialize(o));
+                Console.Out.Flush();
+            }
+            catch (IOException)
+            {
+                // Pipe rota: el padre ya no lee (murió o se cerró). Si no
+                // salimos aquí, este exe queda vivo como zombie con su timer
+                // de 1 s. Anti-zombie: terminar.
+                Environment.Exit(1);
+            }
         }
     }
 }

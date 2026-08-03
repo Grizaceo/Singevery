@@ -72,7 +72,21 @@ export class WakeWordReader {
   }
 
   stop(): void {
-    this.proc?.kill();
+    const proc = this.proc;
     this.proc = null;
+    if (!proc) return;
+    proc.kill();
+    proc.unref();
+    // Respaldo: en Windows, SIGTERM a procesos nativos puede ser ignorado.
+    const t = setTimeout(() => {
+      if (proc.exitCode === null && proc.signalCode === null) {
+        try {
+          proc.kill('SIGKILL');
+        } catch {
+          /* ya murió entre medias */
+        }
+      }
+    }, 500);
+    t.unref?.();
   }
 }

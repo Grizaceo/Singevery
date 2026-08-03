@@ -8,6 +8,7 @@
   "main": "dist-electron/electron/main.js",
   "scripts": {
     "check:secrets": "node scripts/check-secrets.cjs",
+    "check:zombies": "node scripts/check-zombies.cjs",
     "prebuild": "npm run check:secrets",
     "pretest": "npm run check:secrets",
     "dev": "vite",
