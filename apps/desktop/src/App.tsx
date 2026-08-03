@@ -133,6 +133,23 @@ function AppContent() {
     prevTrackRef.current = t;
   }, [model.track_title, collapsed]);
 
+  // F2: al cambiar de canción (trackKey distinto), re-traducir la letra nueva
+  // si la vista de traducción está activa. El ref evita re-disparos por el
+  // objeto translate que se recrea en cada render.
+  const translateRef = useRef(translationState.translate);
+  translateRef.current = translationState.translate;
+  const prevTrackKeyRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!trackKey) {
+      prevTrackKeyRef.current = null;
+      return;
+    }
+    if (prevTrackKeyRef.current === trackKey) return;
+    prevTrackKeyRef.current = trackKey;
+    if (translationView === 'off') return;
+    void translateRef.current();
+  }, [trackKey, translationView]);
+
   const handleCollapse = useCallback(() => {
     setCollapsed(true);
     setSettingsOpen(false);

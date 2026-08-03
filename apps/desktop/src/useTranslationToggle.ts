@@ -20,6 +20,29 @@ function load(): TranslationView {
 }
 
 /**
+ * Pide consentimiento para enviar la letra a un proveedor externo (una sola
+ * vez, se recuerda). Devuelve true si se puede traducir (proveedor local,
+ * ya aceptado, o el usuario aceptó ahora).
+ */
+export async function ensureExternalTranslationConsent(): Promise<boolean> {
+  if (!window.api?.getTranslationSettings) return false;
+  try {
+    const settings = await window.api.getTranslationSettings();
+    if (settings.translation.provider === 'local') return true;
+    const alreadyAccepted = localStorage.getItem(EXTERNAL_CONSENT_KEY) === '1';
+    if (alreadyAccepted) return true;
+    const accepted = window.confirm(
+      'Para traducir, el texto completo de la letra se enviará al proveedor externo ' +
+        'configurado. No se envía audio. ¿Quieres continuar y recordar esta decisión?',
+    );
+    if (accepted) localStorage.setItem(EXTERNAL_CONSENT_KEY, '1');
+    return accepted;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Vista de traducción (off / debajo / lado a lado), persistida en localStorage.
  * Al activar cualquier modo con traducción se pide traducir la letra cargada;
  * si falla, vuelve a 'off' y expone el error.
@@ -27,7 +50,7 @@ function load(): TranslationView {
 export function useTranslationView(): [
   TranslationView,
   (view: TranslationView) => void,
-  { loading: boolean; error: string | null },
+  { loading: boolean; error: string | null; translate: () => Promise<boolean> },
 ] {
   const [view, setView] = useState<TranslationView>(load);
   const [loading, setLoading] = useState(false);
@@ -41,40 +64,39 @@ export function useTranslationView(): [
     }
   }, [view]);
 
-  const set = useCallback(async (next: TranslationView) => {
-    setView(next);
-    setError(null);
-    if (next === 'off' || !window.api?.requestTranslation) return;
+  const translate = useCallback(async (): Promise<boolean> => {
+    if (!window.api?.requestTranslation) return false;
+    if (!(await ensureExternalTranslationConsent())) return false;
 
     setLoading(true);
+    setError(null);
     try {
-      const settings = await window.api.getTranslationSettings();
-      if (settings.translation.provider !== 'local') {
-        const alreadyAccepted = localStorage.getItem(EXTERNAL_CONSENT_KEY) === '1';
-        if (!alreadyAccepted) {
-          const accepted = window.confirm(
-            'Para traducir, el texto completo de la letra se enviará al proveedor externo ' +
-              'configurado. No se envía audio. ¿Quieres continuar y recordar esta decisión?',
-          );
-          if (!accepted) {
-            setView('off');
-            return;
-          }
-          localStorage.setItem(EXTERNAL_CONSENT_KEY, '1');
-        }
-      }
       const result = await window.api.requestTranslation();
       if (!result.ok) {
         setError(result.error ?? 'No se pudo traducir');
-        setView('off');
+        return false;
       }
+      return true;
     } catch {
       setError('Error al solicitar traducción');
-      setView('off');
+      return false;
     } finally {
       setLoading(false);
     }
   }, []);
 
-  return [view, set, { loading, error }];
+  const set = useCallback(
+    async (next: TranslationView) => {
+      setView(next);
+      if (next === 'off') {
+        setError(null);
+        return;
+      }
+      const ok = await translate();
+      if (!ok) setView('off');
+    },
+    [translate],
+  );
+
+  return [view, set, { loading, error, translate }];
 }

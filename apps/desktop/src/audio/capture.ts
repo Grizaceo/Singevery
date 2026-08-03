@@ -1,4 +1,5 @@
 import type { AudioSource } from '../types';
+import { readMicrophonePrefs } from './micPrefs';
 
 const RECORD_MS = 6000;
 const PAUSE_MS = 2000;
@@ -125,12 +126,14 @@ export class SystemAudioSession {
 }
 
 export async function openMicrophoneStream(): Promise<MediaStream> {
+  const prefs = readMicrophonePrefs();
   try {
     return await navigator.mediaDevices.getUserMedia({
       audio: {
-        echoCancellation: false,
-        noiseSuppression: false,
-        autoGainControl: false,
+        deviceId: prefs.deviceId ?? undefined,
+        echoCancellation: prefs.echoCancellation,
+        noiseSuppression: prefs.noiseSuppression,
+        autoGainControl: prefs.autoGainControl,
       },
     });
   } catch (err) {

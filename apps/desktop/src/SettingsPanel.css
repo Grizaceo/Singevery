@@ -30,6 +30,57 @@
   margin-bottom: 12px;
 }
 
+/* F6: navegación por categorías (Display / Audio / Otros). */
+.settings-tabs {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 12px;
+  border-bottom: 1px solid var(--chrome-border);
+  padding-bottom: 8px;
+}
+
+.settings-tab {
+  flex: 1;
+  padding: 6px 8px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--chrome-text-muted, #9aa0aa);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.settings-tab:hover {
+  color: var(--chrome-text);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.settings-tab.active {
+  color: var(--chrome-text);
+  background: rgba(255, 255, 255, 0.1);
+  border-color: var(--chrome-border);
+}
+
+/* F4: medidor de nivel de micrófono en vivo. */
+.settings-mic-meter {
+  width: 100%;
+  height: 8px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+}
+
+.settings-mic-meter-fill {
+  height: 100%;
+  border-radius: 4px;
+  background: #22d3ee;
+  transition: width 80ms linear;
+}
+
+.settings-error-text {
+  color: #f87171;
+}
+
 .settings-header h2 {
   margin: 0;
   font-size: 1rem;

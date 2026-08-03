@@ -5,6 +5,7 @@ import { TrackHeader } from './teleprompter/TrackHeader';
 import type { ReadingMode, RenderModel, TranslationView } from './types';
 import type { DesktopApi } from './types';
 import type { ScriptHint } from './scriptDetect';
+import { readWidgetControls } from './widgetPrefs';
 import './ChromeBars.css';
 
 interface ChromeTopBarProps {
@@ -39,6 +40,8 @@ export function ChromeTopBar({
 }: ChromeTopBarProps) {
   const [importing, setImporting] = useState(false);
   const [importStatus, setImportStatus] = useState<string | null>(null);
+  // F5: qué controles mostrar según preferencias del usuario.
+  const [widgetControls] = useState(readWidgetControls);
 
   const importLyrics = async () => {
     if (!api || importing) return;
@@ -73,36 +76,42 @@ export function ChromeTopBar({
             {importStatus}
           </span>
         )}
-        <button
-          type="button"
-          className="chrome-button"
-          onClick={() => void importLyrics()}
-          disabled={!api || importing}
-          title="Importar letra propia o autorizada (LRC/TXT)"
-          aria-label="Importar letra LRC o TXT"
-        >
-          {importing ? '…' : '↥'}
-        </button>
-        <ReadingControls
-          mode={readingMode}
-          onChange={onReadingModeChange}
-          hasAnnotations={hasAnnotations}
-          scriptHint={scriptHint}
-          translationView={translationView}
-          onTranslationViewChange={onTranslationViewChange}
-          translationLoading={translationLoading}
-          translationError={translationError}
-          onOpenSettings={onOpenSettings}
-        />
-        <button
-          type="button"
-          className="chrome-button"
-          onClick={onOpenSettings}
-          title="Ajustes"
-          aria-label="Abrir ajustes"
-        >
-          ⚙
-        </button>
+        {widgetControls.import && (
+          <button
+            type="button"
+            className="chrome-button"
+            onClick={() => void importLyrics()}
+            disabled={!api || importing}
+            title="Importar letra propia o autorizada (LRC/TXT)"
+            aria-label="Importar letra LRC o TXT"
+          >
+            {importing ? '…' : '↥'}
+          </button>
+        )}
+        {widgetControls.reading && (
+          <ReadingControls
+            mode={readingMode}
+            onChange={onReadingModeChange}
+            hasAnnotations={hasAnnotations}
+            scriptHint={scriptHint}
+            translationView={translationView}
+            onTranslationViewChange={widgetControls.translate ? onTranslationViewChange : undefined}
+            translationLoading={translationLoading}
+            translationError={translationError}
+            onOpenSettings={onOpenSettings}
+          />
+        )}
+        {widgetControls.settings && (
+          <button
+            type="button"
+            className="chrome-button"
+            onClick={onOpenSettings}
+            title="Ajustes"
+            aria-label="Abrir ajustes"
+          >
+            ⚙
+          </button>
+        )}
       </div>
     </div>
   );

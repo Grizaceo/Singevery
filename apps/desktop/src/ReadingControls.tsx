@@ -14,6 +14,10 @@ interface Props {
   translationLoading?: boolean;
   translationError?: string | null;
   onOpenSettings?: () => void;
+  /** F5: mostrar los botones de modo de lectura (原 か ふ A IPA…). */
+  showReadingModes?: boolean;
+  /** F5: mostrar el botón de traducción (T). */
+  showTranslate?: boolean;
 }
 
 /** Ciclo del botón de traducción: sin → debajo → lado a lado → sin. */
@@ -173,6 +177,8 @@ export function ReadingControls({
   translationLoading = false,
   translationError,
   onOpenSettings,
+  showReadingModes = true,
+  showTranslate = true,
 }: Props) {
   const [helpOpen, setHelpOpen] = useState(false);
   const helpRef = useRef<HTMLDivElement>(null);
@@ -187,7 +193,8 @@ export function ReadingControls({
   return (
     <div className="reading-controls-wrap">
       <div className="reading-controls" title="Modo de lectura">
-        {options.map((opt) => {
+        {showReadingModes &&
+          options.map((opt) => {
           const unavailable = opt.needsAnnotations && !hasAnnotations;
           return (
             <button
@@ -210,7 +217,7 @@ export function ReadingControls({
           );
         })}
 
-        {onTranslationViewChange && (
+        {showTranslate && onTranslationViewChange && (
           <button
             type="button"
             className={[
@@ -234,7 +241,8 @@ export function ReadingControls({
           </button>
         )}
 
-        <button
+        {(showReadingModes || (showTranslate && onTranslationViewChange)) && (
+          <button
           type="button"
           className={`chrome-button reading-btn reading-btn-help${helpOpen ? ' active' : ''}`}
           onClick={() => setHelpOpen((v) => !v)}
@@ -244,7 +252,8 @@ export function ReadingControls({
         >
           ?
         </button>
-      </div>
+        )}
+        </div>
 
       {helpOpen && (
         <div className="reading-help-popover" ref={helpRef} role="dialog" aria-label={help.title}>
