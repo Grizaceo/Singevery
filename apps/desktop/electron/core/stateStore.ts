@@ -312,6 +312,31 @@ export class StateStore {
     this.trackArtist = artist;
   }
 
+  /** Carga una letra elegida por el usuario sin consultar ni guardar en caché
+   *  de proveedores. Conserva el offset que ya exista para esa pista. */
+  setImportedLyrics(
+    lyrics: TimedLyrics,
+    title: string,
+    artist: string,
+    anchorMs = 0,
+    anchorAt = Date.now(),
+  ): void {
+    const trackKey = normalizeTrackKey(artist, title);
+    this.cancelAutoRetry();
+    this.trackAliasKeys.clear();
+    this.pendingChangeKey = null;
+    this.pendingChangeCount = 0;
+    this.currentTrackKey = trackKey;
+    this.lastMatchKey = trackKey;
+    this.autoRetryAttempt = 0;
+    this.syncOffsetMs = this.offsetStore.get(trackKey);
+    this.overrideStatus = null;
+    this.clockPaused = false;
+    this.silentSince = null;
+    this.setLyrics(lyrics, title, artist);
+    this.reanchor(Math.max(0, anchorMs) + this.syncOffsetMs, anchorAt);
+  }
+
   /** Traduce la letra actual al idioma destino y actualiza caché. */
   async requestTranslation(): Promise<{ ok: boolean; error?: string }> {
     const lyrics = this.engine.getLyrics();

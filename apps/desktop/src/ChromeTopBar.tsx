@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { WindowControls } from './WindowControls';
 import { ReadingControls } from './ReadingControls';
 import { TrackHeader } from './teleprompter/TrackHeader';
@@ -36,6 +37,30 @@ export function ChromeTopBar({
   onCollapse,
   onOpenSettings,
 }: ChromeTopBarProps) {
+  const [importing, setImporting] = useState(false);
+  const [importStatus, setImportStatus] = useState<string | null>(null);
+
+  const importLyrics = async () => {
+    if (!api || importing) return;
+    setImporting(true);
+    setImportStatus(null);
+    try {
+      const result = await api.importLyrics();
+      if (result.canceled) return;
+      if (!result.ok) {
+        setImportStatus(result.error ?? 'No se pudo importar');
+        return;
+      }
+      setImportStatus(
+        `${result.lineCount ?? 0} líneas · ${result.synced ? 'sincronizada' : 'texto plano'}`,
+      );
+    } catch {
+      setImportStatus('No se pudo importar');
+    } finally {
+      setImporting(false);
+    }
+  };
+
   return (
     <div className="chrome-bar chrome-bar-top">
       <div className="chrome-bar-group">
@@ -43,6 +68,21 @@ export function ChromeTopBar({
       </div>
       <TrackHeader model={model} />
       <div className="chrome-bar-group">
+        {importStatus && (
+          <span className="chrome-import-status" role="status" title={importStatus}>
+            {importStatus}
+          </span>
+        )}
+        <button
+          type="button"
+          className="chrome-button"
+          onClick={() => void importLyrics()}
+          disabled={!api || importing}
+          title="Importar letra propia o autorizada (LRC/TXT)"
+          aria-label="Importar letra LRC o TXT"
+        >
+          {importing ? '…' : '↥'}
+        </button>
         <ReadingControls
           mode={readingMode}
           onChange={onReadingModeChange}
