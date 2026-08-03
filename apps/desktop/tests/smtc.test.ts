@@ -9,6 +9,12 @@ import {
   parseSmtcMessage,
   dispatchSmtcEvent,
   nextForwardablePosition,
+  nextRestartDelay,
+  SMTC_HEARTBEAT_MS,
+  SMTC_HEARTBEAT_TIMEOUT_MS,
+  SMTC_MAX_RESTARTS,
+  SMTC_RESTART_MAX_MS,
+  SMTC_WATCHDOG_INTERVAL_MS,
   type SmtcEvent,
   type SmtcSink,
 } from '../electron/services/smtc/smtcReader';
@@ -224,5 +230,26 @@ describe('StateStore — fuente externa (SMTC)', () => {
     s.setExternalInputSuppressed(false);
     const changedAfter = await s.applyExternalTrack('Other', 'Band', { positionMs: 0, at: 0 });
     expect(changedAfter).toBe(true);
+  });
+});
+
+describe('nextRestartDelay (watchdog del sidecar)', () => {
+  it('backoff exponencial con techo', () => {
+    expect(nextRestartDelay(1)).toBe(1_000);
+    expect(nextRestartDelay(2)).toBe(2_000);
+    expect(nextRestartDelay(3)).toBe(4_000);
+    // El techo frena el crecimiento (30 s por defecto).
+    expect(nextRestartDelay(6)).toBe(SMTC_RESTART_MAX_MS);
+  });
+
+  it('intentos inválidos devuelven 0 (sin espera)', () => {
+    expect(nextRestartDelay(0)).toBe(0);
+    expect(nextRestartDelay(-2)).toBe(0);
+  });
+
+  it('constantes coherentes: timeout > 2 heartbeats, reintentos > 0', () => {
+    expect(SMTC_HEARTBEAT_TIMEOUT_MS).toBeGreaterThan(2 * SMTC_HEARTBEAT_MS);
+    expect(SMTC_MAX_RESTARTS).toBeGreaterThan(0);
+    expect(SMTC_WATCHDOG_INTERVAL_MS).toBeGreaterThan(0);
   });
 });
