@@ -11,6 +11,7 @@ Junto a la aplicacion se instalan ademas:
  - AVISO_LEGAL.md: condiciones de uso de los servicios de terceros
    (reconocimiento de musica y letras) y avisos sobre marcas.
  - GUIA_DE_USO.md: guia paso a paso para usar la aplicacion.
+ - PRIVACIDAD_Y_DATOS.md: datos locales y envios a servicios externos.
 
 Las letras de canciones que la aplicacion muestra se obtienen en tiempo
 real de servicios de terceros y estan protegidas por derechos de autor de

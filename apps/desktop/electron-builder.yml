@@ -19,7 +19,7 @@ directories:
 # IMPORTANTE: publicar el sidecar AUTOCONTENIDO (npm run build:smtc) antes de
 # empaquetar para terceros — si no, exige .NET 8 instalado en el equipo destino.
 extraResources:
-  - from: ../../native/smtc/dist
+  - from: build/smtc-dist
     to: native/smtc/dist
     filter: ['**/*', '!*.pdb']
 
@@ -31,6 +31,10 @@ extraFiles:
     to: AVISO_LEGAL.md
   - from: ../../GUIA_DE_USO.md
     to: GUIA_DE_USO.md
+  - from: PRIVACIDAD_Y_DATOS.md
+    to: PRIVACIDAD_Y_DATOS.md
+  - from: GUIA_BETA_PROFESORES.md
+    to: GUIA_BETA_PROFESORES.md
   - from: build/THIRD-PARTY-NOTICES.txt
     to: THIRD-PARTY-NOTICES.txt
 
@@ -50,9 +54,8 @@ asarUnpack:
 
 win:
   icon: build/icon.ico
-  # true para que rcedit incruste ícono y metadata en el exe (no firma nada
-  # si no hay certificado configurado; SmartScreen avisará igual — documentado
-  # en GUIA_DE_USO.md y README).
+  # Incrusta nombre, versión e icono aunque no haya certificado. La firma sólo
+  # se aplica cuando electron-builder recibe credenciales de firma válidas.
   signAndEditExecutable: true
   target:
     - target: nsis
@@ -66,5 +69,7 @@ nsis:
   createDesktopShortcut: true
   createStartMenuShortcut: true
   shortcutName: Singevery
+  runAfterFinish: true
+  deleteAppDataOnUninstall: false
   # Licencia + avisos que el instalador muestra antes de instalar.
   license: build/license.txt
