@@ -5,20 +5,18 @@ const STORAGE_KEY = 'espejo.autoStart';
 /**
  * ¿Empezar a escuchar el audio del sistema al abrir la app?
  *
- * Por defecto sí: es la fuente que mejor sincroniza y la que se usa casi
- * siempre, así que obligar a pulsar SING cada vez era fricción pura. Se puede
- * desactivar porque implica capturar el audio del equipo desde el arranque, y
- * eso no debería ser una decisión invisible para quien instala la app.
+ * Por defecto no: una instalación nueva exige que la persona pulse SING o lo
+ * habilite explícitamente en Ajustes. Los usuarios que ya eligieron un valor
+ * conservan su preferencia.
  *
  * El micrófono NUNCA arranca solo: es una fuente que el usuario elige a mano.
  */
 export function useAutoStart(): [boolean, (enabled: boolean) => void] {
   const [enabled, setEnabled] = useState(() => {
     try {
-      // Ausente = primera ejecución → activado.
-      return localStorage.getItem(STORAGE_KEY) !== '0';
+      return localStorage.getItem(STORAGE_KEY) === '1';
     } catch {
-      return true;
+      return false;
     }
   });
 
