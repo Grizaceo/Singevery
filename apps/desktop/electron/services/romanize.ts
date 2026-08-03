@@ -1,4 +1,5 @@
 import type { FuriganaSegment, TimedLyrics } from '../../src/types';
+import { kanaToIpa, ipaForRuby } from './ipa';
 import { transliterate } from 'transliteration';
 import { pinyin } from 'pinyin-pro';
 import { romanize as hangulRomanize } from 'es-hangul';
@@ -14,7 +15,7 @@ const KOREAN_WORD_RE = /[\uAC00-\uD7AF]+/g;
 const CJK_CHAR_RE = /[\u4E00-\u9FFF]/;
 
 /** Incrementar al cambiar el formato de anotaciones (furigana, kana, ruby multi-idioma). */
-export const ANNOTATIONS_VERSION = 2;
+export const ANNOTATIONS_VERSION = 3;
 
 type KuroshiroInstance = {
   convert: (
@@ -134,6 +135,8 @@ export async function romanizeText(text: string): Promise<string> {
 // `furigana` almacena segmentos ruby para cualquier script (JP, RU, KO, ZH…).
 // `romaji` es la romanización latina de la línea completa.
 // `kana` es hiragana completo (solo japonés).
+// `ipa` es la transcripción fonética de la línea (solo japonés, Fase 1).
+// `furiganaIpa` son segmentos ruby con rt en IPA (modo furigana_ipa).
 // ============================================================================
 
 export interface LineReadings {
@@ -143,6 +146,10 @@ export interface LineReadings {
   romaji?: string;
   /** Texto en hiragana (modo kana, solo japonés). */
   kana?: string;
+  /** Transcripción IPA de la línea (modo ipa, solo japonés). */
+  ipa?: string;
+  /** Segmentos ruby con rt en IPA (modo furigana_ipa, solo japonés). */
+  furiganaIpa?: FuriganaSegment[];
 }
 
 const STRIP_TAGS_RE = /<[^>]*>/g;
@@ -305,6 +312,10 @@ async function computeReadings(text: string): Promise<LineReadings> {
       const hasReading = furigana.some((seg) => seg.rt);
       const readings: LineReadings = { romaji, kana: kana !== text ? kana : undefined };
       if (hasReading) readings.furigana = furigana;
+      const ipa = kanaToIpa(kana);
+      if (ipa) readings.ipa = ipa;
+      const furiganaIpa = ipaForRuby(furigana);
+      if (furiganaIpa.some((seg) => seg.rt)) readings.furiganaIpa = furiganaIpa;
       return readings;
     }
 

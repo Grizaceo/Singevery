@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import {
   needsRomanization,
   romanizeText,
@@ -11,7 +11,26 @@ import {
   stripReadings,
   ANNOTATIONS_VERSION,
 } from '../electron/services/romanize';
+import { kanaToIpa } from '../electron/services/ipa';
 import { detectScript, detectScriptFromLines } from '../src/scriptDetect';
+
+// kuroshiro no puede inicializar su diccionario en el entorno vitest
+// (path de kuromoji resuelto contra bins nativos). Para testear el wiring
+// del pipeline de anotaciones (P1: ipa/furiganaIpa) se stubea el convert:
+// las conversiones romaji/furigana/kana quedan fijas y deterministas.
+vi.mock('kuroshiro', () => ({
+  default: class {
+    async init(): Promise<void> {}
+    async convert(_text: string, opts: { to?: string; mode?: string }): Promise<string> {
+      if (opts.to === 'romaji') return 'watashi';
+      if (opts.mode === 'furigana') return '<ruby>私<rp>(</rp><rt>わたし</rt><rp>)</rp></ruby>';
+      return 'わたし';
+    }
+  },
+}));
+vi.mock('kuroshiro-analyzer-kuromoji', () => ({
+  default: class {},
+}));
 
 describe('romanize', () => {
   it('detecta texto japonés como romanizable', () => {
@@ -90,6 +109,29 @@ describe('romanize', () => {
     });
     expect(stripped.lines[0]).toEqual({ start_ms: 0, text: 'Привет' });
     expect(stripped.annotationsVersion).toBeUndefined();
+  });
+});
+
+describe('ipa (Fase 1: wiring de kanaToIpa al pipeline de anotaciones)', () => {
+  it('incluye ipa y furiganaIpa en las lecturas de una línea japonesa', async () => {
+    const readings = await analyzeLine('私の');
+    expect(readings.ipa).toBeTruthy();
+    expect(readings.furiganaIpa?.some((s) => s.rt)).toBe(true);
+  });
+
+  it('la línea IPA es la transcripción de la kana de la línea', async () => {
+    const readings = await analyzeLine('私の');
+    expect(readings.kana).toBeTruthy();
+    if (readings.kana && readings.ipa) {
+      expect(readings.ipa).toBe(kanaToIpa(readings.kana));
+    }
+  });
+
+  it('no genera ipa para scripts no japoneses', async () => {
+    const zh = await analyzeLine('你好');
+    expect(zh.ipa).toBeUndefined();
+    const ru = await analyzeLine('Привет');
+    expect(ru.ipa).toBeUndefined();
   });
 });
 

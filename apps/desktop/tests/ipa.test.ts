@@ -1,7 +1,7 @@
 // Test unitario del conversor kana→IPA (P0).
 // Casos fonéticos fijados en docs/PLAN_IPA_2026-08-03.md (convenciones NHK).
 import { describe, expect, it } from 'vitest';
-import { kanaToIpa, ipaForRuby } from './ipa';
+import { kanaToIpa, ipaForRuby } from '../electron/services/ipa';
 
 describe('kanaToIpa — gojūon básico', () => {
   it('vocales', () => {

@@ -57,11 +57,14 @@ export const LineView = React.memo(function LineView({
   const useWords =
     tier === 'current' && !!line.words && line.words.length > 0 && wordIndex != null;
 
-  const showRuby = (mode === 'furigana' || mode === 'furigana_romaji') && hasFurigana;
+  const showRuby = (mode === 'furigana' || mode === 'furigana_romaji' || mode === 'furigana_ipa') && hasFurigana;
   // En columna paralela el romaji bajo la línea sobra: la izquierda ya es la
   // pronunciación y la derecha el significado.
   const showRomajiBelow =
     mode === 'furigana_romaji' && hasRomaji && tier === 'current' && translationView !== 'side';
+  const showIpaBelow = mode === 'furigana_ipa' && !!line.ipa && tier === 'current' && translationView !== 'side';
+  // Ruby IPA: en furigana_ipa, el rt encima del kanji es IPA (no hiragana).
+  const rubySegments = mode === 'furigana_ipa' && line.furiganaIpa ? line.furiganaIpa : line.furigana;
 
   const translation = line.translation?.trim() ?? '';
   const hasTranslation = translation.length > 0;
@@ -76,11 +79,13 @@ export const LineView = React.memo(function LineView({
   let mainContent: React.ReactNode;
   if (mode === 'kana') {
     mainContent = splitHighlighted(hasKana ? line.kana! : line.text, frac, highlight);
+  } else if (mode === 'ipa') {
+    mainContent = splitHighlighted(line.ipa ?? line.text, frac, highlight);
   } else if (mode === 'romaji') {
     mainContent = splitHighlighted(hasRomaji ? line.romaji! : line.text, frac, highlight);
   } else if (showRuby) {
     if (!highlight) {
-      mainContent = line.furigana!.map((seg, i) =>
+      mainContent = rubySegments!.map((seg, i) =>
         seg.rt ? (
           <ruby key={i}>
             {seg.base}
@@ -91,7 +96,7 @@ export const LineView = React.memo(function LineView({
         ),
       );
     } else {
-      const { spoken, unspoken } = splitSegmentsAtFraction(line.furigana!, frac);
+      const { spoken, unspoken } = splitSegmentsAtFraction(rubySegments!, frac);
       mainContent = (
         <>
           {spoken.map((seg, i) =>
@@ -169,6 +174,7 @@ export const LineView = React.memo(function LineView({
       <div className="line-col line-col-main">
         <p className="line-main">{mainContent}</p>
         {showRomajiBelow && !concealed && <p className="line-romaji">{line.romaji}</p>}
+        {showIpaBelow && !concealed && <p className="line-romaji line-ipa">{line.ipa}</p>}
         {showTranslationBelow && <p className="line-translation">Traducción: {translation}</p>}
       </div>
       {melodyCol}

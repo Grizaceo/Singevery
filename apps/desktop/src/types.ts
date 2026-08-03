@@ -73,6 +73,10 @@ export interface LyricLine {
   romaji?: string;
   /** Texto en hiragana (modo kana, solo japonés). */
   kana?: string;
+  /** Transcripción IPA de la línea (modo ipa, solo japonés). */
+  ipa?: string;
+  /** Segmentos ruby con rt en IPA (modo furigana_ipa, solo japonés). */
+  furiganaIpa?: FuriganaSegment[];
   /** Traducción al idioma destino configurado por el usuario. */
   translation?: string;
   /**
@@ -99,6 +103,8 @@ export interface RenderLine {
   furigana?: FuriganaSegment[];
   romaji?: string;
   kana?: string;
+  ipa?: string;
+  furiganaIpa?: FuriganaSegment[];
   translation?: string;
   /** Palabras con timestamp (A2). Solo se usa para el resaltado por palabra. */
   words?: LyricWord[];
@@ -111,7 +117,7 @@ export interface RenderLine {
 }
 
 /** Modo de lectura elegido por el usuario (estado del renderer, persistido). */
-export type ReadingMode = 'original' | 'furigana' | 'romaji' | 'furigana_romaji' | 'kana';
+export type ReadingMode = 'original' | 'furigana' | 'romaji' | 'furigana_romaji' | 'kana' | 'ipa' | 'furigana_ipa';
 
 /**
  * Cómo se muestra la traducción (estado del renderer, persistido):

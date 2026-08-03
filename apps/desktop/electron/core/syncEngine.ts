@@ -27,6 +27,8 @@ function toRenderLine(line: LyricLine): RenderLine {
   if (line.furigana) out.furigana = line.furigana;
   if (line.romaji) out.romaji = line.romaji;
   if (line.kana) out.kana = line.kana;
+  if (line.ipa) out.ipa = line.ipa;
+  if (line.furiganaIpa) out.furiganaIpa = line.furiganaIpa;
   if (line.translation) out.translation = line.translation;
   if (line.words) out.words = line.words;
   if (line.start_ms != null) out.start_ms = line.start_ms;

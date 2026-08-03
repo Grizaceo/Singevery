@@ -65,6 +65,20 @@ const JAPANESE_OPTIONS: ModeOption[] = [
     title: 'Furigana + romaji (kanji con kana arriba y latín abajo)',
     needsAnnotations: true,
   },
+  {
+    key: 'ipa',
+    label: 'IPA',
+    title: 'IPA (fonética real: し → /ɕi/, no "shi")',
+    needsAnnotations: true,
+    scripts: ['japanese'],
+  },
+  {
+    key: 'furigana_ipa',
+    label: 'ふ+IPA',
+    title: 'Furigana + IPA (kanji con kana arriba y fonética IPA abajo)',
+    needsAnnotations: true,
+    scripts: ['japanese'],
+  },
 ];
 
 const GENERIC_OPTIONS: ModeOption[] = [
@@ -103,6 +117,8 @@ const HELP_EXAMPLES: Record<ScriptHint, { title: string; rows: { label: string; 
       { label: 'Kana', sample: 'わたしはひとり' },
       { label: 'Furigana', sample: <>私 con わたし encima del kanji</> },
       { label: 'Romaji', sample: 'watashi wa hitori' },
+      { label: 'IPA', sample: 'ɰatasaɕi ɰa çitoɾi' },
+      { label: 'Furigana + IPA', sample: <>私 con わたし encima y ɰatasaɕi debajo</> },
     ],
   },
   korean: {
