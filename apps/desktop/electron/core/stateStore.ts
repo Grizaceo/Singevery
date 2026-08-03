@@ -106,6 +106,14 @@ export class StateStore {
   private autoContrastColor: string | null = null;
   private autoLightBackground = false;
 
+  /** Último modelo emitido (para feedback de precisión / diagnósticos). */
+  private lastModel: RenderModel | null = null;
+
+  /** Devuelve el último RenderModel emitido, o null si nunca se emitió. */
+  getLastModel(): RenderModel | null {
+    return this.lastModel;
+  }
+
   constructor(
     window: BrowserWindow | null,
     offsetStore: OffsetStore = NULL_OFFSET_STORE,
@@ -849,6 +857,7 @@ export class StateStore {
   }
 
   private emit(model: RenderModel): void {
+    this.lastModel = model;
     if (this.window && !this.window.isDestroyed()) {
       this.window.webContents.send('render:model', model);
     }

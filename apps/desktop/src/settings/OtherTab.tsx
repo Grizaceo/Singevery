@@ -2,7 +2,8 @@
 // OtherTab.tsx — ajustes varios (Traducción + Ayuda y beta).
 // Extraído de SettingsPanel.tsx (modularización god file, 2026-08-03).
 // ============================================================================
-import type { TranslationSettings } from '../types';
+import { useEffect, useState } from 'react';
+import type { MatchStats, TranslationSettings } from '../types';
 import { SupportTicketForm } from '../SupportTicketForm';
 
 export interface OtherTabProps {
@@ -41,6 +42,41 @@ export function OtherTab({
     if (result.ok) setDiagnosticStatus(`Guardado en ${result.path ?? 'el archivo elegido'}`);
     else if (result.canceled) setDiagnosticStatus(null);
     else setDiagnosticStatus(result.error ?? 'No se pudo exportar el diagnóstico');
+  };
+
+  const [accuracyStats, setAccuracyStats] = useState<MatchStats | null>(null);
+  const [accuracyBusy, setAccuracyBusy] = useState(false);
+  const [accuracyStatus, setAccuracyStatus] = useState<string | null>(null);
+
+  // Carga las estadísticas de precisión al abrir la pestaña y después de cada
+  // feedback, para que el resumen refleje el último evento registrado.
+  const refreshAccuracyStats = async () => {
+    if (!window.api?.getMatchStats) return;
+    const result = await window.api.getMatchStats();
+    if (result.ok) setAccuracyStats(result.stats);
+  };
+  useEffect(() => {
+    void refreshAccuracyStats();
+  }, []);
+
+  const sendAccuracyFeedback = async (correct: boolean) => {
+    if (!window.api?.logMatchFeedback || accuracyBusy) return;
+    setAccuracyBusy(true);
+    try {
+      const result = await window.api.logMatchFeedback(correct);
+      if (result.ok) {
+        setAccuracyStatus(
+          correct
+            ? 'Gracias — quedó registrado como acierto.'
+            : 'Gracias — quedó registrado y la app está re-identificando.',
+        );
+        await refreshAccuracyStats();
+      } else {
+        setAccuracyStatus(result.error ?? 'No se pudo guardar el feedback');
+      }
+    } finally {
+      setAccuracyBusy(false);
+    }
   };
 
   const openPrivacy = async () => {
@@ -161,6 +197,46 @@ export function OtherTab({
           placeholder="es"
           onChange={(e) => patchTranslation({ targetLang: e.target.value })}
         />
+      </section>
+
+      {/* ---------------- Precisión del reconocimiento ---------------- */}
+      <section className="settings-section settings-accuracy">
+        <span className="settings-label settings-group-title">Precisión</span>
+        <p className="settings-hint">
+          ¿La canción identificada era la que sonaba? Tu feedback se guarda en la bitácora local
+          (matchlog.jsonl) y sirve para medir y mejorar el reconocimiento en las próximas
+          versiones. Si te equivocaste, la app re-identifica al momento.
+        </p>
+        <div className="settings-row settings-accuracy-actions">
+          <button
+            type="button"
+            className="chrome-button"
+            disabled={accuracyBusy}
+            onClick={() => void sendAccuracyFeedback(true)}
+          >
+            Estaba bien
+          </button>
+          <button
+            type="button"
+            className="chrome-button"
+            disabled={accuracyBusy}
+            onClick={() => void sendAccuracyFeedback(false)}
+          >
+            Se equivocó
+          </button>
+        </div>
+        {accuracyStats && (
+          <p className="settings-hint">
+            {accuracyStats.total > 0
+              ? `${Math.round(accuracyStats.accuracy * 100)}% de acierto · ${accuracyStats.matched} identificaciones · ${accuracyStats.correctFeedback} bien / ${accuracyStats.wrongFeedback} mal (tu feedback)`
+              : 'Aún no hay datos: identifica una canción y vuelve aquí.'}
+          </p>
+        )}
+        {accuracyStatus && (
+          <p className="settings-hint settings-support-status" role="status">
+            {accuracyStatus}
+          </p>
+        )}
       </section>
 
       {/* ---------------- Ayuda y beta ---------------- */}

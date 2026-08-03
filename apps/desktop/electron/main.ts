@@ -14,6 +14,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'path';
 import { StateStore } from './core/stateStore';
+import { MatchLog } from './core/matchLog';
 import { loadDotEnv } from './services/env';
 import {
   createPersistentSettings,
@@ -74,6 +75,7 @@ function configureElectronRuntime(): void {
 
 let mainWindow: BrowserWindow | null = null;
 let stateStore: StateStore | null = null;
+let matchLog: MatchLog | null = null;
 let lyricsCache: FileLyricsCache | null = null;
 let smtcReader: SmtcReader | null = null;
 let wakeWordReader: WakeWordReader | null = null;
@@ -411,9 +413,11 @@ function registerIpcHandlers(): void {
       }
       try {
         await stateStore.loadLyricsByMetadata(title, artist);
+        matchLog?.log({ type: 'load', source: 'manual', outcome: 'loaded', track: { title, artist } });
         return { ok: true };
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Error desconocido';
+        matchLog?.log({ type: 'load', source: 'manual', outcome: 'error', track: { title, artist }, error: message });
         return { ok: false, error: message };
       }
     },
@@ -551,11 +555,21 @@ function registerIpcHandlers(): void {
 
       try {
         stateStore.setRecognitionPhase('IDENTIFYING');
+        const startedAt = Date.now();
         const match = await recognitionService!.identify(Buffer.from(audio), mimeType);
+        const durationMs = Date.now() - startedAt;
         if (!match) {
           stateStore.setRecognitionPhase('LISTENING');
+          matchLog?.log({ type: 'identify', source: 'audd', outcome: 'no_match', durationMs });
           return { ok: true, matched: false };
         }
+        matchLog?.log({
+          type: 'identify',
+          source: 'audd',
+          outcome: 'matched',
+          durationMs,
+          track: { title: match.track.title, artist: match.track.artist },
+        });
 
         // applyMatch deja el estado en DISPLAYING/NO_LYRICS por su cuenta. NO
         // re-forzamos 'LISTENING' aquí: taparía la letra recién cargada (el
@@ -584,12 +598,26 @@ function registerIpcHandlers(): void {
         return { ok: false, matched: false, error: 'StateStore no inicializado' };
       }
       try {
+        const startedAt = Date.now();
         const match = await recognitionService!.identify(Buffer.from(audio), mimeType);
-        if (!match) return { ok: true, matched: false };
+        const durationMs = Date.now() - startedAt;
+        if (!match) {
+          matchLog?.log({ type: 'correct', source: 'audd', outcome: 'no_match', durationMs });
+          return { ok: true, matched: false };
+        }
         const changed = await stateStore.applyMatch(match, recordStartedAt);
+        matchLog?.log({
+          type: 'correct',
+          source: 'audd',
+          outcome: 'matched',
+          changed,
+          durationMs,
+          track: { title: match.track.title, artist: match.track.artist },
+        });
         return { ok: true, matched: true, changed };
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Error desconocido';
+        matchLog?.log({ type: 'correct', source: 'audd', outcome: 'error', error: message });
         return { ok: false, matched: false, error: message };
       }
     },
@@ -598,6 +626,35 @@ function registerIpcHandlers(): void {
   ipcMain.handle('recognition:stop', (): { ok: boolean } => {
     stateStore?.clearRecognition();
     return { ok: true };
+  });
+
+  // Feedback del usuario sobre la identificación (loop de mejora). 'wrong'
+  // dispara una re-identificación inmediata del audio en curso (recalibra sin
+  // tocar la letra); el evento queda en la bitácora para el análisis offline.
+  ipcMain.handle(
+    'matchlog:feedback',
+    async (_event, correct: boolean): Promise<{ ok: boolean; resynced?: boolean; error?: string }> => {
+      if (!matchLog || !stateStore || !mainWindow || mainWindow.isDestroyed()) {
+        return { ok: false, error: 'La ventana todavía no está lista' };
+      }
+      const model = stateStore.getLastModel();
+      matchLog.log({
+        type: 'feedback',
+        source: 'audd',
+        outcome: correct ? 'correct' : 'wrong',
+        track: model ? { title: model.track_title ?? 'desconocida', artist: model.track_artist ?? 'desconocido' } : undefined,
+      });
+      if (!correct) {
+        mainWindow.webContents.send('command:resync');
+        return { ok: true, resynced: true };
+      }
+      return { ok: true };
+    },
+  );
+
+  // Estadísticas agregadas de aciertos para la sección de Precisión.
+  ipcMain.handle('matchlog:stats', (): { ok: boolean; stats: import('./core/matchLog').MatchStats | null } => {
+    return { ok: true, stats: matchLog?.getStats() ?? null };
   });
 
   // Nivel de audio capturado (0..1): alimenta la pausa del reloj por silencio.
@@ -837,6 +894,14 @@ function bootstrap(): void {
   setupContentSecurityPolicy(session.defaultSession);
   setupMediaPermissions();
   setupSystemAudioCapture();
+  // Bitácora de aciertos del reconocimiento (loop de mejora). Nunca lanza:
+  // si el disco falla, la app sigue funcionando sin log.
+  try {
+    matchLog = new MatchLog(path.join(app.getPath('userData'), 'logs'));
+  } catch (err) {
+    console.error('[matchlog ERROR] No se pudo inicializar la bitácora:', err);
+    matchLog = null;
+  }
 
   let offsetStore: OffsetStore = NULL_OFFSET_STORE;
   let calibrationStore: CalibrationStore = NULL_CALIBRATION_STORE;

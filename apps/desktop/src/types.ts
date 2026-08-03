@@ -247,6 +247,30 @@ export interface SupportTicketDraft {
   includeDiagnostics: boolean;
 }
 
+/**
+ * Estadísticas agregadas del reconocimiento (loop de mejora). Refleja el
+ * contenido de userData/logs/matchlog.jsonl: aciertos por fuente, feedback
+ * explícito del usuario y la última entrada registrada.
+ */
+export interface MatchStats {
+  total: number;
+  matched: number;
+  noMatch: number;
+  errors: number;
+  correctFeedback: number;
+  wrongFeedback: number;
+  /** matched / (matched + noMatch + errors); 0 si aún no hay eventos decididos. */
+  accuracy: number;
+  bySource: Partial<Record<'audd' | 'shazam' | 'smtc' | 'manual', { total: number; matched: number }>>;
+  lastEntry: {
+    ts: string;
+    type: string;
+    source: string;
+    outcome: string;
+    track?: { title: string; artist: string };
+  } | null;
+}
+
 /** API expuesta por el preload script al renderer. */
 export interface DesktopApi {
   onRenderModel: (cb: (model: RenderModel) => void) => () => void;
@@ -288,6 +312,11 @@ export interface DesktopApi {
   ) => Promise<{ ok: boolean; matched: boolean; changed?: boolean; error?: string }>;
   stopRecognition: () => Promise<{ ok: boolean }>;
   reportLevel: (level: number) => Promise<{ ok: boolean }>;
+
+  // Loop de mejora: feedback del usuario sobre la precisión del
+  // reconocimiento + estadísticas agregadas (matchlog.jsonl en userData/logs).
+  logMatchFeedback: (correct: boolean) => Promise<{ ok: boolean; resynced?: boolean; error?: string }>;
+  getMatchStats: () => Promise<{ ok: boolean; stats: MatchStats | null }>;
   cacheStats: () => Promise<{ ok: boolean; entries: number; negatives: number; bytes: number }>;
   cacheClear: () => Promise<{ ok: boolean }>;
 

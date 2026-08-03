@@ -89,6 +89,14 @@ const api = {
 
   stopRecognition: (): Promise<{ ok: boolean }> => ipcRenderer.invoke('recognition:stop'),
 
+  // Loop de mejora: feedback del usuario sobre la precisión + estadísticas.
+  logMatchFeedback: (correct: boolean): Promise<{ ok: boolean; resynced?: boolean; error?: string }> =>
+    ipcRenderer.invoke('matchlog:feedback', correct),
+  getMatchStats: (): Promise<{
+    ok: boolean;
+    stats: import('../src/types').MatchStats | null;
+  }> => ipcRenderer.invoke('matchlog:stats'),
+
   reportLevel: (level: number): Promise<{ ok: boolean }> =>
     ipcRenderer.invoke('recognition:level', level),
 
