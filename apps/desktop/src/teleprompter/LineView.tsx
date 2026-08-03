@@ -20,6 +20,8 @@ interface LineViewProps {
   melody?: MelodyPoint[] | null;
   /** true = monitor de pitch activo (muestra la columna de entonación). */
   pitchActive?: boolean;
+  /** Sustituye la letra/lectura por una pista neutra para práctica de recuerdo. */
+  concealed?: boolean;
 }
 
 /** Texto con la parte ya cantada atenuada (resaltado interpolado). */
@@ -45,6 +47,7 @@ export const LineView = React.memo(function LineView({
   translationView = 'off',
   melody = null,
   pitchActive = false,
+  concealed = false,
 }: LineViewProps) {
   const hasFurigana = !!line.furigana && line.furigana.length > 0;
   const hasRomaji = !!line.romaji;
@@ -124,6 +127,10 @@ export const LineView = React.memo(function LineView({
     mainContent = splitHighlighted(line.text, frac, highlight);
   }
 
+  if (concealed) {
+    mainContent = <span className="line-concealed" aria-label="Letra oculta">••••••</span>;
+  }
+
   // Vista de texto paralelo: columnas alineadas por línea. La traducción se
   // ilumina con la MISMA fracción que la letra, para asociar tramo con tramo
   // (el orden de palabras entre idiomas no calza, así que es una guía visual,
@@ -161,7 +168,7 @@ export const LineView = React.memo(function LineView({
     <div className="line-row">
       <div className="line-col line-col-main">
         <p className="line-main">{mainContent}</p>
-        {showRomajiBelow && <p className="line-romaji">{line.romaji}</p>}
+        {showRomajiBelow && !concealed && <p className="line-romaji">{line.romaji}</p>}
         {showTranslationBelow && <p className="line-translation">Traducción: {translation}</p>}
       </div>
       {melodyCol}

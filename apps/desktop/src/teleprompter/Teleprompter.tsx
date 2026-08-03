@@ -15,6 +15,8 @@ interface Props {
   melody?: MelodyPoint[] | null;
   /** true = monitor de pitch activo (columnas de entonación visibles). */
   pitchActive?: boolean;
+  /** Oculta la letra actual para practicar escucha/recuerdo, sin detener el sync. */
+  recallHidden?: boolean;
 }
 
 // La prop `ghost` queda en la interfaz por compatibilidad (App la pasa), pero
@@ -26,6 +28,7 @@ export const Teleprompter = React.memo(function Teleprompter({
   chromeHidden = false,
   melody = null,
   pitchActive = false,
+  recallHidden = false,
 }: Props) {
   const containerStyle: React.CSSProperties = {
     transform: model.mirror_mode ? 'scaleX(-1)' : 'none',
@@ -102,6 +105,7 @@ export const Teleprompter = React.memo(function Teleprompter({
                 translationView={translationView}
                 melody={melody}
                 pitchActive={pitchActive}
+                concealed={recallHidden}
               />
             </div>
 

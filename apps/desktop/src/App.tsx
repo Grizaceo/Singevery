@@ -4,6 +4,7 @@ import { DebugLyricsInput } from './DebugLyricsInput';
 import { ChromeTopBar } from './ChromeTopBar';
 import { ChromeBottomBar } from './ChromeBottomBar';
 import { SettingsPanel } from './SettingsPanel';
+import { BetaWelcome } from './BetaWelcome';
 import { Pill } from './Pill';
 import { WidgetHandle } from './WidgetHandle';
 import { useReadingMode } from './useReadingMode';
@@ -23,6 +24,15 @@ declare global {
 }
 
 const CHROME_IDLE_MS = 2800;
+const BETA_WELCOME_KEY = 'singevery:beta-welcome:v1';
+
+function shouldShowBetaWelcome(): boolean {
+  try {
+    return window.localStorage.getItem(BETA_WELCOME_KEY) !== 'seen';
+  } catch {
+    return true;
+  }
+}
 
 function AppContent() {
   const model = useRenderModel();
@@ -30,7 +40,9 @@ function AppContent() {
   const [translationView, setTranslationView, translationState] = useTranslationView();
   const [chromeVisible, setChromeVisible] = useState(true);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [collapsed, setCollapsed] = useState(true);
+  const [welcomeOpen, setWelcomeOpen] = useState(shouldShowBetaWelcome);
+  const [recallHidden, setRecallHidden] = useState(false);
+  const [collapsed, setCollapsed] = useState(() => !welcomeOpen);
   const [ghost, setGhost] = useState(false);
   const [handleHovered, setHandleHovered] = useState(false);
   // Modo tangible forzado por atajo global (Ctrl+Alt+T). Es la vía de escape
@@ -127,6 +139,20 @@ function AppContent() {
     setGhost(false);
   }, []);
 
+  const dismissWelcome = useCallback(() => {
+    try {
+      window.localStorage.setItem(BETA_WELCOME_KEY, 'seen');
+    } catch {
+      // El recorrido sigue funcionando aunque el almacenamiento esté bloqueado.
+    }
+    setWelcomeOpen(false);
+  }, []);
+
+  const openSettingsFromWelcome = useCallback(() => {
+    dismissWelcome();
+    setSettingsOpen(true);
+  }, [dismissWelcome]);
+
   const isDisplaying = model.status === 'DISPLAYING';
 
   const reveal = useCallback(() => {
@@ -178,9 +204,9 @@ function AppContent() {
 
   useEffect(() => {
     const clickThrough =
-      !tangible && !settingsOpen && (ghost ? !handleHovered : chromeHidden);
+      !tangible && !settingsOpen && !welcomeOpen && (ghost ? !handleHovered : chromeHidden);
     window.api?.setClickThrough?.(clickThrough);
-  }, [ghost, handleHovered, chromeHidden, settingsOpen, tangible]);
+  }, [ghost, handleHovered, chromeHidden, settingsOpen, tangible, welcomeOpen]);
 
   const hasAnnotations =
     model.status === 'DISPLAYING' &&
@@ -211,6 +237,7 @@ function AppContent() {
         ghost={ghost}
         melody={melodyRef.reference}
         pitchActive={pitchMonitor.active}
+        recallHidden={recallHidden}
       />
       {tangible && (
         <div className="tangible-badge" role="status">
@@ -246,6 +273,9 @@ function AppContent() {
         <ChromeBottomBar
           recognition={recognition}
           api={window.api}
+          model={model}
+          recallHidden={recallHidden}
+          onRecallHiddenChange={setRecallHidden}
           pitchMonitor={pitchMonitor}
           melodyRef={melodyRef}
         />
@@ -256,6 +286,11 @@ function AppContent() {
         onClose={() => setSettingsOpen(false)}
         autoStart={autoStart}
         onAutoStartChange={setAutoStart}
+      />
+      <BetaWelcome
+        open={welcomeOpen}
+        onDone={dismissWelcome}
+        onOpenSettings={openSettingsFromWelcome}
       />
     </>
   );
