@@ -1,15 +1,23 @@
 // ============================================================================
 // StateStore — mantiene el estado canónico del widget y emite el RenderModel
 // al renderer por IPC a ~10 Hz.
+//
+// Modularizado (2026-08-03): el reloj de sincronía vive en SyncClock
+// (core/syncClock.ts), el auto-reintento en AutoRetry (core/autoRetry.ts) y
+// el auto-contraste en colorUtils (core/colorUtils.ts). StateStore conserva
+// la API pública original: arbitraje SMTC/mic, histéresis, carga de letra y
+// emisión del modelo.
 // ============================================================================
 
 import { BrowserWindow } from 'electron';
 import { SyncEngine } from './syncEngine';
+import { SyncClock } from './syncClock';
+import { AutoRetry } from './autoRetry';
+import { isColorDark } from './colorUtils';
 import {
   adjustMatchPosition,
   projectAnchoredPosition,
   computeDrift,
-  rampedCorrection,
   normalizeTrackKey,
 } from './syncTiming';
 import type { RecognitionPhase } from './syncTiming';
@@ -25,29 +33,15 @@ export type { RecognitionPhase };
 
 const IDLE_MESSAGE = 'Esperando música...';
 
-/** Umbral de luminancia relativa: por debajo = color de texto "oscuro". */
-function isColorDark(hex: string): boolean {
-  const match = hex.match(/^#([0-9a-fA-F]{6})$/);
-  if (!match) return false;
-  const n = parseInt(match[1], 16);
-  const r = ((n >> 16) & 0xff) / 255;
-  const g = ((n >> 8) & 0xff) / 255;
-  const b = (n & 0xff) / 255;
-  const lum = 0.2126 * r + 0.7152 * g + 0.0722 * b;
-  return lum < 0.45;
-}
-
-/** Nivel de audio (0..1) por debajo del cual consideramos silencio.
- *  Alineado con SILENCE_PEAK de capture.ts. */
-const SILENCE_LEVEL = 0.012;
-/** Silencio sostenido (ms) antes de congelar el reloj (evita pausar por un
- *  bache puntual de nivel). */
-const SILENCE_HOLD_MS = 400;
-
 export class StateStore {
   private engine: SyncEngine;
   private window: BrowserWindow | null;
   private intervalHandle: NodeJS.Timeout | null = null;
+
+  /** Reloj de sincronía delegado (posición, offsets, corrección, pausa). */
+  private readonly clock: SyncClock;
+  /** Auto-reintento de búsqueda de letra con backoff. */
+  private readonly autoRetry = new AutoRetry();
 
   private trackTitle: string | undefined;
   private trackArtist: string | undefined;
@@ -72,14 +66,6 @@ export class StateStore {
   // curso, su clave se registra aquí para resolver los próximos eventos por
   // comparación exacta (barata) y sin recargar la letra.
   private trackAliasKeys = new Set<string>();
-
-  // Auto-reintento de búsqueda de letra. Si una búsqueda termina en NO_LYRICS
-  // o ERROR, se reintenta solo (limpiando la caché negativa) con backoff, sin
-  // panel de rescate. Acotado por pista para no martillar a los proveedores.
-  private static readonly AUTO_RETRY_DELAYS_MS = [4000, 15000];
-  private autoRetryTimer: NodeJS.Timeout | null = null;
-  private autoRetryAttempt = 0;
-  private autoRetryPending = false;
 
   // Fuente externa suprimida. Cuando el micrófono maneja audio EXTERNO al PC
   // (parlante de la pieza, teléfono), las sesiones de medios de Windows (SMTC)
@@ -111,32 +97,6 @@ export class StateStore {
   /** Mínimo entre peticiones de resync: un ciclo de captura completo. */
   private static readonly RESYNC_THROTTLE_MS = 10_000;
 
-  /** Base de posición SIN offset crónico ni corrección: el "crudo" anclado. */
-  private positionMs = 0;
-  private anchoredAt = Date.now();
-
-  /** Offset de sincronización persistente (ms). Corrige atraso/adelanto crónico
-   *  de la estimación de AudD para esta pista. currentPosition() lo suma en
-   *  vivo. Positivo = adelanta la letra, negativo = la atrasa. */
-  private syncOffsetMs = 0;
-
-  /** Calibración global de latencia (ms, persistida). Compensa el adelanto
-   *  sistemático de AudD por el tiempo de grabación+identificación. Se aplica
-   *  al anclar cada match (adjustMatchPosition). */
-  private calibrationOffsetMs = 0;
-
-  /** Corrección suave de deriva en curso: se ramplea de 0 a este target. */
-  private correctionTargetMs = 0;
-  private correctionStartedAt = Date.now();
-
-  /** Reloj congelado: cuando la música está en pausa/silencio, la posición no
-   *  avanza con el reloj de pared (evita que la letra "se escape" en una pausa). */
-  private clockPaused = false;
-  /** Momento en que empezó el silencio actual (null = hay señal). */
-  private silentSince: number | null = null;
-
-  private readonly offsetStore: OffsetStore;
-  private readonly calibrationStore: CalibrationStore;
   private readonly displayStore: DisplayStore;
   private readonly translationStore: TranslationStore;
   private readonly readingStore: ReadingStore;
@@ -157,13 +117,11 @@ export class StateStore {
   ) {
     this.window = window;
     this.engine = new SyncEngine();
-    this.offsetStore = offsetStore;
     this.lyricsService = lyricsService;
-    this.calibrationStore = calibrationStore;
     this.displayStore = displayStore;
     this.translationStore = translationStore;
     this.readingStore = readingStore;
-    this.calibrationOffsetMs = calibrationStore.get();
+    this.clock = new SyncClock(offsetStore, calibrationStore);
     this.applyDisplaySettings();
     this.applyReadingSettings();
   }
@@ -243,44 +201,7 @@ export class StateStore {
       clearInterval(this.intervalHandle);
       this.intervalHandle = null;
     }
-    this.cancelAutoRetry();
-  }
-
-  // ==========================================================================
-  // Auto-reintento de búsqueda de letra (reemplaza al panel de rescate).
-  // ==========================================================================
-
-  private cancelAutoRetry(): void {
-    if (this.autoRetryTimer) {
-      clearTimeout(this.autoRetryTimer);
-      this.autoRetryTimer = null;
-    }
-    this.autoRetryPending = false;
-  }
-
-  /** Programa un reintento automático de la búsqueda que acaba de fallar. */
-  private scheduleAutoRetry(
-    trackKey: string,
-    title: string,
-    artist: string,
-    album: string | null,
-    durationMs: number | null,
-  ): void {
-    if (this.autoRetryAttempt >= StateStore.AUTO_RETRY_DELAYS_MS.length) return;
-    const delay = StateStore.AUTO_RETRY_DELAYS_MS[this.autoRetryAttempt];
-    this.autoRetryPending = true;
-    this.autoRetryTimer = setTimeout(() => {
-      this.autoRetryTimer = null;
-      this.autoRetryPending = false;
-      // La pista cambió mientras esperábamos: el reintento ya no aplica.
-      if (this.currentTrackKey !== trackKey) return;
-      this.autoRetryAttempt += 1;
-      this.retrySearch(title, artist, album, durationMs).catch(() => {
-        /* el estado ERROR ya quedó reflejado por loadLyricsByMetadata */
-      });
-    }, delay);
-    // No retener el proceso vivo por un reintento pendiente.
-    this.autoRetryTimer.unref?.();
+    this.autoRetry.cancel();
   }
 
   /** Reintenta la búsqueda limpiando la entrada de caché (incluida la negativa)
@@ -295,15 +216,15 @@ export class StateStore {
     // Llamada opcional: los dobles de test del LyricsService pueden no tenerla.
     await this.lyricsService.forgetTrack?.(key);
     const now = Date.now();
-    const wasPaused = this.clockPaused;
+    const wasPaused = this.clock.isClockPaused();
     // Ancla cruda actual (sin offset crónico: loadLyricsByMetadata lo re-suma).
-    const rawAnchor = Math.max(0, this.currentPosition(now) - this.syncOffsetMs);
+    const rawAnchor = Math.max(0, this.clock.getDisplayedPosition(now) - this.clock.getSyncOffsetMs());
     try {
       await this.loadLyricsByMetadata(title, artist, rawAnchor, now, album, durationMs);
     } catch {
       // loadLyricsByMetadata ya dejó overrideStatus en ERROR y re-programó.
     }
-    if (wasPaused) this.pauseClock();
+    if (wasPaused) this.clock.pauseClock();
   }
 
   setLyrics(lyrics: TimedLyrics | null, title?: string, artist?: string): void {
@@ -322,19 +243,19 @@ export class StateStore {
     anchorAt = Date.now(),
   ): void {
     const trackKey = normalizeTrackKey(artist, title);
-    this.cancelAutoRetry();
+    this.autoRetry.cancel();
     this.trackAliasKeys.clear();
     this.pendingChangeKey = null;
     this.pendingChangeCount = 0;
     this.currentTrackKey = trackKey;
     this.lastMatchKey = trackKey;
-    this.autoRetryAttempt = 0;
-    this.syncOffsetMs = this.offsetStore.get(trackKey);
+    this.autoRetry.reset();
+    this.clock.setCurrentTrackKey(trackKey);
+    this.clock.loadSyncOffset(trackKey);
     this.overrideStatus = null;
-    this.clockPaused = false;
-    this.silentSince = null;
+    this.clock.resetPlaybackState();
     this.setLyrics(lyrics, title, artist);
-    this.reanchor(Math.max(0, anchorMs) + this.syncOffsetMs, anchorAt);
+    this.clock.reanchor(Math.max(0, anchorMs) + this.clock.getSyncOffsetMs(), anchorAt);
   }
 
   /** Traduce la letra actual al idioma destino y actualiza caché. */
@@ -377,24 +298,6 @@ export class StateStore {
     return { ok: true };
   }
 
-  /**
-   * Re-ancla para que la posición MOSTRADA sea `displayedPos` en `at`, y resetea
-   * la corrección de deriva. `displayedPos` ya incluye el offset crónico; lo
-   * restamos para guardar la base cruda (currentPosition() lo vuelve a sumar).
-   */
-  private reanchor(displayedPos: number, at: number = Date.now()): void {
-    this.positionMs = displayedPos - this.syncOffsetMs;
-    this.anchoredAt = at;
-    this.correctionTargetMs = 0;
-    this.correctionStartedAt = at;
-  }
-
-  /** Consolida la corrección en curso en la base sin alterar la posición visible. */
-  private settle(now: number): void {
-    if (this.correctionTargetMs === 0) return;
-    this.reanchor(this.currentPosition(now), now);
-  }
-
   async loadLyricsByMetadata(
     title: string,
     artist: string,
@@ -407,16 +310,15 @@ export class StateStore {
     // Identidad nueva: limpiar aliases y contador de reintentos de la anterior.
     if (trackKey !== this.currentTrackKey) {
       this.trackAliasKeys.clear();
-      this.autoRetryAttempt = 0;
+      this.autoRetry.reset();
     }
-    this.cancelAutoRetry();
+    this.autoRetry.cancel();
     this.currentTrackKey = trackKey;
     this.lastMatchKey = trackKey;
-    this.syncOffsetMs = this.offsetStore.get(trackKey); // offset crónico persistido
-    this.correctionTargetMs = 0;
+    this.clock.setCurrentTrackKey(trackKey);
+    this.clock.loadSyncOffset(trackKey); // offset crónico persistido + resetea corrección
     // Cargar una pista nueva implica que hay audio sonando: salir de pausa.
-    this.clockPaused = false;
-    this.silentSince = null;
+    this.clock.resetPlaybackState();
     this.overrideStatus = 'FETCHING_LYRICS';
     this.trackTitle = title;
     this.trackArtist = artist;
@@ -438,9 +340,9 @@ export class StateStore {
       const projected = projectAnchoredPosition(anchorMs, anchorAt);
 
       this.overrideStatus = null;
-      this.autoRetryAttempt = 0;
+      this.autoRetry.reset();
       this.setLyrics(lyrics, title, artist);
-      this.reanchor(projected.positionMs + this.syncOffsetMs, projected.anchorAt);
+      this.clock.reanchor(projected.positionMs + this.clock.getSyncOffsetMs(), projected.anchorAt);
     } catch (err) {
       if (this.currentTrackKey === trackKey) {
         this.setLyrics(null, title, artist);
@@ -449,6 +351,19 @@ export class StateStore {
       }
       throw err;
     }
+  }
+
+  /** Programa el reintento automático delegando en AutoRetry. */
+  private scheduleAutoRetry(
+    trackKey: string,
+    title: string,
+    artist: string,
+    album: string | null,
+    durationMs: number | null,
+  ): void {
+    this.autoRetry.schedule(trackKey, () => this.currentTrackKey, () =>
+      this.retrySearch(title, artist, album, durationMs).then(() => undefined),
+    );
   }
 
   /**
@@ -494,7 +409,7 @@ export class StateStore {
 
     const anchor =
       recordStartedAt != null
-        ? adjustMatchPosition(match, recordStartedAt, this.calibrationOffsetMs)
+        ? adjustMatchPosition(match, recordStartedAt, this.clock.getCalibrationOffsetMs())
         : { positionMs: match.position_ms, anchorAt: match.matched_at };
 
     // Misma canción (por clave exacta, alias o identidad difusa — la metadata
@@ -592,26 +507,24 @@ export class StateStore {
     const now = Date.now();
     // Estimación real "ahora" según el match = crudo proyectado + offset crónico.
     const estimatedNow =
-      anchor.positionMs + Math.max(0, now - anchor.anchorAt) + this.syncOffsetMs;
-    const decision = computeDrift(estimatedNow, this.currentPosition(now));
+      anchor.positionMs + Math.max(0, now - anchor.anchorAt) + this.clock.getSyncOffsetMs();
+    const decision = computeDrift(estimatedNow, this.clock.getDisplayedPosition(now));
 
     // Diagnóstico de sincronía: el signo del error debe alternar alrededor de
     // 0. Un sesgo persistente del mismo signo delata un problema de anclaje
     // (referencia del position_ms del proveedor), no deriva del reloj.
     console.log(
       `[sync] error=${Math.round(decision.errorMs)}ms acción=${decision.action} ` +
-        `(mostrado=${Math.round(this.currentPosition(now))}ms, medido=${Math.round(estimatedNow)}ms)`,
+        `(mostrado=${Math.round(this.clock.getDisplayedPosition(now))}ms, medido=${Math.round(estimatedNow)}ms)`,
     );
 
     if (decision.action === 'ignore') return;
     if (decision.action === 'snap') {
-      this.reanchor(estimatedNow, now);
+      this.clock.reanchor(estimatedNow, now);
       return;
     }
     // 'correct': consolidar lo absorbido hasta ahora y rampear el resto.
-    this.settle(now);
-    this.correctionTargetMs = decision.correctionMs;
-    this.correctionStartedAt = now;
+    this.clock.startCorrection(decision.correctionMs, now);
   }
 
   clearRecognition(): void {
@@ -623,61 +536,13 @@ export class StateStore {
     }
   }
 
-  private currentPosition(now: number = Date.now()): number {
-    // Reloj congelado (pausa/silencio): no acumulamos tiempo de pared.
-    const elapsed = this.clockPaused ? 0 : Math.max(0, now - this.anchoredAt);
-    return (
-      this.positionMs +
-      elapsed +
-      this.syncOffsetMs +
-      rampedCorrection(this.correctionTargetMs, this.correctionStartedAt, now)
-    );
-  }
-
-  /**
-   * Reporta el nivel de audio capturado (0..1). Silencio sostenido congela el
-   * reloj; cuando vuelve la señal lo reanuda desde donde quedó. Es la capa de
-   * pausa "de fallback" (sin reproductor): SMTC, cuando esté, da la pausa
-   * instantánea vía setPlaybackState/setExternalPosition.
-   */
-  reportAudioLevel(level: number, at: number = Date.now()): void {
-    if (level < SILENCE_LEVEL) {
-      if (this.silentSince == null) {
-        this.silentSince = at;
-      } else if (!this.clockPaused && at - this.silentSince >= SILENCE_HOLD_MS) {
-        // Congela en el instante en que EMPEZÓ el silencio (no tras el hold),
-        // para no arrastrar los ~400ms de deadband en la posición congelada.
-        this.pauseClock(this.silentSince);
-      }
-    } else {
-      this.silentSince = null;
-      if (this.clockPaused) this.resumeClock(at);
-    }
-  }
-
-  /** Congela el reloj en la posición mostrada actual. */
-  pauseClock(at: number = Date.now()): void {
-    if (this.clockPaused) return;
-    // Consolida SIEMPRE la posición (incluido el tiempo acumulado) antes de
-    // congelar, no solo la corrección en curso.
-    this.reanchor(this.currentPosition(at), at);
-    this.clockPaused = true;
-  }
-
-  /** Reanuda el reloj desde la posición congelada, sin salto. */
-  resumeClock(at: number = Date.now()): void {
-    if (!this.clockPaused) return;
-    this.reanchor(this.currentPosition(at), at);
-    this.clockPaused = false;
-  }
-
-  isClockPaused(): boolean {
-    return this.clockPaused;
-  }
+  // -------------------------------------------------------------------------
+  // Reloj de sincronía (delegado a SyncClock)
+  // -------------------------------------------------------------------------
 
   /** Posición mostrada (con offset y corrección) en `at`. Público para tests/UI. */
   getDisplayedPosition(at: number = Date.now()): number {
-    return this.currentPosition(at);
+    return this.clock.getDisplayedPosition(at);
   }
 
   /**
@@ -686,9 +551,7 @@ export class StateStore {
    * Usado por seek (rueda del mouse) y por ajuste fino.
    */
   nudgePosition(deltaMs: number): void {
-    const now = Date.now();
-    const next = Math.max(0, this.currentPosition(now) + deltaMs);
-    this.reanchor(next, now);
+    this.clock.nudgePosition(deltaMs);
   }
 
   /**
@@ -698,131 +561,49 @@ export class StateStore {
   seekToLine(direction: -1 | 1): boolean {
     const lyrics = this.engine.getLyrics();
     if (!lyrics || lyrics.lines.length === 0) return false;
-
-    const lines = lyrics.lines;
-    const now = Date.now();
-    const cur = this.currentPosition(now);
-
-    let target: number | null = null;
-    if (direction === 1) {
-      // Siguiente línea cuyo start_ms > posición actual.
-      for (const line of lines) {
-        if (line.start_ms > cur) {
-          target = line.start_ms;
-          break;
-        }
-      }
-      if (target == null) target = lines[lines.length - 1].start_ms;
-    } else {
-      // Línea anterior: el start_ms más grande que sea < (cur - pequeño margen)
-      // para no quedarse en la línea actual si estamos justo en su inicio.
-      const margin = 300;
-      let prev: number | null = null;
-      for (const line of lines) {
-        if (line.start_ms < cur - margin) {
-          prev = line.start_ms;
-        } else {
-          break;
-        }
-      }
-      target = prev ?? lines[0].start_ms;
-    }
-
-    this.reanchor(Math.max(0, target), now);
-    return true;
+    return this.clock.seekToLine(direction, lyrics.lines.map((l) => l.start_ms));
   }
 
   /**
-   * Ajusta el offset crónico (ms) y lo persiste para la pista actual.
-   * Como currentPosition() suma syncOffsetMs en vivo, el cambio se refleja
-   * solo (la posición mostrada salta `deltaMs` en el próximo tick).
+   * Reporta el nivel de audio capturado (0..1). Silencio sostenido congela el
+   * reloj; cuando vuelve la señal lo reanuda desde donde quedó. Es la capa de
+   * pausa "de fallback" (sin reproductor): SMTC, cuando esté, da la pausa
+   * instantánea vía setPlaybackState/setExternalPosition.
    */
-  adjustSyncOffset(deltaMs: number): void {
-    this.syncOffsetMs += deltaMs;
-    if (this.currentTrackKey) {
-      this.offsetStore.set(this.currentTrackKey, this.syncOffsetMs);
-    }
-    this.learnGlobalLatency();
+  reportAudioLevel(level: number, at: number = Date.now()): void {
+    this.clock.reportAudioLevel(level, at);
   }
 
-  // ==========================================================================
-  // Latencia global — "todas las canciones van un poco atrasadas".
-  //
-  // El offset por pista existe para problemas DE esa pista (un LRC mal
-  // timeado). Si el usuario corrige varias pistas distintas en el MISMO
-  // sentido y por una magnitud parecida, eso no es de las pistas: es latencia
-  // del equipo (captura del audio del sistema, anclaje del reconocedor, etc.).
-  // Se promueve a la calibración global para que las canciones NUEVAS ya
-  // nazcan sincronizadas, en vez de tener que corregir una por una.
-  // ==========================================================================
-
-  /** Pistas distintas con corrección coherente antes de aprender la latencia. */
-  private static readonly LATENCY_LEARN_MIN_TRACKS = 3;
-  /** Por debajo de esto no vale la pena mover la calibración global. */
-  private static readonly LATENCY_LEARN_MIN_MS = 250;
-
-  /**
-   * Mueve `deltaMs` desde los offsets por pista hacia la calibración global,
-   * sin que la letra salte: la calibración solo actúa al anclar matches
-   * futuros, así que la posición mostrada se re-ancla en su valor actual.
-   */
-  private promoteToCalibration(deltaMs: number): void {
-    if (!deltaMs) return;
-    const now = Date.now();
-    const displayed = this.currentPosition(now);
-
-    this.calibrationOffsetMs += deltaMs;
-    this.calibrationStore.set(this.calibrationOffsetMs);
-    // Descontar de lo ya guardado para no contar el desfase dos veces.
-    this.offsetStore.rebase?.(deltaMs);
-    this.syncOffsetMs -= deltaMs;
-    if (this.currentTrackKey) {
-      this.offsetStore.set(this.currentTrackKey, this.syncOffsetMs);
-    }
-    this.reanchor(displayed, now);
+  /** Congela el reloj en la posición mostrada actual. */
+  pauseClock(at: number = Date.now()): void {
+    this.clock.pauseClock(at);
   }
 
-  /**
-   * Aplica el ajuste de la pista actual a TODAS las canciones (acción manual
-   * del usuario: "esto pasa siempre, no solo aquí"). Devuelve la calibración
-   * global resultante.
-   */
-  applyOffsetToAllTracks(): number {
-    this.promoteToCalibration(this.syncOffsetMs);
-    return this.calibrationOffsetMs;
+  /** Reanuda el reloj desde la posición congelada, sin salto. */
+  resumeClock(at: number = Date.now()): void {
+    this.clock.resumeClock(at);
   }
 
-  /** Detecta latencia global a partir de las correcciones ya hechas. */
-  private learnGlobalLatency(): void {
-    const entries = this.offsetStore.entries?.();
-    if (!entries) return;
-    const values = Object.values(entries).filter((v) => Math.abs(v) >= StateStore.LATENCY_LEARN_MIN_MS);
-    if (values.length < StateStore.LATENCY_LEARN_MIN_TRACKS) return;
-    // Todas en el mismo sentido: si las hay de ambos signos, no es global.
-    const positive = values.every((v) => v > 0);
-    const negative = values.every((v) => v < 0);
-    if (!positive && !negative) return;
-
-    const sorted = [...values].sort((a, b) => a - b);
-    const mid = Math.floor(sorted.length / 2);
-    const median =
-      sorted.length % 2 === 1 ? sorted[mid] : Math.round((sorted[mid - 1] + sorted[mid]) / 2);
-    if (Math.abs(median) < StateStore.LATENCY_LEARN_MIN_MS) return;
-
-    console.log(
-      `[sync] latencia global aprendida de ${values.length} pistas: ${median}ms ` +
-        `(calibración ${this.calibrationOffsetMs} → ${this.calibrationOffsetMs + median})`,
-    );
-    this.promoteToCalibration(median);
+  isClockPaused(): boolean {
+    return this.clock.isClockPaused();
   }
 
   getSyncOffsetMs(): number {
-    return this.syncOffsetMs;
+    return this.clock.getSyncOffsetMs();
   }
 
   /** Calibración global persistida (ms, latencia AudD). */
   getCalibrationOffsetMs(): number {
-    return this.calibrationOffsetMs;
+    return this.clock.getCalibrationOffsetMs();
+  }
+
+  /**
+   * Ajusta el offset crónico (ms) y lo persiste para la pista actual.
+   * Como la posición mostrada suma syncOffsetMs en vivo, el cambio se refleja
+   * solo (la letra salta `deltaMs` en el próximo tick).
+   */
+  adjustSyncOffset(deltaMs: number): void {
+    this.clock.adjustSyncOffset(deltaMs, this.currentTrackKey);
   }
 
   /**
@@ -832,19 +613,25 @@ export class StateStore {
    * queda para los próximos matches.
    */
   adjustCalibrationOffset(deltaMs: number): void {
-    this.calibrationOffsetMs += deltaMs;
-    this.calibrationStore.set(this.calibrationOffsetMs);
-    // Reflejar en vivo: desplaza la posición mostrada el delta.
-    this.nudgePosition(deltaMs);
+    this.clock.adjustCalibrationOffset(deltaMs);
   }
 
-  // ==========================================================================
+  /**
+   * Aplica el ajuste de la pista actual a TODAS las canciones (acción manual
+   * del usuario: "esto pasa siempre, no solo aquí"). Devuelve la calibración
+   * global resultante.
+   */
+  applyOffsetToAllTracks(): number {
+    return this.clock.applyOffsetToAllTracks();
+  }
+
+  // -------------------------------------------------------------------------
   // Fuente externa de posición (SMTC / reproductor del SO) — Capa b.
   //
   // El SO es la fuente de verdad del playhead: pausa/seek/skip instantáneos y
   // sin deriva. Estos métodos los llama el lector de SMTC en el proceso main.
   // AudD queda como fallback cuando no hay reproductor accesible.
-  // ==========================================================================
+  // -------------------------------------------------------------------------
 
   /**
    * Suprime (o rehabilita) la fuente externa SMTC. En modo micrófono con audio
@@ -874,8 +661,8 @@ export class StateStore {
     if (this.externalInputSuppressed) return;
     // Sesión no confiable (es de OTRA pista): su play/pausa no aplica.
     if (!this.externalTrusted) return;
-    if (playing) this.resumeClock(at);
-    else this.pauseClock(at);
+    if (playing) this.clock.resumeClock(at);
+    else this.clock.pauseClock(at);
   }
 
   /**
@@ -895,21 +682,19 @@ export class StateStore {
     // correcciones de AudD gobiernan hasta que la sesión vuelva a coincidir.
     if (!this.externalTrusted) return;
     if (!playing) {
-      this.pauseClock(at);
+      this.clock.pauseClock(at);
       return;
     }
-    if (this.clockPaused) this.resumeClock(at);
-    const target = Math.max(0, positionMs) + this.syncOffsetMs;
-    const decision = computeDrift(target, this.currentPosition(at));
+    if (this.clock.isClockPaused()) this.clock.resumeClock(at);
+    const target = Math.max(0, positionMs) + this.clock.getSyncOffsetMs();
+    const decision = computeDrift(target, this.clock.getDisplayedPosition(at));
     if (decision.action === 'ignore') return;
     if (decision.action === 'snap') {
-      this.reanchor(target, at);
+      this.clock.reanchor(target, at);
       return;
     }
     // 'correct': suaviza el microsalto con la misma rampa que la deriva de AudD.
-    this.settle(at);
-    this.correctionTargetMs = decision.correctionMs;
-    this.correctionStartedAt = at;
+    this.clock.startCorrection(decision.correctionMs, at);
   }
 
   /**
@@ -974,7 +759,7 @@ export class StateStore {
       // en vez de esperar el próximo ciclo de corrección (~18s).
       if (isNewSignal) this.requestResync(at);
       return false;
-    } else if (!playing && this.engine.getLyrics() && !this.clockPaused) {
+    } else if (!playing && this.engine.getLyrics() && !this.clock.isClockPaused()) {
       // Una sesión EN PAUSA no roba la letra de lo que está sonando: Windows a
       // veces parpadea la "sesión actual" entre apps (navegador ↔ Spotify) y
       // ese flip transitorio no debe recargar nada.
@@ -987,7 +772,7 @@ export class StateStore {
     await this.loadLyricsByMetadata(title, artist, positionMs, at, album, durationMs);
     this.externalTrusted = true;
     this.lastUnmatchedExternal = null;
-    if (!playing) this.pauseClock(at);
+    if (!playing) this.clock.pauseClock(at);
     return true;
   }
 
@@ -1000,9 +785,9 @@ export class StateStore {
       case 'FETCHING_LYRICS':
         return 'Buscando letra...';
       case 'NO_LYRICS':
-        return this.autoRetryPending ? 'Sin letra aún · reintentando...' : 'Sin letra disponible';
+        return this.autoRetry.isPending ? 'Sin letra aún · reintentando...' : 'Sin letra disponible';
       case 'ERROR':
-        return this.autoRetryPending ? 'Error al buscar letra · reintentando...' : 'Error al buscar letra';
+        return this.autoRetry.isPending ? 'Error al buscar letra · reintentando...' : 'Error al buscar letra';
       default:
         return IDLE_MESSAGE;
     }
@@ -1051,14 +836,14 @@ export class StateStore {
       return;
     }
 
-    const model = this.engine.getRenderModel(this.currentPosition(), 'DISPLAYING');
+    const model = this.engine.getRenderModel(this.clock.getDisplayedPosition(), 'DISPLAYING');
     const full: RenderModel = {
       ...model,
       ...this.resolveTextAppearance(),
       ...this.resolveHandleAppearance(),
       track_title: this.trackTitle,
       track_artist: this.trackArtist,
-      position_ms: Math.round(this.currentPosition()),
+      position_ms: Math.round(this.clock.getDisplayedPosition()),
     };
     this.emit(full);
   }
