@@ -52,6 +52,9 @@ export function SettingsPanel({
   onClose,
   autoStart,
   onAutoStartChange,
+  teacherRef,
+  trackTitle,
+  trackArtist,
 }: SettingsPanelProps) {
   const [settingsTab, setSettingsTab] = useState<SettingsTab>('display');
   const [display, setDisplay] = useState<DisplaySettings>(DEFAULT_DISPLAY);
