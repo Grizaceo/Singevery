@@ -294,6 +294,25 @@ ruby.line-spoken > rt {
     text-align: left;
 }
 
+/* Modo letra simple (sin traducción): la letra ocupa todo el ancho y queda
+   centrada. Antes el grid fijo 1fr 1fr reservaba la mitad del ancho para una
+   columna de traducción vacía, desplazando la letra del centro. Con la
+   columna de entonación activa (práctica vocal), la letra se centra en el
+   espacio restante y la melodía va a la derecha. */
+.line-row:not(:has(.line-col-translation)) {
+    grid-template-columns: 1fr auto;
+}
+
+.line-row:not(:has(.line-col-translation)) .line-col-main {
+    text-align: center;
+}
+
+/* Traducción lado a lado + práctica vocal: tres columnas alineadas
+   (letra | traducción | melodía). */
+.line-row:has(.line-col-translation):has(.line-col-melody) {
+    grid-template-columns: 1fr 1fr auto;
+}
+
 /* La traducción acompaña, no compite: algo más chica y en cursiva, pero
    suficientemente legible como para leerse de un vistazo. */
 .line-translation-side {
@@ -314,6 +333,16 @@ ruby.line-spoken > rt {
     .line-col-main,
     .line-col-translation {
         text-align: center;
+    }
+
+    /* Overrides de los grids con :has (especificidad mayor): en ventana
+       angosta también se apila la columna de entonación. */
+    .line-row:not(:has(.line-col-translation)) {
+        grid-template-columns: 1fr;
+    }
+
+    .line-row:has(.line-col-translation):has(.line-col-melody) {
+        grid-template-columns: 1fr;
     }
 
     .lyrics-side-header {
