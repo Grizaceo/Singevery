@@ -616,6 +616,16 @@ function registerIpcHandlers(): void {
           return { ok: true, matched: false };
         }
         const changed = await stateStore.applyMatch(match, recordStartedAt);
+        // El mismo chunk sirve para medir el desfase de la letra por energía
+        // vocal: ya está grabado y ya se sabe a qué posición corresponde.
+        // No aplica nada salvo que SINGEVERY_ENERGY_SYNC esté encendido.
+        if (!changed) {
+          try {
+            stateStore.reportAudioWindow(audio, recordStartedAt);
+          } catch (err) {
+            console.warn('[energía] la correlación falló (se ignora):', err);
+          }
+        }
         matchLog?.log({
           type: 'correct',
           source: 'audd',
@@ -955,6 +965,9 @@ function bootstrap(): void {
     appSettings?.readingStore ?? NULL_READING_STORE,
   );
   stateStore.applyReadingSettings();
+  // Corrección de sincronía por energía vocal: mide siempre (queda en /debug),
+  // corrige solo si se enciende a propósito. Ver docs/DIAGNOSTICO.md.
+  stateStore.setEnergySyncEnabled(process.env.SINGEVERY_ENERGY_SYNC === '1');
   // Cambio de pista detectado por el SO pero no confirmable por metadata:
   // pedirle al renderer que re-identifique por audio de inmediato.
   stateStore.setResyncRequester(() => {

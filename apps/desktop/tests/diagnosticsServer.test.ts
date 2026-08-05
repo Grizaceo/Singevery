@@ -34,6 +34,7 @@ function stateFixture(overrides: Partial<StateDiagnostics> = {}): StateDiagnosti
       offsetMs: -250,
       calibrationOffsetMs: 0,
       paused: false,
+      energy: null,
     },
     ...overrides,
   };

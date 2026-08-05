@@ -23,6 +23,16 @@ import {
 import type { RecognitionPhase } from './syncTiming';
 import { looksLikeSameTrack } from '../services/lyrics/normalizeQuery';
 import { isDistinctiveTitle, scoreTitleDistinctiveness } from '../services/lyrics/titleDistinctiveness';
+import {
+  ENERGY_BIN_MS,
+  ENERGY_SYNC_MAX_CORRECTION_MS,
+  ENERGY_SYNC_MIN_CONFIDENCE,
+  buildLyricsActivityMask,
+  buildVocalMaskFromPcm,
+  correlateEnergyMask,
+  type EnergyCorrelation,
+} from './energySync';
+import { decodeWav } from './wavDecode';
 import { LyricsService, defaultLyricsService } from '../services/lyrics/lyricsService';
 import { NULL_OFFSET_STORE, NULL_CALIBRATION_STORE, NULL_DISPLAY_STORE, NULL_TRANSLATION_STORE, NULL_READING_STORE } from '../services/settings';
 import type { OffsetStore, CalibrationStore, DisplayStore, TranslationStore, ReadingStore } from '../services/settings';
@@ -75,7 +85,21 @@ export interface StateDiagnostics {
     offsetMs: number;
     calibrationOffsetMs: number;
     paused: boolean;
+    /** Última medición por correlación de energía vocal (null si no hubo). */
+    energy: EnergyMeasurement | null;
   };
+}
+
+/** Resultado de una pasada de correlación de energía, con su desenlace. */
+export interface EnergyMeasurement extends EnergyCorrelation {
+  at: number;
+  /** Posición nominal del inicio de la ventana analizada. */
+  windowStartMs: number;
+  bins: number;
+  /** true si la corrección se aplicó al reloj (false = solo se observó). */
+  applied: boolean;
+  /** Por qué no se aplicó, cuando corresponde. */
+  skipped?: string;
 }
 
 export class StateStore {
@@ -176,6 +200,20 @@ export class StateStore {
   /** Último modelo emitido (para feedback de precisión / diagnósticos). */
   private lastModel: RenderModel | null = null;
 
+  /** Última correlación de energía vocal (se expone en /debug). */
+  private lastEnergyMeasurement: EnergyMeasurement | null = null;
+  /**
+   * Si la corrección por energía TOCA el reloj o solo se observa.
+   *
+   * Arranca apagada a propósito. La correlación se valida bien con señales
+   * sintéticas, pero mover la letra sola con música real es el peor fallo
+   * posible de este widget: si la medición se equivoca, el usuario ve la letra
+   * saltar sin motivo. En modo observación la medición igual queda registrada
+   * en /debug, así que se puede comprobar contra canciones reales ANTES de
+   * dejarla mandar. Se enciende con SINGEVERY_ENERGY_SYNC=1.
+   */
+  private energySyncEnabled = false;
+
   /** Devuelve el último RenderModel emitido, o null si nunca se emitió. */
   getLastModel(): RenderModel | null {
     return this.lastModel;
@@ -234,6 +272,7 @@ export class StateStore {
         offsetMs: this.clock.getSyncOffsetMs(),
         calibrationOffsetMs: this.clock.getCalibrationOffsetMs(),
         paused: this.clock.isClockPaused(),
+        energy: this.lastEnergyMeasurement,
       },
     };
   }
@@ -672,6 +711,82 @@ export class StateStore {
       { title: external.title, artist: external.artist },
       { title: this.trackTitle, artist: this.trackArtist ?? '' },
     );
+  }
+
+  /** Enciende o apaga la corrección automática por energía vocal. */
+  setEnergySyncEnabled(enabled: boolean): void {
+    this.energySyncEnabled = enabled;
+  }
+
+  isEnergySyncEnabled(): boolean {
+    return this.energySyncEnabled;
+  }
+
+  /**
+   * Analiza un chunk de audio ya grabado y mide el desfase de la letra por
+   * correlación de energía vocal.
+   *
+   * Reutiliza el audio que YA se envía al reconocedor cada ~18 s: no hace
+   * falta capturar nada aparte ni tocar el renderer. `recordStartedAt` es el
+   * instante de pared en que empezó la grabación; con él se sabe qué posición
+   * de la canción creía el widget que sonaba en ese momento, que es la línea
+   * de tiempo contra la que se compara la letra.
+   *
+   * Devuelve la medición (o null si no había nada que medir).
+   */
+  reportAudioWindow(
+    audio: ArrayBuffer | Uint8Array | Buffer,
+    recordStartedAt: number,
+    at: number = Date.now(),
+  ): EnergyMeasurement | null {
+    const lyrics = this.engine.getLyrics();
+    // Sin letra sincronizada no hay máscara contra la cual correlacionar.
+    if (!lyrics?.synced || lyrics.lines.length === 0) return null;
+    if (this.clock.isClockPaused()) return null;
+
+    const decoded = decodeWav(audio);
+    if (!decoded) return null;
+
+    const { mask: audioMask } = buildVocalMaskFromPcm(decoded.samples, decoded.sampleRate);
+    if (audioMask.length === 0 || !audioMask.some(Boolean)) return null;
+
+    // Posición que el widget creía tener cuando arrancó la grabación.
+    const windowStartMs = Math.max(0, this.clock.getDisplayedPosition(recordStartedAt));
+    const startBin = Math.floor(windowStartMs / ENERGY_BIN_MS);
+    const lrcMask = buildLyricsActivityMask(lyrics.lines, startBin, audioMask.length, ENERGY_BIN_MS);
+
+    const correlation = correlateEnergyMask(lrcMask, audioMask);
+    const measurement: EnergyMeasurement = {
+      ...correlation,
+      at,
+      windowStartMs: Math.round(windowStartMs),
+      bins: audioMask.length,
+      applied: false,
+    };
+
+    if (correlation.confidence < ENERGY_SYNC_MIN_CONFIDENCE) {
+      measurement.skipped = `confianza ${correlation.confidence.toFixed(2)} < ${ENERGY_SYNC_MIN_CONFIDENCE}`;
+    } else if (Math.abs(correlation.offsetMs) > ENERGY_SYNC_MAX_CORRECTION_MS) {
+      // Una corrección enorme casi siempre es un mal alineamiento, no una
+      // deriva: la deriva real se acumula de a décimas.
+      measurement.skipped = `corrección ${correlation.offsetMs}ms fuera del tope`;
+    } else if (correlation.offsetMs === 0) {
+      measurement.skipped = 'ya alineado';
+    } else if (!this.energySyncEnabled) {
+      measurement.skipped = 'modo observación (SINGEVERY_ENERGY_SYNC apagado)';
+    } else {
+      // Se aplica por la MISMA rampa suave que la deriva de AudD: la letra se
+      // acomoda sin saltar.
+      this.clock.startCorrection(correlation.offsetMs, at);
+      measurement.applied = true;
+      console.log(
+        `[energía] desfase ${correlation.offsetMs}ms (confianza ${correlation.confidence.toFixed(2)}, ` +
+          `pico ${correlation.peak.toFixed(2)} vs ${correlation.runnerUp.toFixed(2)}) → corregido`,
+      );
+    }
+
+    this.lastEnergyMeasurement = measurement;
+    return measurement;
   }
 
   /**

@@ -67,12 +67,7 @@ export interface DiagnosticsSnapshot {
     paused: boolean;
     recognitionSource: string | null;
   };
-  sync: {
-    offsetMs: number;
-    calibrationOffsetMs: number;
-    displayedPositionMs: number;
-    paused: boolean;
-  };
+  sync: StateDiagnostics['sync'];
   /** Estado del arbitraje de identidad (por qué NO cambió de canción). */
   state: StateDiagnostics['identity'] & { providerChain: string[] };
   recent: DiagnosticsAttempt[];
