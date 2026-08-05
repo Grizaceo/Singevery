@@ -1,7 +1,7 @@
 # PR: Singevery 0.2.1-beta.2 — robustez, IPA de lenguas latinas y entrega a beta
 
 **Base:** `main` (en `db8dfb9`, 2-jul-2026) · **Compara:** `release/0.2.1-beta.2`
-**43 commits · 200 archivos · +25.192 / −6.051**
+**45 commits · 214 archivos**
 
 `origin/main` es ancestro directo de esta rama: el merge es *fast-forward*, sin
 conflictos posibles. No hay nada que resolver a mano.
@@ -34,6 +34,23 @@ separados por tema y con mensajes que explican el porqué.
 | **P3** two-signal lock | El lock solo se suelta si el SO **y** el audio coinciden en que cambió la canción. Si el SO sigue afirmando la actual, el reconocedor necesita 5 insistencias. |
 | **P4** energía vocal | Mide el desfase de la letra correlacionando energía en banda vocal contra las líneas del LRC, sobre el chunk que ya se graba cada ~18 s. **Viene en modo observación**: mide y publica en `/debug`, no corrige hasta `SINGEVERY_ENERGY_SYNC=1`. |
 
+### Melodías de referencia del profesor
+
+El profesor toca o canta la línea bien una vez y queda como referencia del
+alumno, en lugar de la melodía que la app deduce sola (una heurística que se
+degrada en arreglos densos). **Se guarda solo la curva de tono; el audio se
+analiza en memoria y se descarta.** No queda grabación de nadie, y si se tocó
+encima de un fonograma ajeno la curva no lo reproduce.
+
+Nada sale del equipo: ningún módulo de esta función abre un socket. Compartirla
+con el alumno es exportar un `.singevery-ref` y mandarlo por donde sea, sin
+internet en la sala. La importación valida el archivo con dureza porque llega
+por un canal en el que no se puede confiar.
+
+De paso corrige un límite real: el rango de análisis del bajo baja a 38 Hz. El
+mi grave de un bajo de 4 cuerdas está en 41,2 Hz, muy por debajo del piso vocal
+de 80 Hz del detector — hasta ahora esa octava era invisible.
+
 ### IPA de lenguas latinas
 
 Español (seseo/distinción configurable), italiano (geminación), francés y alemán
@@ -61,7 +78,7 @@ watchdog del sidecar SMTC y bitácora de aciertos del reconocimiento.
 |---|---|
 | `tsc -p tsconfig.json --noEmit` | exit 0 |
 | `tsc -p tsconfig.electron.json --noEmit` | exit 0 |
-| `vitest run` | **578 pruebas en 46 archivos, 0 fallos** |
+| `vitest run` | **608 pruebas en 48 archivos, 0 fallos** |
 | `eslint .` | limpio |
 | `npm run check:secrets` | sin credenciales |
 | `npm run verify:package-inputs` | entradas de release completas |
