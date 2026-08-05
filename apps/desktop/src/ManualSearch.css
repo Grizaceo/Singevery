@@ -1,0 +1,98 @@
+/* Búsqueda manual de canción — modal contextual (solo aparece bajo demanda). */
+
+.manual-search-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.45);
+  pointer-events: auto;
+}
+
+.manual-search-panel {
+  width: min(360px, calc(100vw - 48px));
+  background: #1b1f2b;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 12px;
+  padding: 16px 18px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+  color: #e5e7eb;
+  font-size: 0.8rem;
+}
+
+.manual-search-panel h2 {
+  margin: 0 0 4px;
+  font-size: 1rem;
+}
+
+.manual-search-sub {
+  margin: 0 0 12px;
+  opacity: 0.7;
+  font-size: 0.75rem;
+}
+
+.manual-search-panel label {
+  display: block;
+  margin-bottom: 10px;
+  font-size: 0.75rem;
+  opacity: 0.9;
+}
+
+.manual-search-panel input {
+  display: block;
+  width: 100%;
+  margin-top: 4px;
+  padding: 6px 8px;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 6px;
+  color: #f3f4f6;
+  font-size: 0.85rem;
+  outline: none;
+}
+
+.manual-search-panel input:focus {
+  border-color: var(--chrome-accent, #60a5fa);
+}
+
+.manual-search-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+  flex-wrap: wrap;
+}
+
+.manual-search-primary,
+.manual-search-secondary {
+  padding: 6px 12px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  cursor: pointer;
+  font-size: 0.78rem;
+}
+
+.manual-search-primary {
+  background: var(--chrome-accent, #60a5fa);
+  color: #0b1220;
+  font-weight: 600;
+}
+
+.manual-search-primary:disabled,
+.manual-search-secondary:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.manual-search-secondary {
+  background: rgba(255, 255, 255, 0.08);
+  color: #e5e7eb;
+  border-color: rgba(255, 255, 255, 0.16);
+}
+
+.manual-search-error {
+  margin: 10px 0 0;
+  color: #f87171;
+  font-size: 0.75rem;
+}

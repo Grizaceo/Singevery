@@ -19,6 +19,16 @@
   color: #fecaca;
 }
 
+.recognition-controls .chrome-button.wrong {
+  border-color: var(--chrome-danger);
+  color: #fecaca;
+}
+
+.recognition-controls .chrome-button.search-link {
+  border-color: var(--chrome-accent, #60a5fa);
+  color: #bfdbfe;
+}
+
 .recognition-error {
   font-size: 0.65rem;
   color: var(--chrome-danger);

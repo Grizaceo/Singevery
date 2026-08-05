@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Teleprompter } from './teleprompter/Teleprompter';
-import { DebugLyricsInput } from './DebugLyricsInput';
 import { ChromeTopBar } from './ChromeTopBar';
 import { ChromeBottomBar } from './ChromeBottomBar';
 import { SettingsPanel } from './SettingsPanel';
@@ -14,6 +13,7 @@ import { useRecognition } from './useRecognition';
 import { usePitchMonitor } from './usePitchMonitor';
 import { useMelodyReference } from './useMelodyReference';
 import { useTeacherReference } from './useTeacherReference';
+import { ManualSearch } from './ManualSearch';
 import { RenderModelProvider, useRenderModel } from './renderModelContext';
 import { detectScriptFromLines } from './scriptDetect';
 import './App.css';
@@ -41,6 +41,9 @@ function AppContent() {
   const [translationView, setTranslationView, translationState] = useTranslationView();
   const [chromeVisible, setChromeVisible] = useState(true);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  // Búsqueda manual de canción: se abre SOLO cuando el usuario la pide (no
+  // reconoce bien la canción actual o quiere forzar una). Nunca visible por defecto.
+  const [manualSearchOpen, setManualSearchOpen] = useState(false);
   const [welcomeOpen, setWelcomeOpen] = useState(shouldShowBetaWelcome);
   const [recallHidden, setRecallHidden] = useState(false);
   const [collapsed, setCollapsed] = useState(() => !welcomeOpen);
@@ -238,9 +241,9 @@ function AppContent() {
 
   useEffect(() => {
     const clickThrough =
-      !tangible && !settingsOpen && !welcomeOpen && (ghost ? !handleHovered : chromeHidden);
+      !tangible && !settingsOpen && !welcomeOpen && !manualSearchOpen && (ghost ? !handleHovered : chromeHidden);
     window.api?.setClickThrough?.(clickThrough);
-  }, [ghost, handleHovered, chromeHidden, settingsOpen, tangible, welcomeOpen]);
+  }, [ghost, handleHovered, chromeHidden, settingsOpen, tangible, welcomeOpen, manualSearchOpen]);
 
   const visibleLines = useMemo(
     () => [...model.previous_lines, model.current_line, ...model.next_lines],
@@ -317,9 +320,16 @@ function AppContent() {
           onRecallHiddenChange={setRecallHidden}
           pitchMonitor={pitchMonitor}
           melodyRef={melodyRef}
+          onManualSearch={() => setManualSearchOpen(true)}
         />
-        {import.meta.env.DEV && <DebugLyricsInput />}
       </div>
+      {manualSearchOpen && (
+        <ManualSearch
+          onClose={() => setManualSearchOpen(false)}
+          initialTitle={model.track_title ?? undefined}
+          initialArtist={model.track_artist ?? undefined}
+        />
+      )}
       <SettingsPanel
         open={settingsOpen}
         onClose={() => setSettingsOpen(false)}

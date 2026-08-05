@@ -19,6 +19,8 @@ interface ChromeBottomBarProps {
   pitchMonitor: ReturnType<typeof usePitchMonitor>;
   /** Referencia melódica de la canción actual. */
   melodyRef: ReturnType<typeof useMelodyReference>;
+  /** Abre la búsqueda manual de canción (contextual, nunca en el menú por defecto). */
+  onManualSearch: () => void;
 }
 
 export function ChromeBottomBar({
@@ -29,11 +31,16 @@ export function ChromeBottomBar({
   onRecallHiddenChange,
   pitchMonitor,
   melodyRef,
+  onManualSearch,
 }: ChromeBottomBarProps) {
   return (
     <div className="chrome-bar chrome-bar-bottom">
       <div className="chrome-bar-group chrome-bar-grow">
-        <RecognitionControls recognition={recognition} />
+        <RecognitionControls
+          recognition={recognition}
+          hasTrack={model.status === 'DISPLAYING'}
+          onManualSearch={onManualSearch}
+        />
       </div>
       <div className="chrome-bar-group">
         <PracticeControls

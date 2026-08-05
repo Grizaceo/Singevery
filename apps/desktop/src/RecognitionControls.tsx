@@ -19,13 +19,24 @@ function LevelMeter({ level }: { level: number }) {
 
 interface RecognitionControlsProps {
   recognition: RecognitionState;
+  /** Hay canción en pantalla (model.status === 'DISPLAYING'). */
+  hasTrack: boolean;
+  /** Abre la búsqueda manual de canción. */
+  onManualSearch: () => void;
 }
 
 /**
- * Controles de reconocimiento — ahora presentacionales: el motor vive en el
- * hook useRecognition (una sola instancia en App) y llega por props.
+ * Controles de reconocimiento — presentacionales: el motor vive en el hook
+ * useRecognition (una sola instancia en App) y llega por props.
+ *
+ * La búsqueda manual NO es parte del menú por defecto: aparece solo cuando
+ * hay un problema real con el reconocimiento:
+ *  - mientras se escucha sin canción en pantalla (la app no la reconoce),
+ *    un botón "Buscar" permite forzar la búsqueda por título/artista;
+ *  - cuando hay canción mostrada, un botón "No es esta" permite señalar que
+ *    el reconocimiento falló (feedback wrong + buscador manual).
  */
-export function RecognitionControls({ recognition }: RecognitionControlsProps) {
+export function RecognitionControls({ recognition, hasTrack, onManualSearch }: RecognitionControlsProps) {
   const { activeSource, hint, error, level, start, stop } = recognition;
 
   if (!window.api) {
@@ -33,6 +44,13 @@ export function RecognitionControls({ recognition }: RecognitionControlsProps) {
   }
 
   const localDisabled = activeSource !== null;
+
+  const handleWrongTrack = (): void => {
+    // Feedback wrong → el main fuerza re-identificación (matchlog).
+    void window.api?.logMatchFeedback(false);
+    // Y abre la búsqueda manual para corregir al tiro.
+    onManualSearch();
+  };
 
   return (
     <div className="recognition-controls">
@@ -62,6 +80,32 @@ export function RecognitionControls({ recognition }: RecognitionControlsProps) {
         </button>
       )}
       {activeSource && <LevelMeter level={level} />}
+      {/* La app está escuchando/identificando sin lograr mostrar canción:
+          ofrecer la vía manual de inmediato. */}
+      {activeSource && !hasTrack && (
+        <button
+          type="button"
+          className="chrome-button search-link"
+          onClick={onManualSearch}
+          title="La app no reconoce la canción — búscala por título/artista"
+          aria-label="Buscar canción manualmente"
+        >
+          🔍 Buscar
+        </button>
+      )}
+      {/* Hay canción en pantalla pero puede estar mal identificada:
+          el usuario la señala y se abre el buscador manual. */}
+      {hasTrack && (
+        <button
+          type="button"
+          className="chrome-button wrong"
+          onClick={handleWrongTrack}
+          title="La canción mostrada no es la que suena — buscar manualmente"
+          aria-label="Señalar que la canción no es la correcta y buscar"
+        >
+          ✗ No es esta
+        </button>
+      )}
       {hint && !error && <span className="recognition-hint">{hint}</span>}
       {error && <span className="recognition-error">{error}</span>}
     </div>
