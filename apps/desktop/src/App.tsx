@@ -14,6 +14,7 @@ import { usePitchMonitor } from './usePitchMonitor';
 import { useMelodyReference } from './useMelodyReference';
 import { useTeacherReference } from './useTeacherReference';
 import { ManualSearch } from './ManualSearch';
+import { matchWindow } from './audio/compare';
 import { RenderModelProvider, useRenderModel } from './renderModelContext';
 import { detectScriptFromLines } from './scriptDetect';
 import './App.css';
@@ -89,6 +90,17 @@ function AppContent() {
     getPositionMs,
   );
   const activeMelody = teacherRef.points ?? melodyRef.reference;
+
+  // Score contra la referencia (P2): ventana de pitch del usuario vs melodía.
+  // Se calcula AQUÍ (App) para compartirlo entre el badge de la barra inferior
+  // y la columna de entonación junto a la letra: así la puntuación persiste en
+  // modo karaoke aunque la chrome se oculte (el badge de abajo desaparece al
+  // dejar de mover el mouse).
+  const pitchMatch = useMemo(() => {
+    if (!pitchMonitor.active || !activeMelody || pitchMonitor.window.length < 5) return null;
+    return matchWindow(pitchMonitor.window, activeMelody, { toleranceCents: 50, maxOffsetMs: 20000 });
+  }, [pitchMonitor.active, pitchMonitor.window, activeMelody]);
+  const pitchScore = pitchMatch ? Math.round(pitchMatch.score * 100) : null;
 
   // Arranque automático: escuchar el audio del sistema apenas abre. Se queda
   // en modo pastilla mientras no reconozca nada; al identificar la canción, el
@@ -279,6 +291,8 @@ function AppContent() {
         melody={activeMelody}
         pitchActive={pitchMonitor.active}
         recallHidden={recallHidden}
+        livePitch={pitchMonitor.pitch}
+        pitchScore={pitchScore}
       />
       {tangible && (
         <div className="tangible-badge" role="status">
@@ -320,6 +334,7 @@ function AppContent() {
           onRecallHiddenChange={setRecallHidden}
           pitchMonitor={pitchMonitor}
           melodyRef={melodyRef}
+          pitchScore={pitchScore}
           onManualSearch={() => setManualSearchOpen(true)}
         />
       </div>

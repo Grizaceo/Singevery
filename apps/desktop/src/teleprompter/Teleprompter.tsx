@@ -3,6 +3,7 @@ import type { ReadingMode, RenderModel, TranslationView } from '../types';
 import { LineView } from './LineView';
 import { splitPreviousTiers, splitNextTiers, tierSizes } from './teleprompterHelpers';
 import type { MelodyPoint } from '../audio/melody';
+import type { PitchResult } from '../audio/pitch';
 import '../Teleprompter.css';
 
 interface Props {
@@ -17,6 +18,10 @@ interface Props {
   pitchActive?: boolean;
   /** Oculta la letra actual para practicar escucha/recuerdo, sin detener el sync. */
   recallHidden?: boolean;
+  /** Última nota detectada del micrófono (solo se pinta en la línea actual). */
+  livePitch?: PitchResult | null;
+  /** Score 0..100 contra la referencia (compartido con el badge de la barra). */
+  pitchScore?: number | null;
 }
 
 // La prop `ghost` queda en la interfaz por compatibilidad (App la pasa), pero
@@ -29,6 +34,8 @@ export const Teleprompter = React.memo(function Teleprompter({
   melody = null,
   pitchActive = false,
   recallHidden = false,
+  livePitch = null,
+  pitchScore = null,
 }: Props) {
   const containerStyle: React.CSSProperties = {
     transform: model.mirror_mode ? 'scaleX(-1)' : 'none',
@@ -106,6 +113,8 @@ export const Teleprompter = React.memo(function Teleprompter({
                 melody={melody}
                 pitchActive={pitchActive}
                 concealed={recallHidden}
+                livePitch={livePitch}
+                pitchScore={pitchScore}
               />
             </div>
 

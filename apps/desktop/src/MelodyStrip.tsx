@@ -30,6 +30,12 @@ interface MelodyStripProps {
   progress?: number;
   /** La línea es la actual (ilumina el punto). */
   current?: boolean;
+  /** Nota detectada del cantante en vivo (micrófono). Solo se pinta si current. */
+  liveNote?: string | null;
+  /** Desviación en cents de la nota en vivo (agudo > 0, grave < 0). */
+  liveCents?: number | null;
+  /** Score 0..100 contra la referencia (compartido con el badge de la barra). */
+  score?: number | null;
 }
 
 export const MelodyStrip = React.memo(function MelodyStrip({
@@ -38,6 +44,9 @@ export const MelodyStrip = React.memo(function MelodyStrip({
   endMs,
   progress = 0,
   current = false,
+  liveNote = null,
+  liveCents = null,
+  score = null,
 }: MelodyStripProps) {
   // Puntos de la melodía que caen dentro de la línea.
   const points = useMemo(() => {
@@ -48,7 +57,26 @@ export const MelodyStrip = React.memo(function MelodyStrip({
   if (points.length < 2) {
     return (
       <div className={`melody-strip melody-empty${current ? ' melody-current' : ''}`}>
-        <span>—</span>
+        {current && (liveNote || score != null) ? (
+          <>
+            {liveNote && (
+              <span className="melody-note melody-note-live">
+                {liveNote}
+                {liveCents != null && (
+                  <span className="melody-cents">
+                    {liveCents > 0 ? '+' : ''}
+                    {liveCents}¢
+                  </span>
+                )}
+              </span>
+            )}
+            {score != null && (
+              <span className={`melody-score${score >= 70 ? ' melody-score-good' : ''}`}>{score}%</span>
+            )}
+          </>
+        ) : (
+          <span>—</span>
+        )}
       </div>
     );
   }
@@ -98,6 +126,26 @@ export const MelodyStrip = React.memo(function MelodyStrip({
         })}
       </div>
       {current && currentNote && <span className="melody-note">{currentNote}</span>}
+      {current && (liveNote || score != null) && (
+        <div className="melody-live">
+          {liveNote && (
+            <span className="melody-note melody-note-live">
+              {liveNote}
+              {liveCents != null && (
+                <span className="melody-cents">
+                  {liveCents > 0 ? '+' : ''}
+                  {liveCents}¢
+                </span>
+              )}
+            </span>
+          )}
+          {score != null && (
+            <span className={`melody-score${score >= 70 ? ' melody-score-good' : ''}`}>
+              {score}%
+            </span>
+          )}
+        </div>
+      )}
     </div>
   );
 });

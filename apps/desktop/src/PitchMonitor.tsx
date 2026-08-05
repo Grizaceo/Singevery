@@ -1,5 +1,3 @@
-import { useMemo } from 'react';
-import { matchWindow } from './audio/compare';
 import type { usePitchMonitor } from './usePitchMonitor';
 import type { useMelodyReference } from './useMelodyReference';
 import './PitchMonitor.css';
@@ -13,38 +11,36 @@ import './PitchMonitor.css';
  * - P0: monitor de pitch del micrófono en vivo (nota + cents).
  * - P1: referencia melódica extraída de la PROPIA canción (loopback) — la app
  *   avisa que es una interpretación automática, no la partitura oficial.
- * - P2: score contra la referencia (ventana deslizante, ±50 cents).
- * - P3: guía de uso — la referencia se captura SIN cantar (30 s de loopback)
- *   y en ambiente silencioso; el micrófono integrado alcanza.
+ * - P2: score contra la referencia (ventana deslizante, ±50 cents). El score
+ *   se calcula en App y se comparte entre este badge y la columna de
+ *   entonación junto a la letra (puntuación persistente en modo karaoke).
+ * - P3: guía de uso — la referencia se captura sola del audio del SISTEMA
+ *   (loopback), no del micrófono; solo necesita que la canción esté sonando.
  */
 interface PitchMonitorBadgeProps {
   pitchMonitor: ReturnType<typeof usePitchMonitor>;
   melodyRef: ReturnType<typeof useMelodyReference>;
+  /** Score 0..100 de afinación contra la referencia (P2), calculado en App. */
+  score: number | null;
 }
 
 /** Texto de la guía de uso (P3) — aparece en el tooltip y al capturar. */
 const GUIDE_TEXT =
   'Práctica vocal: canta y compara tu tono con la melodía de la canción. ' +
-  'La referencia es una interpretación automática de la app, no la partitura oficial. ' +
-  'Para mejor precisión: cuarto silencioso, micrófono a 15-30 cm, canta claro (no susurres). ' +
-  'La primera vez por canción se capturan ~24 s de la pista como referencia (descarta silencios) — reproduce la canción y no cantes durante la captura.';
+  'La referencia se obtiene automáticamente del audio del sistema (loopback) — NO usa tu micrófono: ' +
+  'al activar ♪ se capturan ~24 s de la pista y se descartan los silencios; solo necesita que la canción esté sonando. ' +
+  'Si está pausada, la app espera a que suene (hasta 30 s) y captura sola. ' +
+  'Para mejor precisión al practicar: cuarto silencioso, micrófono a 15-30 cm, canta claro (no susurres). ' +
+  'La referencia es una interpretación automática de la app, no la partitura oficial.';
 
-export function PitchMonitorBadge({ pitchMonitor, melodyRef }: PitchMonitorBadgeProps) {
-  const { active, pitch, error, window: pitchWindow, start, stop } = pitchMonitor;
-  const { reference, status: refStatus, error: refError, recapture } = melodyRef;
+export function PitchMonitorBadge({ pitchMonitor, melodyRef, score }: PitchMonitorBadgeProps) {
+  const { active, pitch, error, start, stop } = pitchMonitor;
+  const { status: refStatus, error: refError, recapture } = melodyRef;
 
   const toggle = (): void => {
     if (active) stop();
     else void start();
   };
-
-  // Score contra la referencia (P2): ventana de pitch del usuario vs melodía.
-  const match = useMemo(() => {
-    if (!active || !reference || pitchWindow.length < 5) return null;
-    return matchWindow(pitchWindow, reference, { toleranceCents: 50, maxOffsetMs: 20000 });
-  }, [active, reference, pitchWindow]);
-
-  const score = match ? Math.round(match.score * 100) : null;
 
   // Desviación: >0 = agudo, <0 = grave. Solo se pinta si hay nota.
   const centsLabel = pitch ? `${pitch.cents > 0 ? '+' : ''}${pitch.cents}¢` : null;
@@ -52,9 +48,9 @@ export function PitchMonitorBadge({ pitchMonitor, melodyRef }: PitchMonitorBadge
 
   const statusLabel =
     refStatus === 'capturing'
-      ? '🎵 capturando referencia…'
+      ? '🎵 capturando referencia del audio…'
       : refStatus === 'error'
-        ? '⚠ referencia no disponible'
+        ? (refError ?? '⚠ referencia no disponible')
         : refStatus === 'ready' && active
           ? score != null
             ? `afinación ${score}%`

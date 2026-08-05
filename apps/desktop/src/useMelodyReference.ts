@@ -22,6 +22,12 @@ const CAPTURE_TARGET_SECONDS = 24;
 const CHUNK_SECONDS = 6;
 /** Máximo de chunks intentados (silencio o fallos). 8 × 6 s = 48 s de tope. */
 const MAX_CHUNKS = 8;
+/** Espera inicial: chunks de 1 s hasta que el loopback tenga señal. La
+ *  referencia se captura del audio del SISTEMA (no del micrófono); si la
+ *  canción está pausada al pulsar ♪, esperamos a que suene en vez de gastar
+ *  los chunks de captura en silencio y fallar. */
+const WARMUP_CHUNK_MS = 1000;
+const WARMUP_MAX_MS = 30000;
 /** Mínimo de audio útil para aceptar la referencia. */
 const MIN_USEFUL_SECONDS = 8;
 /** Tamaño máximo de caché persistida (canciones). */
@@ -144,6 +150,24 @@ export function useMelodyReference(
       // hay posición (sin canción), se usa 0 y la melodía queda relativa.
       const anchorMs = getPositionMs() ?? 0;
 
+      // Fase de espera de señal del loopback: si la canción no está sonando al
+      // pulsar ♪, esperar hasta WARMUP_MAX_MS a que llegue señal. En cuanto
+      // suene, la captura procede sola (sin que el usuario haga nada).
+      let signalSeen = false;
+      let warmupMs = 0;
+      while (!signalSeen && warmupMs < WARMUP_MAX_MS) {
+        const warm = await recordChunk('system', WARMUP_CHUNK_MS, undefined, session);
+        warmupMs += WARMUP_CHUNK_MS;
+        signalSeen = warm.level >= 0.005;
+      }
+      if (!signalSeen) {
+        setStatus('error');
+        setError(
+          'No llegó audio del sistema (30 s). La referencia se captura sola de la canción sonando — reproduce la canción y pulsa ♪ de nuevo (no usa tu micrófono).',
+        );
+        return;
+      }
+
       for (let i = 0; i < MAX_CHUNKS && usefulSeconds < CAPTURE_TARGET_SECONDS; i++) {
         const { blob, level } = await recordChunk(
           'system',
@@ -172,7 +196,7 @@ export function useMelodyReference(
         setStatus('error');
         setError(
           silentChunks > 0
-            ? 'No se capturó audio del sistema (silencio). Reproduce la canción y vuelve a intentar.'
+            ? 'No se capturó audio del sistema (silencio). La referencia sale del audio de la canción — reprodúcela y vuelve a intentar.'
             : 'No se pudo capturar el audio del sistema. Revisa que la app tenga permiso de captura.',
         );
         return;

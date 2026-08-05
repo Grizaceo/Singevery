@@ -4,6 +4,7 @@ import { splitAtFraction, splitSegmentsAtFraction } from '../lineHighlight';
 import { WordsView } from './WordsView';
 import { MelodyStrip } from '../MelodyStrip';
 import type { MelodyPoint } from '../audio/melody';
+import type { PitchResult } from '../audio/pitch';
 
 type Tier = 'current' | 'adjacent' | 'far';
 
@@ -22,6 +23,10 @@ interface LineViewProps {
   pitchActive?: boolean;
   /** Sustituye la letra/lectura por una pista neutra para práctica de recuerdo. */
   concealed?: boolean;
+  /** Última nota del micrófono (solo se pinta en la línea actual). */
+  livePitch?: PitchResult | null;
+  /** Score 0..100 contra la referencia (compartido con el badge de la barra). */
+  pitchScore?: number | null;
 }
 
 /** Texto con la parte ya cantada atenuada (resaltado interpolado). */
@@ -48,6 +53,8 @@ export const LineView = React.memo(function LineView({
   melody = null,
   pitchActive = false,
   concealed = false,
+  livePitch = null,
+  pitchScore = null,
 }: LineViewProps) {
   const hasFurigana = !!line.furigana && line.furigana.length > 0;
   const hasRomaji = !!line.romaji;
@@ -75,6 +82,12 @@ export const LineView = React.memo(function LineView({
   // Entonación (práctica vocal): columna paralela con la melodía de la línea,
   // avanzando como la traducción. Requiere timestamps de línea.
   const showMelody = pitchActive && !!melody && melody.length > 0 && line.start_ms != null;
+  // En la línea actual la columna SIEMPRE existe con modo karaoke: aunque la
+  // referencia aún no esté lista (o la línea no tenga timestamps), se muestra
+  // la nota del cantante en vivo + score. Así la puntuación persiste al lado
+  // de la letra y no depende de la chrome inferior (que se oculta al soltar
+  // el mouse).
+  const showLiveCol = pitchActive && tier === 'current';
 
   let mainContent: React.ReactNode;
   if (mode === 'kana') {
@@ -141,15 +154,41 @@ export const LineView = React.memo(function LineView({
   // (el orden de palabras entre idiomas no calza, así que es una guía visual,
   // no una correspondencia palabra a palabra). Con práctica vocal activa, la
   // entonación (melodía de la línea) se añade como columna extra.
-  const melodyCol = showMelody ? (
+  const melodyCol = showMelody || showLiveCol ? (
     <div className="line-col line-col-melody">
-      <MelodyStrip
-        melody={melody!}
-        startMs={line.start_ms!}
-        endMs={line.end_ms ?? null}
-        progress={tier === 'current' ? frac : undefined}
-        current={tier === 'current'}
-      />
+      {showMelody ? (
+        <MelodyStrip
+          melody={melody!}
+          startMs={line.start_ms!}
+          endMs={line.end_ms ?? null}
+          progress={tier === 'current' ? frac : undefined}
+          current={tier === 'current'}
+          liveNote={livePitch?.note ?? null}
+          liveCents={livePitch ? Math.round(livePitch.cents) : null}
+          score={pitchScore}
+        />
+      ) : (
+        // Sin referencia aún (o línea sin timestamps): la columna muestra la
+        // nota del cantante en vivo, para que la puntuación nunca desaparezca.
+        <div className="melody-strip melody-live-only" aria-hidden="true">
+          {livePitch ? (
+            <span className="melody-note melody-note-live">
+              {livePitch.note}
+              <span className="melody-cents">
+                {livePitch.cents > 0 ? '+' : ''}
+                {Math.round(livePitch.cents)}¢
+              </span>
+            </span>
+          ) : (
+            <span className="melody-none">—</span>
+          )}
+          {pitchScore != null && (
+            <span className={`melody-score${pitchScore >= 70 ? ' melody-score-good' : ''}`}>
+              {pitchScore}%
+            </span>
+          )}
+        </div>
+      )}
     </div>
   ) : null;
 

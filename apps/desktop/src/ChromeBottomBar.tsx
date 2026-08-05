@@ -19,6 +19,9 @@ interface ChromeBottomBarProps {
   pitchMonitor: ReturnType<typeof usePitchMonitor>;
   /** Referencia melódica de la canción actual. */
   melodyRef: ReturnType<typeof useMelodyReference>;
+  /** Score 0..100 contra la referencia (calculado en App, compartido con la
+   *  columna de entonación del teleprompter). */
+  pitchScore: number | null;
   /** Abre la búsqueda manual de canción (contextual, nunca en el menú por defecto). */
   onManualSearch: () => void;
 }
@@ -31,6 +34,7 @@ export function ChromeBottomBar({
   onRecallHiddenChange,
   pitchMonitor,
   melodyRef,
+  pitchScore,
   onManualSearch,
 }: ChromeBottomBarProps) {
   return (
@@ -49,7 +53,7 @@ export function ChromeBottomBar({
           recallHidden={recallHidden}
           onRecallHiddenChange={onRecallHiddenChange}
         />
-        <PitchMonitorBadge pitchMonitor={pitchMonitor} melodyRef={melodyRef} />
+        <PitchMonitorBadge pitchMonitor={pitchMonitor} melodyRef={melodyRef} score={pitchScore} />
         <SyncControls />
         <ResizeGrip api={api} />
       </div>
