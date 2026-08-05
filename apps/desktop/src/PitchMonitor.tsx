@@ -84,7 +84,14 @@ export function PitchMonitorBadge({ pitchMonitor, melodyRef }: PitchMonitorBadge
       >
         ♪
       </button>
-      {active && (
+      {/* Error del monitor VISIBLE (no solo tooltip): si el ♪ no arranca, el
+          usuario debe ver por qué (permiso denegado, micrófono no disponible). */}
+      {error && (
+        <span className="pitch-err" role="alert">
+          ⚠ {error}
+        </span>
+      )}
+      {!error && active && (
         <span className={`pitch-readout${onKey ? ' pitch-on-key' : ''}`}>
           {pitch ? (
             <>

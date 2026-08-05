@@ -1,5 +1,5 @@
 import type { AudioSource } from '../types';
-import { readMicrophonePrefs } from './micPrefs';
+import { readMicrophonePrefs, writeMicrophonePrefs } from './micPrefs';
 
 const RECORD_MS = 6000;
 const PAUSE_MS = 2000;
@@ -127,26 +127,37 @@ export class SystemAudioSession {
 
 export async function openMicrophoneStream(): Promise<MediaStream> {
   const prefs = readMicrophonePrefs();
-  try {
-    return await navigator.mediaDevices.getUserMedia({
-      audio: {
-        deviceId: prefs.deviceId ?? undefined,
-        echoCancellation: prefs.echoCancellation,
-        noiseSuppression: prefs.noiseSuppression,
-        autoGainControl: prefs.autoGainControl,
-      },
-    });
-  } catch (err) {
-    // Mensajes accionables según el motivo (permiso vs ausencia de micrófono).
-    const name = err instanceof DOMException ? err.name : '';
-    if (name === 'NotAllowedError' || name === 'SecurityError') {
-      throw new Error('Permiso de micrófono denegado — habilítalo para el widget.');
+
+  const request = async (withDevice: boolean): Promise<MediaStream> => {
+    const audio: MediaTrackConstraints = {
+      echoCancellation: prefs.echoCancellation,
+      noiseSuppression: prefs.noiseSuppression,
+      autoGainControl: prefs.autoGainControl,
+      ...(withDevice && prefs.deviceId ? { deviceId: prefs.deviceId } : {}),
+    };
+    try {
+      return await navigator.mediaDevices.getUserMedia({ audio });
+    } catch (err) {
+      // Mensajes accionables según el motivo (permiso vs ausencia de micrófono).
+      const name = err instanceof DOMException ? err.name : '';
+      if (name === 'NotAllowedError' || name === 'SecurityError') {
+        throw new Error('Permiso de micrófono denegado — habilítalo para el widget.');
+      }
+      if (name === 'NotFoundError' || name === 'OverconstrainedError') {
+        if (withDevice) {
+          // El deviceId guardado en preferencias quedó huérfano (el micrófono
+          // se desenchufó o cambió): olvidarlo y reintentar con el por defecto.
+          // Sin esto, el ♪ (práctica vocal) fallaba en silencio para siempre.
+          writeMicrophonePrefs({ ...prefs, deviceId: undefined });
+          return request(false);
+        }
+        throw new Error('No se encontró un micrófono disponible.');
+      }
+      throw err instanceof Error ? err : new Error('No se pudo abrir el micrófono.');
     }
-    if (name === 'NotFoundError' || name === 'OverconstrainedError') {
-      throw new Error('No se encontró un micrófono disponible.');
-    }
-    throw err instanceof Error ? err : new Error('No se pudo abrir el micrófono.');
-  }
+  };
+
+  return request(true);
 }
 
 async function recordWithMediaRecorder(
