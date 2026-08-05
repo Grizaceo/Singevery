@@ -34,6 +34,18 @@ export type { RecognitionPhase };
 
 const IDLE_MESSAGE = 'Esperando música...';
 
+/**
+ * Insistencia del reconocimiento por audio en una canción distinta a la que se
+ * muestra. `titleStillSays` guarda qué seguía diciendo el título del SO cuando
+ * empezó la racha: si el SO nunca cambió, el audio está solo y necesita muchas
+ * más confirmaciones para romper el lock.
+ */
+export interface WrongSongStrikes {
+  songIdentified: string;
+  consecutiveHits: number;
+  titleStillSays: string;
+}
+
 /** Estado interno expuesto al endpoint de diagnóstico (solo lectura). */
 export interface StateDiagnostics {
   status: Status;
@@ -45,12 +57,16 @@ export interface StateDiagnostics {
   provisional: boolean;
   titleDistinctiveness: number | null;
   identity: {
-    pendingChangeKey: string | null;
-    pendingChangeCount: number;
-    changeConfirmCount: number;
+    /** Racha del audio insistiendo en otra canción (null si no hay). */
+    wrongSong: WrongSongStrikes | null;
+    /** Confirmaciones que hacen falta AHORA para soltar el lock. */
+    requiredHits: number;
+    /** true si la sesión del SO sigue afirmando la canción que se muestra. */
+    osStillConfirmsCurrent: boolean;
     recognitionSource: 'microphone' | 'system' | null;
     externalTrusted: boolean;
     externalInputSuppressed: boolean;
+    lastExternalTitle: { title: string; artist: string; at: number } | null;
     lastUnmatchedExternal: { title: string; artist: string; at: number } | null;
     autoRetryPending: boolean;
   };
@@ -85,8 +101,23 @@ export class StateStore {
   // mostrando. Sólo cambiamos cuando la MISMA pista nueva se confirma en varios
   // ciclos consecutivos.
   private readonly CHANGE_CONFIRM_COUNT = 2;
-  private pendingChangeKey: string | null = null;
-  private pendingChangeCount = 0;
+
+  // Cuántas veces seguidas debe insistir el audio para romper el lock cuando el
+  // SISTEMA OPERATIVO lo contradice (su sesión sigue diciendo la canción
+  // actual). Ahí solo hay UNA señal de cambio y las señales están en conflicto:
+  // se le da mucho más margen antes de hacerle caso. Si además el título del SO
+  // cambia, son dos señales independientes y basta CHANGE_CONFIRM_COUNT.
+  private readonly WRONG_SONG_STRIKE_LIMIT = 5;
+
+  /** Insistencia del reconocedor en una pista distinta a la que se muestra. */
+  private wrongSong: WrongSongStrikes | null = null;
+
+  /** Última pista que reportó el SO (haya coincidido o no con la actual). */
+  private lastExternalTitle: { title: string; artist: string; at: number } | null = null;
+  /** Último evento del SO de cualquier tipo: prueba de que la sesión vive. */
+  private lastExternalActivityAt = 0;
+  /** Sin señal del SO en este lapso, su último título ya no dice nada. */
+  private static readonly EXTERNAL_LIVENESS_MS = 30_000;
 
   // Pista PROVISIONAL: entró por un título del SO poco identificable ("Awake",
   // "Alone", "Lucky Star" — ver titleDistinctiveness). Sirve para mostrar algo
@@ -186,12 +217,15 @@ export class StateStore {
       provisional: this.currentTrackProvisional,
       titleDistinctiveness: title ? scoreTitleDistinctiveness(title) : null,
       identity: {
-        pendingChangeKey: this.pendingChangeKey,
-        pendingChangeCount: this.pendingChangeCount,
-        changeConfirmCount: this.CHANGE_CONFIRM_COUNT,
+        wrongSong: this.wrongSong ? { ...this.wrongSong } : null,
+        requiredHits: this.osStillConfirmsCurrentTrack(at)
+          ? this.WRONG_SONG_STRIKE_LIMIT
+          : this.CHANGE_CONFIRM_COUNT,
+        osStillConfirmsCurrent: this.osStillConfirmsCurrentTrack(at),
         recognitionSource: this.recognitionSource,
         externalTrusted: this.externalTrusted,
         externalInputSuppressed: this.externalInputSuppressed,
+        lastExternalTitle: this.lastExternalTitle,
         lastUnmatchedExternal: this.lastUnmatchedExternal,
         autoRetryPending: this.autoRetry.isPending,
       },
@@ -343,8 +377,7 @@ export class StateStore {
     const trackKey = normalizeTrackKey(artist, title);
     this.autoRetry.cancel();
     this.trackAliasKeys.clear();
-    this.pendingChangeKey = null;
-    this.pendingChangeCount = 0;
+    this.wrongSong = null;
     // La eligió el usuario: es la verdad, no un hint.
     this.currentTrackProvisional = false;
     this.currentTrackKey = trackKey;
@@ -517,8 +550,7 @@ export class StateStore {
     // reconciliar deriva sin recargar ni tapar la letra. Confirmar la pista
     // actual descarta cualquier cambio pendiente.
     if (this.engine.getLyrics() && this.matchesCurrentTrack(matchKey, title, artist)) {
-      this.pendingChangeKey = null;
-      this.pendingChangeCount = 0;
+      this.wrongSong = null;
       // Dos señales independientes (título del SO + huella del audio) dicen lo
       // mismo: la identidad deja de ser provisional y pasa a estar lockeada.
       this.currentTrackProvisional = false;
@@ -547,8 +579,7 @@ export class StateStore {
       return false;
     }
     if (corroborated) {
-      this.pendingChangeKey = null;
-      this.pendingChangeCount = 0;
+      this.wrongSong = null;
     }
 
     // El reconocimiento por audio identifica lo que SUENA: la pista deja de ser
@@ -586,29 +617,61 @@ export class StateStore {
    */
   private confirmTrackChange(matchKey: string): boolean {
     if (!this.engine.getLyrics()) {
-      this.pendingChangeKey = null;
-      this.pendingChangeCount = 0;
+      this.wrongSong = null;
       return true;
     }
     // La pista en pantalla entró por un título genérico del SO: es un hint, no
     // un lock. El audio sabe qué suena de verdad; no hay nada que proteger.
     if (this.currentTrackProvisional) {
-      this.pendingChangeKey = null;
-      this.pendingChangeCount = 0;
+      this.wrongSong = null;
       return true;
     }
-    if (this.pendingChangeKey === matchKey) {
-      this.pendingChangeCount += 1;
+
+    const osConfirms = this.osStillConfirmsCurrentTrack();
+    const required = osConfirms ? this.WRONG_SONG_STRIKE_LIMIT : this.CHANGE_CONFIRM_COUNT;
+
+    if (this.wrongSong?.songIdentified === matchKey) {
+      this.wrongSong.consecutiveHits += 1;
     } else {
-      this.pendingChangeKey = matchKey;
-      this.pendingChangeCount = 1;
+      this.wrongSong = {
+        songIdentified: matchKey,
+        consecutiveHits: 1,
+        titleStillSays: osConfirms ? (this.lastExternalTitle?.title ?? '') : '',
+      };
     }
-    if (this.pendingChangeCount >= this.CHANGE_CONFIRM_COUNT) {
-      this.pendingChangeKey = null;
-      this.pendingChangeCount = 0;
+
+    if (this.wrongSong.consecutiveHits >= required) {
+      if (osConfirms) {
+        console.warn(
+          `[identidad] el audio insistió ${this.wrongSong.consecutiveHits} veces en "${matchKey}" ` +
+            `mientras el SO seguía diciendo "${this.wrongSong.titleStillSays}": se rompe el lock`,
+        );
+      }
+      this.wrongSong = null;
       return true;
     }
     return false;
+  }
+
+  /**
+   * ¿La sesión de medios del SO sigue afirmando la canción que se muestra?
+   *
+   * Es la SEGUNDA señal, independiente del audio. Si el SO sigue en la misma
+   * canción y el reconocedor dice otra cosa, las señales están en conflicto:
+   * una sola no basta para soltar el lock (una mis-identificación puntual
+   * arrancaría la letra correcta). Solo cuenta si la sesión está VIVA: un
+   * título viejo de una sesión muerta no confirma nada.
+   */
+  private osStillConfirmsCurrentTrack(at: number = Date.now()): boolean {
+    if (this.externalInputSuppressed) return false;
+    const external = this.lastExternalTitle;
+    if (!external) return false;
+    if (at - this.lastExternalActivityAt >= StateStore.EXTERNAL_LIVENESS_MS) return false;
+    if (this.trackTitle == null) return false;
+    return looksLikeSameTrack(
+      { title: external.title, artist: external.artist },
+      { title: this.trackTitle, artist: this.trackArtist ?? '' },
+    );
   }
 
   /**
@@ -789,6 +852,10 @@ export class StateStore {
    */
   applyExternalPosition(positionMs: number, playing: boolean, at: number = Date.now()): void {
     if (this.externalInputSuppressed) return;
+    // Prueba de vida de la sesión del SO: el sidecar manda posición cada ~1s
+    // pero el título solo cuando cambia. Sin esta marca no se podría distinguir
+    // "el SO sigue diciendo lo mismo" de "el SO se murió hace media hora".
+    this.lastExternalActivityAt = at;
     // Sesión no confiable: sus posiciones son de OTRA pista (p. ej. un video
     // de YouTube cuya metadata no coincide con lo que AudD identificó) y
     // tirarían la letra hacia cualquier parte. El reloj de pared + las
@@ -829,6 +896,10 @@ export class StateStore {
     if (this.externalInputSuppressed) return false;
     const { album = null, durationMs = null, positionMs = 0, at = Date.now(), playing = true } = options;
     const key = normalizeTrackKey(artist, title);
+    // Se registra SIEMPRE, coincida o no: es la segunda señal del arbitraje.
+    // Que el SO siga diciendo la misma canción es información, no ruido.
+    this.lastExternalTitle = { title, artist, at };
+    this.lastExternalActivityAt = at;
     // Comparación tolerante: el título de video de YouTube ("Artista - Canción
     // (Official Video)" con canal como artista) y la metadata canónica de AudD
     // son la MISMA pista; sin esto, cada fuente "cambiaba" la canción de la

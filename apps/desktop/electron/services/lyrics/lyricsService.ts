@@ -27,6 +27,16 @@ import { romanizeTimedLyrics, needsReannotation, stripReadings } from '../romani
 import { normalizeTrackKey } from '../../core/syncTiming';
 import { buildQueryVariants } from './normalizeQuery';
 import { resolveMetadataHints } from './metadataHints';
+import { vetoLyricsByLanguage } from './artistLanguage';
+
+/** Texto crudo de una letra, sea LRC o plana, para analizar su escritura. */
+function rawLyricsText(raw: RawLyrics): string {
+  if (raw.lrc) {
+    // Fuera los timestamps: "[00:12.34]" no aporta nada al análisis de escritura.
+    return raw.lrc.replace(/\[[^\]]*\]/g, ' ');
+  }
+  return raw.plain ?? '';
+}
 
 function normalizeRaw(raw: RawLyrics): TimedLyrics | null {
   if (raw.synced && raw.lrc) {
@@ -188,6 +198,8 @@ export class LyricsService {
     let sawNotFound = false;
     let lastError: unknown = null;
     let budgetExhausted = false;
+    /** Se descartó alguna letra por idioma: "no encontrada" sería mentira. */
+    let sawLanguageVeto = false;
 
     outer: for (const provider of this.providers) {
       for (const variant of variants) {
@@ -215,6 +227,21 @@ export class LyricsService {
           sawNotFound = true;
           continue;
         }
+        // Veto por escritura: un artista japonés conocido no tiene su letra en
+        // hangul. Encontrar algo NO es lo mismo que encontrar lo correcto, y
+        // una letra de otro idioma es peor que ninguna (se muestra y desincroniza).
+        // Se prueban ambos artistas: el de la variante (puede ser el original
+        // recuperado de un cover) y el que reportó el reconocedor.
+        const text = rawLyricsText(raw);
+        const variantVeto = vetoLyricsByLanguage(variant.artist, text);
+        const veto = variantVeto.vetoed ? variantVeto : vetoLyricsByLanguage(query.artist, text);
+        if (veto.vetoed) {
+          console.warn(
+            `[lyrics] ${provider.name} descartado para "${variant.artist} - ${variant.title}": ${veto.reason}`,
+          );
+          sawLanguageVeto = true;
+          continue;
+        }
         console.log(
           `[lyrics] ${provider.name} → ${raw.synced ? 'sincronizada' : 'plana'} para "${variant.artist} - ${variant.title}" (${Date.now() - t0}ms)`,
         );
@@ -240,8 +267,9 @@ export class LyricsService {
         throw new LyricsLookupError('No se pudo consultar ninguna fuente de letras.', lastError);
       }
       // Cachear "no encontrada" solo tras un barrido completo y limpio; con
-      // errores o presupuesto agotado no se puede afirmar que no exista.
-      if (sawNotFound && !lastError && !budgetExhausted) {
+      // errores, presupuesto agotado o vetos por idioma no se puede afirmar que
+      // no exista (el veto dice "esto no es", no "no hay").
+      if (sawNotFound && !lastError && !budgetExhausted && !sawLanguageVeto) {
         await this.cache.markNotFound(
           key,
           {
@@ -255,7 +283,8 @@ export class LyricsService {
       }
       console.log(
         `[lyrics] sin letra para "${query.artist} - ${query.title}" ` +
-          `(notFound=${sawNotFound}, errores=${lastError != null}, agotado=${budgetExhausted}, ${Date.now() - startedAt}ms)`,
+          `(notFound=${sawNotFound}, errores=${lastError != null}, agotado=${budgetExhausted}, ` +
+          `vetoIdioma=${sawLanguageVeto}, ${Date.now() - startedAt}ms)`,
       );
       return null;
     }

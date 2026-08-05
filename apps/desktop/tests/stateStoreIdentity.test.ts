@@ -75,11 +75,13 @@ describe('StateStore — títulos genéricos no lockean', () => {
     expect(state.getDiagnostics().locked).toBe(true);
   });
 
-  it('sobre una pista lockeada la histéresis sigue exigiendo dos ciclos', async () => {
+  it('sobre una pista lockeada sin sesión del SO, la histéresis sigue en dos ciclos', async () => {
     const { state, getLyrics } = makeState();
     state.setRecognitionSource('system');
-    await state.applyExternalTrack('Bohemian Rhapsody', 'Queen', { positionMs: 0 });
+    // Sin evento del SO: la letra entró por audio, no hay segunda señal.
+    await state.loadLyricsByMetadata('Bohemian Rhapsody', 'Queen');
     expect(getLyrics).toHaveBeenCalledTimes(1);
+    expect(state.getDiagnostics().identity.requiredHits).toBe(2);
 
     // Una mis-identificación puntual no arranca la letra.
     expect(await state.applyMatch(match('Tren al Sur', 'Los Prisioneros'))).toBe(false);
@@ -122,6 +124,93 @@ describe('StateStore — títulos genéricos no lockean', () => {
   });
 });
 
+describe('StateStore — two-signal lock y wrong-song strikes', () => {
+  /** El SO sigue reportando la misma canción: segunda señal en contra. */
+  async function lockedWithOsAgreeing() {
+    const { state, getLyrics } = makeState();
+    state.setRecognitionSource('system');
+    await state.applyExternalTrack('Bohemian Rhapsody', 'Queen', { positionMs: 0 });
+    // El sidecar sigue mandando posición: la sesión está viva.
+    state.applyExternalPosition(1_000, true);
+    return { state, getLyrics };
+  }
+
+  it('con el SO confirmando la canción actual, exige 5 insistencias del audio', async () => {
+    const { state, getLyrics } = await lockedWithOsAgreeing();
+    expect(state.getDiagnostics().identity.osStillConfirmsCurrent).toBe(true);
+    expect(state.getDiagnostics().identity.requiredHits).toBe(5);
+
+    // Cuatro identificaciones seguidas de OTRA canción no rompen el lock.
+    for (let i = 0; i < 4; i += 1) {
+      expect(await state.applyMatch(match('Tren al Sur', 'Los Prisioneros'))).toBe(false);
+    }
+    expect(getLyrics).toHaveBeenCalledTimes(1);
+    const strikes = state.getDiagnostics().identity.wrongSong;
+    expect(strikes?.consecutiveHits).toBe(4);
+    expect(strikes?.titleStillSays).toBe('Bohemian Rhapsody');
+
+    // La quinta sí: el audio insiste demasiado como para ignorarlo.
+    expect(await state.applyMatch(match('Tren al Sur', 'Los Prisioneros'))).toBe(true);
+    expect(getLyrics).toHaveBeenCalledTimes(2);
+    expect(state.getDiagnostics().identity.wrongSong).toBeNull();
+  });
+
+  it('una racha interrumpida vuelve a empezar', async () => {
+    const { state, getLyrics } = await lockedWithOsAgreeing();
+    await state.applyMatch(match('Tren al Sur', 'Los Prisioneros'));
+    await state.applyMatch(match('Tren al Sur', 'Los Prisioneros'));
+    expect(state.getDiagnostics().identity.wrongSong?.consecutiveHits).toBe(2);
+
+    // Otra canción distinta: la racha anterior no cuenta.
+    await state.applyMatch(match('Otra Cosa Distinta', 'Otro Artista'));
+    expect(state.getDiagnostics().identity.wrongSong?.songIdentified).toContain('otro artista');
+    expect(state.getDiagnostics().identity.wrongSong?.consecutiveHits).toBe(1);
+    expect(getLyrics).toHaveBeenCalledTimes(1);
+  });
+
+  it('si el título del SO TAMBIÉN cambió, dos señales bastan (2 confirmaciones)', async () => {
+    const { state, getLyrics } = await lockedWithOsAgreeing();
+
+    // El SO pasa a otra canción: segunda señal independiente de que cambió.
+    await state.applyExternalTrack('Tren al Sur', 'Los Prisioneros', { positionMs: 0 });
+    expect(state.getDiagnostics().identity.osStillConfirmsCurrent).toBe(false);
+    expect(state.getDiagnostics().identity.requiredHits).toBe(2);
+
+    expect(await state.applyMatch(match('Tren al Sur', 'Los Prisioneros'))).toBe(true);
+    expect(getLyrics).toHaveBeenCalledTimes(2);
+  });
+
+  it('una sesión del SO muerta ya no confirma nada', async () => {
+    const { state } = await lockedWithOsAgreeing();
+    expect(state.getDiagnostics().identity.osStillConfirmsCurrent).toBe(true);
+
+    // 40 s sin una sola señal del SO: su último título no prueba nada.
+    const future = Date.now() + 40_000;
+    expect(state.getDiagnostics(future).identity.osStillConfirmsCurrent).toBe(false);
+    expect(state.getDiagnostics(future).identity.requiredHits).toBe(2);
+  });
+
+  it('en modo micrófono el SO no cuenta como señal (va suprimido)', async () => {
+    const { state, getLyrics } = await lockedWithOsAgreeing();
+    state.setExternalInputSuppressed(true);
+    expect(state.getDiagnostics().identity.osStillConfirmsCurrent).toBe(false);
+
+    // Sin segunda señal en contra, basta la histéresis normal de 2 ciclos.
+    expect(await state.applyMatch(match('Tren al Sur', 'Los Prisioneros'))).toBe(false);
+    expect(await state.applyMatch(match('Tren al Sur', 'Los Prisioneros'))).toBe(true);
+    expect(getLyrics).toHaveBeenCalledTimes(2);
+  });
+
+  it('confirmar la pista actual borra la racha acumulada', async () => {
+    const { state } = await lockedWithOsAgreeing();
+    await state.applyMatch(match('Tren al Sur', 'Los Prisioneros'));
+    expect(state.getDiagnostics().identity.wrongSong?.consecutiveHits).toBe(1);
+
+    await state.applyMatch(match('Bohemian Rhapsody', 'Queen'));
+    expect(state.getDiagnostics().identity.wrongSong).toBeNull();
+  });
+});
+
 describe('StateStore — getDiagnostics', () => {
   it('no altera el estado (es solo lectura)', async () => {
     const { state, getLyrics } = makeState();
@@ -143,7 +232,8 @@ describe('StateStore — getDiagnostics', () => {
     expect(diag.track?.artist).toBe('Queen');
     expect(diag.lyrics).toMatchObject({ source: 'lrclib', synced: true, lines: 1 });
     expect(diag.identity.recognitionSource).toBe('system');
-    expect(diag.identity.changeConfirmCount).toBe(2);
+    expect(diag.identity.lastExternalTitle?.title).toBe('Bohemian Rhapsody');
+    expect(diag.identity.requiredHits).toBe(5); // el SO confirma la actual
     expect(diag.sync.offsetMs).toBe(0);
   });
 
