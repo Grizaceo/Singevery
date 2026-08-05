@@ -312,3 +312,67 @@
   background: rgba(255, 255, 255, 0.04);
   overflow-wrap: anywhere;
 }
+
+/* --- Melodías de referencia del profesor ---------------------------------- */
+
+.settings-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 8px 0 4px;
+}
+
+.settings-value {
+  min-width: 34px;
+  text-align: right;
+  opacity: 0.8;
+  font-variant-numeric: tabular-nums;
+}
+
+.settings-ok {
+  margin: 6px 0 0;
+  padding: 6px 9px;
+  border-left: 2px solid var(--chrome-accent);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.reference-list {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  /* La lista puede crecer sin fin: se acota y hace scroll dentro del panel. */
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.reference-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 7px 9px;
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: 6px;
+}
+
+.reference-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.reference-info span {
+  opacity: 0.72;
+  font-size: 0.86em;
+  overflow-wrap: anywhere;
+}
+
+.reference-buttons {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}

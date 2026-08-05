@@ -13,6 +13,7 @@ import { useAutoStart } from './useAutoStart';
 import { useRecognition } from './useRecognition';
 import { usePitchMonitor } from './usePitchMonitor';
 import { useMelodyReference } from './useMelodyReference';
+import { useTeacherReference } from './useTeacherReference';
 import { RenderModelProvider, useRenderModel } from './renderModelContext';
 import { detectScriptFromLines } from './scriptDetect';
 import './App.css';
@@ -74,7 +75,17 @@ function AppContent() {
     positionRef.current = model.position_ms ?? null;
   }, [model.position_ms]);
   const getPositionMs = useCallback(() => positionRef.current, []);
-  const melodyRef = useMelodyReference(trackKey, pitchMonitor.active, getPositionMs);
+  // La referencia del PROFESOR manda sobre la automática: la automática es una
+  // heurística que se degrada en arreglos densos; la grabada es correcta por
+  // definición. Además, si ya existe, no se gastan 24 s de loopback capturando
+  // una referencia que igual se iba a descartar.
+  const teacherRef = useTeacherReference(trackKey, getPositionMs);
+  const melodyRef = useMelodyReference(
+    trackKey,
+    pitchMonitor.active && teacherRef.points == null,
+    getPositionMs,
+  );
+  const activeMelody = teacherRef.points ?? melodyRef.reference;
 
   // Arranque automático: escuchar el audio del sistema apenas abre. Se queda
   // en modo pastilla mientras no reconozca nada; al identificar la canción, el
@@ -262,7 +273,7 @@ function AppContent() {
         translationView={translationView}
         chromeHidden={chromeHidden}
         ghost={ghost}
-        melody={melodyRef.reference}
+        melody={activeMelody}
         pitchActive={pitchMonitor.active}
         recallHidden={recallHidden}
       />
@@ -314,6 +325,9 @@ function AppContent() {
         onClose={() => setSettingsOpen(false)}
         autoStart={autoStart}
         onAutoStartChange={setAutoStart}
+        teacherRef={teacherRef}
+        trackTitle={model.track_title ?? undefined}
+        trackArtist={model.track_artist ?? undefined}
       />
       <BetaWelcome
         open={welcomeOpen}

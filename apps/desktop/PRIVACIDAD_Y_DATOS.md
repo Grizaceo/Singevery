@@ -66,7 +66,34 @@ La carpeta de datos de usuario de Electron puede contener:
 - offsets de sincronización y calibración;
 - caché de letras y traducciones;
 - hasta 200 líneas guardadas para repaso;
+- melodías de referencia grabadas por la persona (ver abajo);
 - logs técnicos rotativos: `main.log` y `main.previous.log`.
+
+### Melodías de referencia
+
+Sirven para que un profesor deje grabada la línea bien tocada o cantada y el
+alumno practique contra ella en vez de contra la melodía que la app deduce sola.
+
+Se guarda **únicamente la curva de tono**: dos listas de números, tiempo y
+frecuencia. **El audio de la grabación se analiza en memoria y se descarta; no
+se escribe en disco en ningún momento.** Esto significa que:
+
+- no queda una grabación de la voz de nadie, ni nada que permita reconocer quién
+  grabó ni qué se dijo;
+- si se tocó encima de una canción, la curva no reproduce ese fonograma y no hay
+  copia de la obra que pueda distribuirse;
+- cada referencia pesa kilobytes.
+
+Para escuchar una referencia, la app sintetiza un tono que sigue la curva. No
+reproduce audio grabado porque no lo tiene.
+
+Los archivos viven en la subcarpeta `references` de la carpeta de datos de
+usuario. Singevery **no** los sube a ninguna parte y no existe ningún servidor
+que los reciba. Compartir una referencia con otra persona es exportarla y
+enviar ese archivo por el medio que la persona elija.
+
+Al importar un archivo `.singevery-ref` recibido de terceros, la app valida su
+contenido y descarta cualquier campo que no pertenezca al formato.
 
 Las credenciales de traducción se guardan actualmente en el archivo local de
 ajustes, no en un gestor seguro del sistema operativo. No compartas ese archivo.
@@ -85,6 +112,9 @@ canciones necesarios para diagnosticar un fallo.
   redactados. Revísalo antes de compartirlo.
 - Exportar CSV crea una copia de las líneas guardadas, incluida letra,
   pronunciación, traducción y pista. Sólo ocurre al pulsar el botón.
+- Exportar una melodía de referencia crea un archivo `.singevery-ref` en la ruta
+  elegida. Contiene la curva de tono y los datos que la persona escribió
+  (nombre de la toma, instrumento y, si lo puso, quién grabó). No contiene audio.
 - Reportar un problema crea primero un ticket JSON local. Puede incluir el texto
   que la persona escribió y, si acepta la opción, el mismo diagnóstico redactado.
   La app abre un issue prellenado en GitHub, pero no adjunta ni sube el JSON. La
@@ -101,6 +131,7 @@ y no se envía. Mientras funciona, la ventana puede protegerse de capturas.
 ## Cómo borrar datos
 
 - Ajustes → caché permite borrar letras cacheadas.
+- Ajustes → Otros permite borrar cada melodía de referencia guardada.
 - El panel Repaso permite quitar líneas individualmente.
 - Desinstalar la app no siempre elimina la carpeta de datos de usuario. Para un
   borrado total, cierra Singevery y elimina manualmente su carpeta de datos.

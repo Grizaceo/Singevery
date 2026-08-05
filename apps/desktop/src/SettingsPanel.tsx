@@ -17,6 +17,7 @@ import {
 import { DisplayTab } from './settings/DisplayTab';
 import { AudioTab } from './settings/AudioTab';
 import { OtherTab } from './settings/OtherTab';
+import type { TeacherReferenceApi } from './useTeacherReference';
 import './SettingsPanel.css';
 
 interface SettingsPanelProps {
@@ -25,6 +26,10 @@ interface SettingsPanelProps {
   /** Escuchar el audio del sistema al abrir la app (preferencia del renderer). */
   autoStart: boolean;
   onAutoStartChange: (enabled: boolean) => void;
+  /** Melodías de referencia del profesor (se instancia en App: la usa la tira). */
+  teacherRef: TeacherReferenceApi;
+  trackTitle?: string;
+  trackArtist?: string;
 }
 
 const DEFAULT_DISPLAY: DisplaySettings = {
@@ -194,6 +199,9 @@ export function SettingsPanel({
             patchTranslation={patchTranslation}
             diagnosticStatus={diagnosticStatus}
             setDiagnosticStatus={setDiagnosticStatus}
+            teacherRef={teacherRef}
+            trackTitle={trackTitle}
+            trackArtist={trackArtist}
           />
         )}
       </div>

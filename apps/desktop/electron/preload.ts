@@ -8,6 +8,8 @@
 
 import { contextBridge, ipcRenderer } from 'electron';
 import type { RenderModel, DesktopApi } from '../src/types';
+import type { ReferenceMelody, ReferenceMeta } from './services/references/referenceTypes';
+import type { SaveReferenceInput } from './services/references/referenceStore';
 
 const api = {
   onRenderModel: (cb: (model: RenderModel) => void): (() => void) => {
@@ -180,6 +182,30 @@ const api = {
     canceled?: boolean;
     error?: string;
   }> => ipcRenderer.invoke('practice:exportCsv', csv),
+  // Melodías de referencia del profesor: solo curva de tono, solo en este PC.
+  listReferences: (trackKey?: string): Promise<{ ok: boolean; items: ReferenceMeta[] }> =>
+    ipcRenderer.invoke('references:list', trackKey),
+  getReferenceForTrack: (
+    trackKey: string,
+  ): Promise<{ ok: boolean; reference: ReferenceMelody | null }> =>
+    ipcRenderer.invoke('references:getForTrack', trackKey),
+  saveReference: (
+    input: SaveReferenceInput,
+  ): Promise<{ ok: boolean; reference?: ReferenceMeta; error?: string }> =>
+    ipcRenderer.invoke('references:save', input),
+  deleteReference: (id: string): Promise<{ ok: boolean }> =>
+    ipcRenderer.invoke('references:delete', id),
+  exportReference: (
+    id: string,
+  ): Promise<{ ok: boolean; canceled?: boolean; error?: string }> =>
+    ipcRenderer.invoke('references:export', id),
+  importReference: (): Promise<{
+    ok: boolean;
+    canceled?: boolean;
+    reference?: ReferenceMeta;
+    error?: string;
+  }> => ipcRenderer.invoke('references:import'),
+
   openBetaGuide: (): Promise<{ ok: boolean; error?: string }> =>
     ipcRenderer.invoke('help:openBetaGuide'),
   openPrivacyNotice: (): Promise<{ ok: boolean; error?: string }> =>

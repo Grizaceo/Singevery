@@ -278,6 +278,51 @@ export interface MatchStats {
 }
 
 /** API expuesta por el preload script al renderer. */
+// ============================================================================
+// Melodías de referencia del profesor (DTOs del lado renderer).
+//
+// Se declaran aquí y no se importan de electron/ para no cruzar el límite del
+// proceso en los tipos. Son estructuralmente idénticos a los del main; si uno
+// cambia, tsc rompe en preload.ts, que es exactamente donde debe romper.
+// ============================================================================
+
+export type ReferenceInstrumentDto = 'voz' | 'bajo' | 'guitarra' | 'teclado' | 'otro';
+
+/** Curva de tono: arrays PARALELOS de tiempo (ms) y frecuencia (Hz). */
+export interface ReferenceCurveDto {
+  t: number[];
+  f: number[];
+}
+
+export interface ReferenceMetaDto {
+  id: string;
+  trackKey: string;
+  title: string;
+  artist: string;
+  label: string;
+  instrument: ReferenceInstrumentDto;
+  author?: string;
+  createdAt: number;
+  startMs: number;
+  endMs: number;
+  pointCount: number;
+  appVersion: string;
+}
+
+export interface ReferenceMelodyDto extends ReferenceMetaDto {
+  curve: ReferenceCurveDto;
+}
+
+export interface SaveReferenceDto {
+  trackKey?: string;
+  title?: string;
+  artist?: string;
+  label?: string;
+  instrument?: ReferenceInstrumentDto;
+  author?: string;
+  curve: ReferenceCurveDto;
+}
+
 export interface DesktopApi {
   onRenderModel: (cb: (model: RenderModel) => void) => () => void;
   onSingCommand: (cb: () => void) => () => void;
@@ -383,6 +428,27 @@ export interface DesktopApi {
     canceled?: boolean;
     error?: string;
   }>;
+  // --- Melodías de referencia del profesor -----------------------------
+  // La curva de tono queda SOLO en este PC. Compartirla con el alumno es
+  // exportar un archivo; la app nunca la sube a ninguna parte.
+  listReferences: (trackKey?: string) => Promise<{ ok: boolean; items: ReferenceMetaDto[] }>;
+  getReferenceForTrack: (
+    trackKey: string,
+  ) => Promise<{ ok: boolean; reference: ReferenceMelodyDto | null }>;
+  saveReference: (input: SaveReferenceDto) => Promise<{
+    ok: boolean;
+    reference?: ReferenceMetaDto;
+    error?: string;
+  }>;
+  deleteReference: (id: string) => Promise<{ ok: boolean }>;
+  exportReference: (id: string) => Promise<{ ok: boolean; canceled?: boolean; error?: string }>;
+  importReference: () => Promise<{
+    ok: boolean;
+    canceled?: boolean;
+    reference?: ReferenceMetaDto;
+    error?: string;
+  }>;
+
   openBetaGuide: () => Promise<{ ok: boolean; error?: string }>;
   openPrivacyNotice: () => Promise<{ ok: boolean; error?: string }>;
 

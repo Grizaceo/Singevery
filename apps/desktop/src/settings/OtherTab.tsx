@@ -5,12 +5,17 @@
 import { useEffect, useState } from 'react';
 import type { MatchStats, TranslationSettings } from '../types';
 import { SupportTicketForm } from '../SupportTicketForm';
+import { ReferencesSection } from './ReferencesSection';
+import type { TeacherReferenceApi } from '../useTeacherReference';
 
 export interface OtherTabProps {
   translation: TranslationSettings;
   patchTranslation: (partial: Partial<TranslationSettings>) => void;
   diagnosticStatus: string | null;
   setDiagnosticStatus: (status: string | null) => void;
+  teacherRef: TeacherReferenceApi;
+  trackTitle?: string;
+  trackArtist?: string;
 }
 
 const TRANSLATION_PROVIDERS: {
@@ -29,6 +34,9 @@ export function OtherTab({
   patchTranslation,
   diagnosticStatus,
   setDiagnosticStatus,
+  teacherRef,
+  trackTitle,
+  trackArtist,
 }: OtherTabProps) {
   // MyMemory no pide credenciales: el campo pasa a ser un email opcional que
   // solo sirve para subir la cuota diaria.
@@ -105,6 +113,14 @@ export function OtherTab({
 
   return (
     <>
+      {/* ------- Melodías de referencia del profesor (avanzado) ------- */}
+      <ReferencesSection
+        teacherRef={teacherRef}
+        trackTitle={trackTitle}
+        trackArtist={trackArtist}
+        hasTrack={Boolean(trackTitle)}
+      />
+
       {/* ---------------- Traducción ---------------- */}
       <section className="settings-section">
         <span className="settings-label settings-group-title">Traducción</span>

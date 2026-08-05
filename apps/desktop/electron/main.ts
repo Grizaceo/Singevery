@@ -57,6 +57,20 @@ import {
   startDiagnosticsServer,
   type DiagnosticsServerHandle,
 } from './services/diagnostics/diagnosticsServer';
+import {
+  ReferenceStore,
+  buildReferenceFile,
+  parseReferenceFile,
+  suggestedFileName,
+  toMeta,
+  type SaveReferenceInput,
+} from './services/references/referenceStore';
+import {
+  MAX_REFERENCE_FILE_BYTES,
+  REFERENCE_FILE_EXTENSION,
+  type ReferenceMelody,
+  type ReferenceMeta,
+} from './services/references/referenceTypes';
 import { romanizeTimedLyrics } from './services/romanize';
 import {
   buildSupportIssueUrl,
@@ -89,6 +103,8 @@ let autoContrast: AutoContrastService | null = null;
 let appSettings: AppSettings | null = null;
 /** Endpoint HTTP de diagnóstico (solo si SINGEVERY_DEBUG_PORT está puesto). */
 let diagnosticsServer: DiagnosticsServerHandle | null = null;
+/** Melodías de referencia grabadas por el profesor (solo curva, solo local). */
+let referenceStore: ReferenceStore | null = null;
 /** Arranque del proceso: base del uptime que reporta /debug. */
 const processStartedAt = Date.now();
 /** Bounds expandidos guardados al colapsar a pill; se restauran al expandir. */
@@ -509,6 +525,112 @@ function registerIpcHandlers(): void {
     (_event, phase: RecognitionPhase): { ok: boolean } => {
       stateStore?.setRecognitionPhase(phase);
       return { ok: true };
+    },
+  );
+
+  // -------------------------------------------------------------------------
+  // Melodías de referencia del profesor.
+  //
+  // Todo local: se guarda la CURVA DE TONO, nunca el audio, bajo userData.
+  // Compartir con el alumno = exportar un archivo que el profesor manda por
+  // donde quiera. Ninguno de estos handlers abre una conexión de red.
+  // -------------------------------------------------------------------------
+
+  ipcMain.handle(
+    'references:list',
+    (_event, trackKey?: string): { ok: boolean; items: ReferenceMeta[] } => {
+      return { ok: true, items: referenceStore?.list(trackKey) ?? [] };
+    },
+  );
+
+  ipcMain.handle(
+    'references:getForTrack',
+    (_event, trackKey: string): { ok: boolean; reference: ReferenceMelody | null } => {
+      if (!referenceStore || typeof trackKey !== 'string' || !trackKey) {
+        return { ok: true, reference: null };
+      }
+      return { ok: true, reference: referenceStore.getForTrack(trackKey) };
+    },
+  );
+
+  ipcMain.handle(
+    'references:save',
+    (
+      _event,
+      input: SaveReferenceInput,
+    ): { ok: boolean; reference?: ReferenceMeta; error?: string } => {
+      if (!referenceStore) return { ok: false, error: 'El almacén no está disponible' };
+      try {
+        const saved = referenceStore.save({ ...input, appVersion: app.getVersion() });
+        return { ok: true, reference: toMeta(saved) };
+      } catch (err) {
+        return { ok: false, error: err instanceof Error ? err.message : 'Error al guardar' };
+      }
+    },
+  );
+
+  ipcMain.handle('references:delete', (_event, id: string): { ok: boolean } => {
+    return { ok: referenceStore?.remove(id) ?? false };
+  });
+
+  ipcMain.handle(
+    'references:export',
+    async (_event, id: string): Promise<{ ok: boolean; canceled?: boolean; error?: string }> => {
+      if (!referenceStore) return { ok: false, error: 'El almacén no está disponible' };
+      const reference = referenceStore.get(id);
+      if (!reference) return { ok: false, error: 'La referencia ya no existe' };
+      try {
+        const options = {
+          title: 'Exportar melodía de referencia',
+          defaultPath: suggestedFileName(reference),
+          filters: [{ name: 'Referencia de Singevery', extensions: [REFERENCE_FILE_EXTENSION] }],
+        };
+        const result = mainWindow
+          ? await dialog.showSaveDialog(mainWindow, options)
+          : await dialog.showSaveDialog(options);
+        if (result.canceled || !result.filePath) return { ok: false, canceled: true };
+        fs.writeFileSync(result.filePath, buildReferenceFile(reference), 'utf8');
+        return { ok: true };
+      } catch (err) {
+        return { ok: false, error: err instanceof Error ? err.message : 'Error al exportar' };
+      }
+    },
+  );
+
+  ipcMain.handle(
+    'references:import',
+    async (): Promise<{
+      ok: boolean;
+      canceled?: boolean;
+      reference?: ReferenceMeta;
+      error?: string;
+    }> => {
+      if (!referenceStore) return { ok: false, error: 'El almacén no está disponible' };
+      try {
+        const options = {
+          title: 'Importar melodía de referencia',
+          properties: ['openFile' as const],
+          filters: [{ name: 'Referencia de Singevery', extensions: [REFERENCE_FILE_EXTENSION] }],
+        };
+        const selection = mainWindow
+          ? await dialog.showOpenDialog(mainWindow, options)
+          : await dialog.showOpenDialog(options);
+        if (selection.canceled || selection.filePaths.length === 0) {
+          return { ok: false, canceled: true };
+        }
+
+        const filePath = selection.filePaths[0];
+        // El archivo viene de fuera (WhatsApp, pendrive): se acota el tamaño
+        // ANTES de leerlo y parseReferenceFile valida todo lo demás.
+        const size = fs.statSync(filePath).size;
+        if (size > MAX_REFERENCE_FILE_BYTES) {
+          return { ok: false, error: 'El archivo es demasiado grande para ser una referencia' };
+        }
+        const parsed = parseReferenceFile(fs.readFileSync(filePath, 'utf8'));
+        return { ok: true, reference: toMeta(referenceStore.save(parsed)) };
+      } catch (err) {
+        return { ok: false, error: err instanceof Error ? err.message : 'Error al importar' };
+      }
     },
   );
 
@@ -943,6 +1065,15 @@ function bootstrap(): void {
   }
 
   mainWindow = createWindow();
+
+  // Melodías de referencia del profesor. Si falla, la app funciona igual: la
+  // referencia automática (extraída de la propia canción) sigue disponible.
+  try {
+    referenceStore = new ReferenceStore(path.join(app.getPath('userData'), 'references'));
+  } catch (err) {
+    console.error('[referencias ERROR] No se pudo inicializar el almacén:', err);
+    referenceStore = null;
+  }
 
   // Caché local de letras (cache-first): acelera re-escuchas y evita re-romanizar.
   // Si falla, LyricsService sigue funcionando sin caché (NULL_LYRICS_CACHE).
