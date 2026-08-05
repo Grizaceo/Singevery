@@ -298,9 +298,14 @@ ruby.line-spoken > rt {
    centrada. Antes el grid fijo 1fr 1fr reservaba la mitad del ancho para una
    columna de traducción vacía, desplazando la letra del centro. Con la
    columna de entonación activa (práctica vocal), la letra se centra en el
-   espacio restante y la melodía va a la derecha. */
+   espacio restante y la melodía va a la derecha.
+
+   La columna de entonación tiene ancho FIJO (90px): así la corrección en
+   vivo (nota cantada, flecha ▲/▼, score) puede crecer por dentro sin mover
+   la letra. Si fuera auto, cada cambio de contenido re-dimensionaría la
+   pista y la letra centrada saltaría de posición. */
 .line-row:not(:has(.line-col-translation)) {
-    grid-template-columns: 1fr auto;
+    grid-template-columns: minmax(0, 1fr) 90px;
 }
 
 .line-row:not(:has(.line-col-translation)) .line-col-main {
@@ -308,9 +313,10 @@ ruby.line-spoken > rt {
 }
 
 /* Traducción lado a lado + práctica vocal: tres columnas alineadas
-   (letra | traducción | melodía). */
+   (letra | traducción | melodía), la melodía con ancho fijo por la misma
+   razón que arriba. */
 .line-row:has(.line-col-translation):has(.line-col-melody) {
-    grid-template-columns: 1fr 1fr auto;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 90px;
 }
 
 /* La traducción acompaña, no compite: algo más chica y en cursiva, pero
@@ -343,6 +349,13 @@ ruby.line-spoken > rt {
 
     .line-row:has(.line-col-translation):has(.line-col-melody) {
         grid-template-columns: 1fr;
+    }
+
+    /* La columna de entonación apilada recupera su ancho natural. */
+    .line-col-melody {
+        width: auto;
+        min-width: 0;
+        max-width: none;
     }
 
     .lyrics-side-header {

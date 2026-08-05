@@ -60,6 +60,7 @@
   color: rgba(255, 255, 255, 0.92);
   font-weight: 700;
   font-size: 0.78em;
+  white-space: nowrap;
 }
 
 /* Dirección de la corrección en vivo: más alto (▲ rojo), más bajo (▼ cielo)
@@ -109,10 +110,13 @@
   opacity: 0.4;
 }
 
-/* En la columna paralela (side) la tira va junto a la traducción. */
+/* En la columna paralela (side) la tira va junto a la traducción. Ancho fijo:
+   la letra no debe moverse cuando la corrección en vivo cambia de contenido. */
 .line-col-melody {
-  min-width: 56px;
-  max-width: 90px;
-  display: flex;
-  align-items: center;
+    width: 90px;
+    min-width: 90px;
+    max-width: 90px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
 }
