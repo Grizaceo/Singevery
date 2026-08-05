@@ -15,6 +15,7 @@ interface ChromeTopBarProps {
   readingMode: ReadingMode;
   onReadingModeChange: (mode: ReadingMode) => void;
   hasAnnotations: boolean;
+  hasIpa?: boolean;
   scriptHint?: ScriptHint;
   translationView?: TranslationView;
   onTranslationViewChange?: (view: TranslationView) => void;
@@ -30,6 +31,7 @@ export function ChromeTopBar({
   readingMode,
   onReadingModeChange,
   hasAnnotations,
+  hasIpa,
   scriptHint,
   translationView,
   onTranslationViewChange,
@@ -95,6 +97,7 @@ export function ChromeTopBar({
             mode={readingMode}
             onChange={onReadingModeChange}
             hasAnnotations={hasAnnotations}
+            hasIpa={hasIpa}
             scriptHint={scriptHint}
             translationView={translationView}
             onTranslationViewChange={widgetControls.translate ? onTranslationViewChange : undefined}

@@ -18,6 +18,8 @@ interface Props {
   showReadingModes?: boolean;
   /** F5: mostrar el botón de traducción (T). */
   showTranslate?: boolean;
+  /** La letra trae transcripción IPA (japonés o idioma latino reconocido). */
+  hasIpa?: boolean;
 }
 
 /** Ciclo del botón de traducción: sin → debajo → lado a lado → sin. */
@@ -82,6 +84,22 @@ const JAPANESE_OPTIONS: ModeOption[] = [
     title: 'Furigana + IPA (kanji con kana arriba y fonética IPA abajo)',
     needsAnnotations: true,
     scripts: ['japanese'],
+  },
+];
+
+/**
+ * Canciones en alfabeto latino (español, italiano, francés, alemán): no hay
+ * nada que romanizar, así que furigana y romaji no aplican. Lo único que
+ * aporta lectura es el IPA, y solo aparece cuando el detector de idioma
+ * reconoció la canción.
+ */
+const LATIN_OPTIONS: ModeOption[] = [
+  { key: 'original', label: 'Orig', title: 'Texto original', needsAnnotations: false },
+  {
+    key: 'ipa',
+    label: 'IPA',
+    title: 'IPA (fonética: cómo suena de verdad cada letra al cantarla)',
+    needsAnnotations: true,
   },
 ];
 
@@ -179,14 +197,20 @@ export function ReadingControls({
   onOpenSettings,
   showReadingModes = true,
   showTranslate = true,
+  hasIpa = false,
 }: Props) {
   const [helpOpen, setHelpOpen] = useState(false);
   const helpRef = useRef<HTMLDivElement>(null);
 
   const options = useMemo(() => {
-    const base = scriptHint === 'japanese' ? JAPANESE_OPTIONS : GENERIC_OPTIONS;
-    return base.filter((opt) => !opt.scripts || opt.scripts.includes(scriptHint));
-  }, [scriptHint]);
+    if (scriptHint === 'japanese') {
+      return JAPANESE_OPTIONS.filter((opt) => !opt.scripts || opt.scripts.includes(scriptHint));
+    }
+    // Alfabeto latino con idioma reconocido → original + IPA. Sin idioma
+    // reconocido no se ofrece nada: no hay lectura que dar.
+    if (scriptHint === 'latin') return hasIpa ? LATIN_OPTIONS : [];
+    return GENERIC_OPTIONS.filter((opt) => !opt.scripts || opt.scripts.includes(scriptHint));
+  }, [scriptHint, hasIpa]);
 
   const help = HELP_EXAMPLES[scriptHint] ?? HELP_EXAMPLES.other;
 

@@ -122,6 +122,7 @@ export const DEFAULT_TRANSLATION_SETTINGS: TranslationSettings = {
 
 export const DEFAULT_READING_SETTINGS: ReadingSettings = {
   pinyinToneType: 'none',
+  spanishVariant: 'seseo',
 };
 
 /** Implementación en memoria (no persiste). Útil como fallback y en tests. */
@@ -269,6 +270,7 @@ function normalizeTranslationSettings(raw?: Partial<TranslationSettings>): Trans
 function normalizeReadingSettings(raw?: Partial<ReadingSettings>): ReadingSettings {
   return {
     pinyinToneType: raw?.pinyinToneType === 'symbol' ? 'symbol' : 'none',
+    spanishVariant: raw?.spanishVariant === 'distincion' ? 'distincion' : 'seseo',
   };
 }
 

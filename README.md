@@ -49,7 +49,31 @@ La app detecta el script del texto y genera lecturas **sin destruir la letra ori
 | **Coreano** | Romanización Revisada + ruby por palabra |
 | **Chino** | Pinyin por carácter + ruby (tonos opcionales en Ajustes) |
 | **Cirílico** (ruso, etc.) | Romanización latina por palabra + ruby (el “romaji” del cirílico) |
+| **Español · italiano · francés · alemán** | **Transcripción IPA** (fonética real, no aproximación de teclado) |
 | **Otros** | Transliteración latina + ruby por token cuando hay espacios |
+
+### IPA: cómo suena de verdad
+
+El romaji te dice qué teclas pulsar; el **IPA** te dice qué hacer con la boca. En
+japonés し es `/ɕi/`, no “shi”. En alemán *ich* es `/ʔɪç/` y *Nacht* es `/naxt/`:
+la misma ⟨ch⟩ escrita, dos sonidos distintos según la vocal anterior. En italiano
+*notte* es `/notːe/` con la consonante larga que ocupa tiempo musical.
+
+Para las cuatro lenguas de alfabeto latino la app **identifica el idioma sola** a
+partir de la letra completa (palabras funcionales, diacríticos y secuencias
+ortográficas). Si no hay evidencia suficiente, o la canción está en un idioma sin
+motor —inglés, portugués—, **no anota nada**: es preferible no responder a
+transcribir con las reglas equivocadas.
+
+| Idioma | Precisión | Qué queda fuera |
+|--------|-----------|-----------------|
+| Español | Exacta | Sin acento tónico ni encadenamiento entre palabras. Norma seseo/distinción configurable en Ajustes |
+| Italiano | Exacta | e/o abiertas o cerradas solo con tilde; z se transcribe sorda |
+| Alemán | Aproximada | La cantidad de la vocal ante ⟨ch⟩ es léxica y se resuelve breve |
+| Francés | Aproximada | Sin liaison; el final `-ent` verbal y algunos timbres son aproximados |
+| Japonés | Exacta | Tabla kana→IPA exhaustiva (ver `docs/PLAN_IPA_2026-08-03.md`) |
+
+Detalle de las reglas y de cada límite: [`docs/IPA_LENGUAS_LATINAS_2026-08-04.md`](docs/IPA_LENGUAS_LATINAS_2026-08-04.md).
 
 ### Modos en el widget
 
@@ -60,6 +84,8 @@ La app detecta el script del texto y genera lecturas **sin destruir la letra ori
 | **か** | Solo hiragana (japonés; ideal si aún no lees kanji/katakana) |
 | **A** | Romanización latina |
 | **ふ+A / R+A** | Ruby + romanización debajo de la línea actual |
+| **IPA** | Transcripción fonética (japonés, español, italiano, francés, alemán) |
+| **ふ+IPA** | Furigana arriba + IPA debajo (japonés) |
 | **T** | Traducción de la línea actual |
 | **?** | Ayuda con ejemplos por idioma (+ enlace a [Tofugu Hiragana](https://www.tofugu.com/japanese/learn-hiragana/) en japonés) |
 
@@ -169,7 +195,7 @@ Selector en **Ajustes (⚙)** del widget. También ahí: opacidad, **color de le
 ## Scripts útiles
 
 ```bash
-npm test              # Vitest (292 tests)
+npm test              # Vitest (456 tests)
 npm run build         # Build producción
 npm run package       # Instalador Windows (electron-builder)
 ```

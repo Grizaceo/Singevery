@@ -150,6 +150,12 @@ export interface TranslationSettings {
 
 export interface ReadingSettings {
   pinyinToneType: 'none' | 'symbol';
+  /**
+   * Norma del español en el modo IPA: 'seseo' (americana, casa = caza = /s/)
+   * o 'distincion' (castellana, caza = /θ/). La dicción clásica suele pedir
+   * distinción; el repertorio latino, seseo.
+   */
+  spanishVariant: 'seseo' | 'distincion';
 }
 
 export type TextAlignment = 'left' | 'center' | 'right';

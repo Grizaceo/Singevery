@@ -36,7 +36,7 @@ import { decodeWav } from './wavDecode';
 import { LyricsService, defaultLyricsService } from '../services/lyrics/lyricsService';
 import { NULL_OFFSET_STORE, NULL_CALIBRATION_STORE, NULL_DISPLAY_STORE, NULL_TRANSLATION_STORE, NULL_READING_STORE } from '../services/settings';
 import type { OffsetStore, CalibrationStore, DisplayStore, TranslationStore, ReadingStore } from '../services/settings';
-import { setPinyinToneType } from '../services/romanize';
+import { setPinyinToneType, setSpanishVariant } from '../services/romanize';
 import { translateLines } from '../services/translate';
 import type { RenderModel, Status, TimedLyrics, TrackMatch } from '../../src/types';
 
@@ -297,9 +297,11 @@ export class StateStore {
     this.applyReadingSettings();
   }
 
-  /** Sincroniza ajustes de lectura (pinyin con/sin tonos) con romanize.ts. */
+  /** Sincroniza ajustes de lectura (pinyin, norma del español) con romanize.ts. */
   applyReadingSettings(): void {
-    setPinyinToneType(this.readingStore.get().pinyinToneType);
+    const reading = this.readingStore.get();
+    setPinyinToneType(reading.pinyinToneType);
+    setSpanishVariant(reading.spanishVariant);
   }
 
   /** Sincroniza ajustes visuales persistidos con el SyncEngine. */

@@ -137,7 +137,13 @@ function AppContent() {
   // si la vista de traducción está activa. El ref evita re-disparos por el
   // objeto translate que se recrea en cada render.
   const translateRef = useRef(translationState.translate);
-  translateRef.current = translationState.translate;
+  // El ref se actualiza en un efecto propio, NO durante el render: escribir en
+  // un ref mientras React renderiza es un fallo real (react-hooks/refs) porque
+  // el render debe ser puro. Este efecto va antes que el consumidor, y los
+  // efectos corren en orden de declaración, así que el valor ya está fresco.
+  useEffect(() => {
+    translateRef.current = translationState.translate;
+  }, [translationState.translate]);
   const prevTrackKeyRef = useRef<string | null>(null);
   useEffect(() => {
     if (!trackKey) {
@@ -225,20 +231,24 @@ function AppContent() {
     window.api?.setClickThrough?.(clickThrough);
   }, [ghost, handleHovered, chromeHidden, settingsOpen, tangible, welcomeOpen]);
 
+  const visibleLines = useMemo(
+    () => [...model.previous_lines, model.current_line, ...model.next_lines],
+    [model],
+  );
+
   const hasAnnotations =
     model.status === 'DISPLAYING' &&
-    [...model.previous_lines, model.current_line, ...model.next_lines].some(
-      (l) => l.furigana != null || l.romaji != null || l.kana != null,
+    visibleLines.some(
+      (l) => l.furigana != null || l.romaji != null || l.kana != null || l.ipa != null,
     );
+
+  /** Hay IPA cuando el idioma se reconoció: japonés o una lengua latina. */
+  const hasIpa = model.status === 'DISPLAYING' && visibleLines.some((l) => l.ipa != null);
 
   const scriptHint = useMemo(() => {
     if (model.status !== 'DISPLAYING') return 'latin' as const;
-    return detectScriptFromLines([
-      ...model.previous_lines.map((l) => l.text),
-      model.current_line.text,
-      ...model.next_lines.map((l) => l.text),
-    ]);
-  }, [model]);
+    return detectScriptFromLines(visibleLines.map((l) => l.text));
+  }, [model.status, visibleLines]);
 
   if (collapsed) {
     return <Pill onSing={handleSing} />;
@@ -279,6 +289,7 @@ function AppContent() {
           readingMode={readingMode}
           onReadingModeChange={setReadingMode}
           hasAnnotations={hasAnnotations}
+          hasIpa={hasIpa}
           scriptHint={scriptHint}
           translationView={translationView}
           onTranslationViewChange={setTranslationView}

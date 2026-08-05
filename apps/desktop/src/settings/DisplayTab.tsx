@@ -251,6 +251,16 @@ export function DisplayTab({
         <label className="settings-check">
           <input
             type="checkbox"
+            checked={reading.spanishVariant === 'distincion'}
+            onChange={(e) =>
+              patchReading({ spanishVariant: e.target.checked ? 'distincion' : 'seseo' })
+            }
+          />
+          IPA del español con distinción castellana (caza /ˈkaθa/ vs seseo /ˈkasa/)
+        </label>
+        <label className="settings-check">
+          <input
+            type="checkbox"
             checked={display.mirrorMode}
             onChange={(e) => patchDisplay({ mirrorMode: e.target.checked })}
           />

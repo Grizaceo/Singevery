@@ -58,7 +58,10 @@ export function SettingsPanel({
     localEndpoint: 'http://localhost:11434/v1/chat/completions',
     localModel: 'translategemma:4b',
   });
-  const [reading, setReading] = useState<ReadingSettings>({ pinyinToneType: 'none' });
+  const [reading, setReading] = useState<ReadingSettings>({
+    pinyinToneType: 'none',
+    spanishVariant: 'seseo',
+  });
   const [diagnosticStatus, setDiagnosticStatus] = useState<string | null>(null);
 
   // F4: preferencias de micrófono. F5: controles del widget.

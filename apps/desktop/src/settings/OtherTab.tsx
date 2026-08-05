@@ -56,7 +56,19 @@ export function OtherTab({
     if (result.ok) setAccuracyStats(result.stats);
   };
   useEffect(() => {
-    void refreshAccuracyStats();
+    // El estado se fija DENTRO del callback asíncrono, no en el cuerpo del
+    // efecto, y se descarta si la pestaña se cerró mientras llegaba la
+    // respuesta: sin la guarda, cerrar Ajustes rápido dejaba un setState
+    // sobre un componente ya desmontado.
+    let cancelled = false;
+    void (async () => {
+      if (!window.api?.getMatchStats) return;
+      const result = await window.api.getMatchStats();
+      if (!cancelled && result.ok) setAccuracyStats(result.stats);
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const sendAccuracyFeedback = async (correct: boolean) => {

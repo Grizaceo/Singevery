@@ -1,5 +1,6 @@
 import type { FuriganaSegment, TimedLyrics } from '../../src/types';
 import { kanaToIpa, ipaForRuby } from './ipa';
+import { detectLatinLanguage, latinToIpa, type IpaLang, type SpanishVariant } from './phonetics';
 import { transliterate } from 'transliteration';
 import { pinyin } from 'pinyin-pro';
 import { romanize as hangulRomanize } from 'es-hangul';
@@ -14,8 +15,12 @@ const CYRILLIC_WORD_RE = /[\u0400-\u04FF\u0500-\u052F]+/g;
 const KOREAN_WORD_RE = /[\uAC00-\uD7AF]+/g;
 const CJK_CHAR_RE = /[\u4E00-\u9FFF]/;
 
-/** Incrementar al cambiar el formato de anotaciones (furigana, kana, ruby multi-idioma). */
-export const ANNOTATIONS_VERSION = 3;
+/**
+ * Incrementar al cambiar el formato de anotaciones (furigana, kana, ruby
+ * multi-idioma). La 4 añade IPA para español, italiano, francés y alemán:
+ * el bump obliga a re-anotar las letras ya cacheadas.
+ */
+export const ANNOTATIONS_VERSION = 4;
 
 type KuroshiroInstance = {
   convert: (
@@ -36,6 +41,17 @@ export function setPinyinToneType(toneType: 'none' | 'symbol'): void {
 
 export function getPinyinToneType(): 'none' | 'symbol' {
   return pinyinToneType;
+}
+
+/** Norma del español para el IPA (configurable desde settings). */
+let spanishVariant: SpanishVariant = 'seseo';
+
+export function setSpanishVariant(variant: SpanishVariant): void {
+  spanishVariant = variant;
+}
+
+export function getSpanishVariant(): SpanishVariant {
+  return spanishVariant;
 }
 
 async function getKuroshiro(): Promise<KuroshiroInstance> {
@@ -293,7 +309,23 @@ function fallbackReadings(text: string): LineReadings {
   };
 }
 
-async function computeReadings(text: string): Promise<LineReadings> {
+async function computeReadings(text: string, latinLang?: IpaLang): Promise<LineReadings> {
+  // IPA de alfabeto latino. Va ANTES del guard de romanización y NO se apoya
+  // en él: `needsRomanization` cuenta caracteres no ASCII, así que "corazón"
+  // le parece texto a romanizar por culpa de la tilde. Lo que importa aquí es
+  // otra cosa — que la línea no esté en otro script — y eso se pregunta
+  // directamente.
+  if (
+    latinLang &&
+    !isJapanese(text) &&
+    !isKorean(text) &&
+    !isChinese(text) &&
+    !isCyrillic(text)
+  ) {
+    const ipa = latinToIpa(text, latinLang, { spanishVariant });
+    return ipa ? { ipa } : {};
+  }
+
   if (!needsRomanization(text)) return {};
 
   try {
@@ -331,11 +363,13 @@ async function computeReadings(text: string): Promise<LineReadings> {
 const readingCache = new Map<string, LineReadings>();
 const READING_CACHE_MAX = 4000;
 
-export async function analyzeLine(text: string): Promise<LineReadings> {
-  const cacheKey = `${pinyinToneType}:${text}`;
+export async function analyzeLine(text: string, latinLang?: IpaLang): Promise<LineReadings> {
+  // La clave incluye los ajustes que cambian el resultado: si el usuario pasa
+  // de seseo a distinción, la caché no puede devolverle la transcripción vieja.
+  const cacheKey = `${pinyinToneType}:${spanishVariant}:${latinLang ?? '-'}:${text}`;
   const cached = readingCache.get(cacheKey);
   if (cached) return cached;
-  const readings = await computeReadings(text);
+  const readings = await computeReadings(text, latinLang);
   if (readingCache.size >= READING_CACHE_MAX) readingCache.clear();
   readingCache.set(cacheKey, readings);
   return readings;
@@ -360,9 +394,13 @@ export function needsReannotation(lyrics: TimedLyrics): boolean {
 }
 
 export async function romanizeTimedLyrics(lyrics: TimedLyrics): Promise<TimedLyrics> {
+  // El idioma se decide UNA vez, con toda la letra a la vista. Por línea suelta
+  // no hay evidencia suficiente ("oh oh oh") y cambiar de motor a mitad de
+  // canción daría versos transcritos con reglas distintas.
+  const latinLang = detectLatinLanguage(lyrics.lines.map((line) => line.text)) ?? undefined;
   const lines = await Promise.all(
     lyrics.lines.map(async (line) => {
-      const readings = await analyzeLine(line.text);
+      const readings = await analyzeLine(line.text, latinLang);
       return { ...line, ...readings };
     }),
   );
