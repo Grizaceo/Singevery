@@ -62,7 +62,7 @@ export function RecognitionControls({ recognition, hasTrack, onManualSearch }: R
         title="Captura el audio que suena en el sistema (altavoces)"
         aria-label="Capturar audio del sistema"
       >
-        Sistema
+        💻
       </button>
       <button
         type="button"
@@ -72,11 +72,11 @@ export function RecognitionControls({ recognition, hasTrack, onManualSearch }: R
         title="Captura audio desde el micrófono"
         aria-label="Capturar micrófono"
       >
-        Mic
+        🎤
       </button>
       {activeSource && (
         <button type="button" className="chrome-button stop" onClick={() => void stop()} aria-label="Detener reconocimiento">
-          Stop
+          ⏹
         </button>
       )}
       {activeSource && <LevelMeter level={level} />}
@@ -90,7 +90,7 @@ export function RecognitionControls({ recognition, hasTrack, onManualSearch }: R
           title="La app no reconoce la canción — búscala por título/artista"
           aria-label="Buscar canción manualmente"
         >
-          🔍 Buscar
+          🔍
         </button>
       )}
       {/* Hay canción en pantalla pero puede estar mal identificada:
@@ -103,7 +103,7 @@ export function RecognitionControls({ recognition, hasTrack, onManualSearch }: R
           title="La canción mostrada no es la que suena — buscar manualmente"
           aria-label="Señalar que la canción no es la correcta y buscar"
         >
-          ✗ No es esta
+          ✗
         </button>
       )}
       {hint && !error && <span className="recognition-hint">{hint}</span>}

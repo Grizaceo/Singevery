@@ -20,7 +20,7 @@
 
 .chrome-bar-bottom .recognition-hint,
 .chrome-bar-bottom .recognition-error {
-  max-width: 280px;
+  max-width: 200px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

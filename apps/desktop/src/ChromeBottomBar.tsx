@@ -1,3 +1,4 @@
+import { useCallback } from 'react';
 import { RecognitionControls } from './RecognitionControls';
 import { SyncControls } from './SyncControls';
 import { ResizeGrip } from './ResizeGrip';
@@ -8,6 +9,9 @@ import type { DesktopApi, RenderModel } from './types';
 import type { usePitchMonitor } from './usePitchMonitor';
 import type { useMelodyReference } from './useMelodyReference';
 import './ChromeBars.css';
+
+/** Paso del ajuste fino por rueda del mouse (ms por muesca). */
+const WHEEL_NUDGE_MS = 1000;
 
 interface ChromeBottomBarProps {
   recognition: RecognitionState;
@@ -37,8 +41,18 @@ export function ChromeBottomBar({
   pitchScore,
   onManualSearch,
 }: ChromeBottomBarProps) {
+  // La rueda del mouse sobre la barra ajusta el desfase de la letra en el
+  // acto (misma función que tenía el bloque de sync desplegado, ahora que
+  // ese bloque vive colapsado detrás del botón ⇄).
+  const handleWheel = useCallback((e: React.WheelEvent) => {
+    if (!window.api) return;
+    e.preventDefault?.();
+    const delta = e.deltaY < 0 ? WHEEL_NUDGE_MS : -WHEEL_NUDGE_MS;
+    void window.api.nudgeSync(delta);
+  }, []);
+
   return (
-    <div className="chrome-bar chrome-bar-bottom">
+    <div className="chrome-bar chrome-bar-bottom" onWheel={handleWheel}>
       <div className="chrome-bar-group chrome-bar-grow">
         <RecognitionControls
           recognition={recognition}
@@ -47,13 +61,13 @@ export function ChromeBottomBar({
         />
       </div>
       <div className="chrome-bar-group">
+        <PitchMonitorBadge pitchMonitor={pitchMonitor} melodyRef={melodyRef} score={pitchScore} />
         <PracticeControls
           api={api}
           model={model}
           recallHidden={recallHidden}
           onRecallHiddenChange={onRecallHiddenChange}
         />
-        <PitchMonitorBadge pitchMonitor={pitchMonitor} melodyRef={melodyRef} score={pitchScore} />
         <SyncControls />
         <ResizeGrip api={api} />
       </div>
