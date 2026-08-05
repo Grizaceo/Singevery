@@ -16,7 +16,8 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { gzipSync, gunzipSync } from 'zlib';
 import { createHash } from 'crypto';
-import type { CacheMeta, LyricsCache } from '../lyrics/types';
+import type { CacheMeta, CachedLyricsInfo, LyricsCache, LyricsSourceKind } from '../lyrics/types';
+import { LYRICS_SOURCE_PRIORITY, classifyLyricsSource } from '../lyrics/types';
 import type { TimedLyrics } from '../../../src/types';
 import { ANNOTATIONS_VERSION } from '../romanize';
 
@@ -32,7 +33,14 @@ export interface CacheEntry {
   artist: string;
   album?: string | null;
   durationMs?: number | null;
+  /** `source` crudo declarado por el proveedor ("lrclib", "import-local", ...). */
   source: string;
+  /**
+   * Familia normalizada de la fuente. Permite invalidar selectivamente cuando
+   * un proveedor se degrada, y proteger lo que el usuario cargó a mano.
+   * Las entradas escritas antes de este campo se clasifican al cargar.
+   */
+  sourceKind?: LyricsSourceKind;
   synced: boolean;
   hasFurigana: boolean;
   hasRomaji: boolean;
@@ -43,6 +51,12 @@ export interface CacheEntry {
   bytes: number; // tamaño del payload gzip (para el cap por espacio)
   firstHeardAt: number;
   lastHeardAt: number;
+  /**
+   * Cuándo se ESCRIBIÓ esta letra (≠ lastHeardAt, que sube en cada escucha).
+   * Es la antigüedad real del dato: sin ella no se puede saber si un match malo
+   * viene de una letra vieja o de una recién traída.
+   */
+  cachedAt?: number;
   playCount: number;
   /** Caché negativa: se sabe que no hay letra hasta `at + ttlMs`. */
   notFound?: { at: number; ttlMs: number; sourceHash?: string };
@@ -126,7 +140,30 @@ export class FileLyricsCache implements LyricsCache {
       // Sin índice (primer arranque) o corrupto → empezamos limpio.
       this.index = { schemaVersion: SCHEMA_VERSION, entries: {} };
     }
+    this.backfillAttribution();
     this.dropExpiredNegatives();
+  }
+
+  /**
+   * Rellena `sourceKind`/`cachedAt` en entradas guardadas antes de que
+   * existieran. Se prefiere esto a subir SCHEMA_VERSION: tirar la caché entera
+   * para estrenar la atribución de fuente sería justo lo contrario de lo que
+   * la atribución sirve (invalidar SOLO lo dudoso).
+   */
+  private backfillAttribution(): void {
+    let changed = false;
+    for (const entry of Object.values(this.index.entries)) {
+      if (entry.sourceKind == null) {
+        entry.sourceKind = classifyLyricsSource(entry.source);
+        changed = true;
+      }
+      if (entry.cachedAt == null) {
+        // La mejor aproximación disponible: cuándo se oyó por primera vez.
+        entry.cachedAt = entry.firstHeardAt ?? entry.lastHeardAt ?? Date.now();
+        changed = true;
+      }
+    }
+    if (changed) this.persist();
   }
 
   /** Escritura atómica del índice (tmp + rename) para no corromper.
@@ -222,6 +259,7 @@ export class FileLyricsCache implements LyricsCache {
       album: meta?.album ?? existing?.album ?? null,
       durationMs: meta?.durationMs ?? existing?.durationMs ?? null,
       source: 'none',
+      sourceKind: 'none',
       synced: false,
       hasFurigana: false,
       hasRomaji: false,
@@ -231,6 +269,7 @@ export class FileLyricsCache implements LyricsCache {
       bytes: 0,
       firstHeardAt: existing?.firstHeardAt ?? now,
       lastHeardAt: now,
+      cachedAt: now,
       playCount: existing?.playCount ?? 0,
       notFound: { at: now, ttlMs: this.opts.negativeTtlMs, sourceHash },
     };
@@ -265,6 +304,7 @@ export class FileLyricsCache implements LyricsCache {
       album: meta.album ?? null,
       durationMs: meta.durationMs ?? null,
       source: lyrics.source,
+      sourceKind: classifyLyricsSource(lyrics.source),
       synced: lyrics.synced,
       hasFurigana: hasFuriganaIn(lyrics),
       hasRomaji: hasRomajiIn(lyrics),
@@ -275,6 +315,7 @@ export class FileLyricsCache implements LyricsCache {
       bytes,
       firstHeardAt: existing?.firstHeardAt ?? now,
       lastHeardAt: now,
+      cachedAt: now,
       playCount: existing?.playCount ?? 1,
       // notFound limpiado al pasar a positivo.
     };
@@ -333,9 +374,17 @@ export class FileLyricsCache implements LyricsCache {
     this.persist();
   }
 
-  async clearEntry(key: string): Promise<void> {
+  /**
+   * Olvida una pista. Lo que el usuario importó a mano NO se borra por un
+   * reintento automático: costó trabajo y no hay proveedor que lo reponga.
+   * `force` (acción explícita del usuario) sí lo borra.
+   */
+  async clearEntry(key: string, options: { force?: boolean } = {}): Promise<void> {
     const entry = this.index.entries[key];
     if (!entry) return;
+    if (!options.force && (entry.sourceKind ?? classifyLyricsSource(entry.source)) === 'import') {
+      return;
+    }
     if (entry.lyricsFile) {
       try {
         fs.rmSync(this.payloadPath(entry.lyricsFile), { force: true });
@@ -345,5 +394,53 @@ export class FileLyricsCache implements LyricsCache {
     }
     delete this.index.entries[key];
     this.persist();
+  }
+
+  /** Ficha de una entrada (sin la letra) para el endpoint de diagnóstico. */
+  describeEntry(key: string): CachedLyricsInfo | null {
+    const entry = this.index.entries[key];
+    if (!entry) return null;
+    const kind = entry.sourceKind ?? classifyLyricsSource(entry.source);
+    const cachedAt = entry.cachedAt ?? entry.firstHeardAt;
+    return {
+      key: entry.key,
+      title: entry.title,
+      artist: entry.artist,
+      source: entry.source,
+      sourceKind: kind,
+      sourcePriority: LYRICS_SOURCE_PRIORITY[kind],
+      synced: entry.synced,
+      cachedAt,
+      vintageMs: Math.max(0, Date.now() - cachedAt),
+      lastHeardAt: entry.lastHeardAt,
+      playCount: entry.playCount,
+      bytes: entry.bytes,
+      negative: !entry.lyricsFile,
+    };
+  }
+
+  /**
+   * Invalida TODO lo que vino de una fuente. Es la razón de ser de la
+   * atribución: cuando un proveedor empieza a devolver letras de otra canción,
+   * se tira solo lo suyo en vez de vaciar la caché entera.
+   * Nunca toca lo importado por el usuario (salvo que se pida 'import').
+   */
+  invalidateBySource(kind: LyricsSourceKind): number {
+    let removed = 0;
+    for (const [key, entry] of Object.entries(this.index.entries)) {
+      const entryKind = entry.sourceKind ?? classifyLyricsSource(entry.source);
+      if (entryKind !== kind) continue;
+      if (entry.lyricsFile) {
+        try {
+          fs.rmSync(this.payloadPath(entry.lyricsFile), { force: true });
+        } catch {
+          /* noop */
+        }
+      }
+      delete this.index.entries[key];
+      removed += 1;
+    }
+    if (removed > 0) this.persist();
+    return removed;
   }
 }

@@ -11,7 +11,15 @@
 
 import { createHash } from 'crypto';
 import type { TimedLyrics } from '../../../src/types';
-import type { LyricsCache, LyricsProvider, LyricsQuery, RawLyrics, CacheMeta } from './types';
+import type {
+  CachedLyricsInfo,
+  LyricsCache,
+  LyricsProvider,
+  LyricsQuery,
+  LyricsSourceKind,
+  RawLyrics,
+  CacheMeta,
+} from './types';
 import { NULL_LYRICS_CACHE } from './types';
 import { providerChain } from './providers';
 import { parseLrc, plainTextToLyrics } from '../lrcParser';
@@ -269,9 +277,25 @@ export class LyricsService {
   }
 
   /** Olvida la entrada de caché de una pista (incluida la caché negativa),
-   *  para que el próximo getLyrics vuelva a pegarle a la red (auto-reintento). */
-  async forgetTrack(key: string): Promise<void> {
-    await this.cache.clearEntry?.(key);
+   *  para que el próximo getLyrics vuelva a pegarle a la red (auto-reintento).
+   *  Sin `force` respeta lo que el usuario importó a mano. */
+  async forgetTrack(key: string, options: { force?: boolean } = {}): Promise<void> {
+    await this.cache.clearEntry?.(key, options);
+  }
+
+  /** Ficha de la letra cacheada (fuente, antigüedad) para diagnóstico. */
+  describeCachedTrack(key: string): CachedLyricsInfo | null {
+    return this.cache.describeEntry?.(key) ?? null;
+  }
+
+  /** Invalida selectivamente lo que vino de una fuente. Devuelve cuántas cayeron. */
+  invalidateSource(kind: LyricsSourceKind): number {
+    return this.cache.invalidateBySource?.(kind) ?? 0;
+  }
+
+  /** Orden actual de la cadena de proveedores (diagnóstico). */
+  getProviderNames(): string[] {
+    return this.providers.map((provider) => provider.name);
   }
 }
 

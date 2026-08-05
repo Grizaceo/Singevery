@@ -22,6 +22,7 @@ import {
 } from './syncTiming';
 import type { RecognitionPhase } from './syncTiming';
 import { looksLikeSameTrack } from '../services/lyrics/normalizeQuery';
+import { isDistinctiveTitle, scoreTitleDistinctiveness } from '../services/lyrics/titleDistinctiveness';
 import { LyricsService, defaultLyricsService } from '../services/lyrics/lyricsService';
 import { NULL_OFFSET_STORE, NULL_CALIBRATION_STORE, NULL_DISPLAY_STORE, NULL_TRANSLATION_STORE, NULL_READING_STORE } from '../services/settings';
 import type { OffsetStore, CalibrationStore, DisplayStore, TranslationStore, ReadingStore } from '../services/settings';
@@ -32,6 +33,34 @@ import type { RenderModel, Status, TimedLyrics, TrackMatch } from '../../src/typ
 export type { RecognitionPhase };
 
 const IDLE_MESSAGE = 'Esperando música...';
+
+/** Estado interno expuesto al endpoint de diagnóstico (solo lectura). */
+export interface StateDiagnostics {
+  status: Status;
+  overrideStatus: Status | null;
+  track: { title: string; artist: string; key: string | null; aliasKeys: string[] } | null;
+  lyrics: { source: string; synced: boolean; lines: number; translationLang: string | null } | null;
+  /** true si la pista mostrada es una identidad firme (no un hint genérico). */
+  locked: boolean;
+  provisional: boolean;
+  titleDistinctiveness: number | null;
+  identity: {
+    pendingChangeKey: string | null;
+    pendingChangeCount: number;
+    changeConfirmCount: number;
+    recognitionSource: 'microphone' | 'system' | null;
+    externalTrusted: boolean;
+    externalInputSuppressed: boolean;
+    lastUnmatchedExternal: { title: string; artist: string; at: number } | null;
+    autoRetryPending: boolean;
+  };
+  sync: {
+    displayedPositionMs: number;
+    offsetMs: number;
+    calibrationOffsetMs: number;
+    paused: boolean;
+  };
+}
 
 export class StateStore {
   private engine: SyncEngine;
@@ -58,6 +87,13 @@ export class StateStore {
   private readonly CHANGE_CONFIRM_COUNT = 2;
   private pendingChangeKey: string | null = null;
   private pendingChangeCount = 0;
+
+  // Pista PROVISIONAL: entró por un título del SO poco identificable ("Awake",
+  // "Alone", "Lucky Star" — ver titleDistinctiveness). Sirve para mostrar algo
+  // ya, pero no es un lock: cuando el reconocimiento por audio (que sí sabe qué
+  // suena) diga otra cosa, se le hace caso al instante en vez de gastar los dos
+  // ciclos de histéresis. Un título genérico es un hint, nunca una certeza.
+  private currentTrackProvisional = false;
 
   // Claves alias de la pista ACTUAL. La misma canción llega con metadata
   // distinta según la fuente (AudD: "Houdini"/"Dua Lipa"; SMTC de YouTube:
@@ -112,6 +148,60 @@ export class StateStore {
   /** Devuelve el último RenderModel emitido, o null si nunca se emitió. */
   getLastModel(): RenderModel | null {
     return this.lastModel;
+  }
+
+  /**
+   * Radiografía del arbitraje de identidad y del reloj, para el endpoint de
+   * diagnóstico. Solo lectura: no toca nada y no debe cambiar comportamiento.
+   * Existe porque estos estados (qué está lockeado, por qué no cambió de
+   * canción, cuánta deriva hay) son invisibles desde la pantalla del widget.
+   */
+  getDiagnostics(at: number = Date.now()): StateDiagnostics {
+    const lyrics = this.engine.getLyrics();
+    const title = this.trackTitle ?? null;
+    return {
+      // Antes del primer tick no hay modelo emitido: se deduce del estado real
+      // para que consultar /debug durante el arranque no mienta un IDLE.
+      status: this.lastModel?.status ?? this.overrideStatus ?? (lyrics ? 'DISPLAYING' : 'IDLE'),
+      overrideStatus: this.overrideStatus,
+      track:
+        title != null || this.trackArtist != null
+          ? {
+              title: title ?? '',
+              artist: this.trackArtist ?? '',
+              key: this.currentTrackKey,
+              aliasKeys: [...this.trackAliasKeys],
+            }
+          : null,
+      lyrics: lyrics
+        ? {
+            source: lyrics.source,
+            synced: lyrics.synced,
+            lines: lyrics.lines.length,
+            translationLang: lyrics.translationLang ?? null,
+          }
+        : null,
+      // "Lockeada" = hay letra en pantalla y su identidad NO es provisional.
+      locked: lyrics != null && !this.currentTrackProvisional,
+      provisional: this.currentTrackProvisional,
+      titleDistinctiveness: title ? scoreTitleDistinctiveness(title) : null,
+      identity: {
+        pendingChangeKey: this.pendingChangeKey,
+        pendingChangeCount: this.pendingChangeCount,
+        changeConfirmCount: this.CHANGE_CONFIRM_COUNT,
+        recognitionSource: this.recognitionSource,
+        externalTrusted: this.externalTrusted,
+        externalInputSuppressed: this.externalInputSuppressed,
+        lastUnmatchedExternal: this.lastUnmatchedExternal,
+        autoRetryPending: this.autoRetry.isPending,
+      },
+      sync: {
+        displayedPositionMs: Math.round(this.clock.getDisplayedPosition(at)),
+        offsetMs: this.clock.getSyncOffsetMs(),
+        calibrationOffsetMs: this.clock.getCalibrationOffsetMs(),
+        paused: this.clock.isClockPaused(),
+      },
+    };
   }
 
   constructor(
@@ -255,6 +345,8 @@ export class StateStore {
     this.trackAliasKeys.clear();
     this.pendingChangeKey = null;
     this.pendingChangeCount = 0;
+    // La eligió el usuario: es la verdad, no un hint.
+    this.currentTrackProvisional = false;
     this.currentTrackKey = trackKey;
     this.lastMatchKey = trackKey;
     this.autoRetry.reset();
@@ -427,6 +519,9 @@ export class StateStore {
     if (this.engine.getLyrics() && this.matchesCurrentTrack(matchKey, title, artist)) {
       this.pendingChangeKey = null;
       this.pendingChangeCount = 0;
+      // Dos señales independientes (título del SO + huella del audio) dicen lo
+      // mismo: la identidad deja de ser provisional y pasa a estar lockeada.
+      this.currentTrackProvisional = false;
       this.applyCorrection(anchor);
       if (this.overrideStatus === 'LISTENING' || this.overrideStatus === 'IDENTIFYING') {
         this.overrideStatus = null;
@@ -456,6 +551,9 @@ export class StateStore {
       this.pendingChangeCount = 0;
     }
 
+    // El reconocimiento por audio identifica lo que SUENA: la pista deja de ser
+    // provisional aunque haya entrado por un título genérico del SO.
+    this.currentTrackProvisional = false;
     await this.loadLyricsByMetadata(
       title,
       artist,
@@ -488,6 +586,13 @@ export class StateStore {
    */
   private confirmTrackChange(matchKey: string): boolean {
     if (!this.engine.getLyrics()) {
+      this.pendingChangeKey = null;
+      this.pendingChangeCount = 0;
+      return true;
+    }
+    // La pista en pantalla entró por un título genérico del SO: es un hint, no
+    // un lock. El audio sabe qué suena de verdad; no hay nada que proteger.
+    if (this.currentTrackProvisional) {
       this.pendingChangeKey = null;
       this.pendingChangeCount = 0;
       return true;
@@ -748,7 +853,13 @@ export class StateStore {
       ) {
         return false;
       }
-    } else if (this.recognitionSource === 'system' && this.engine.getLyrics()) {
+    } else if (
+      this.engine.getLyrics() &&
+      (this.recognitionSource === 'system' ||
+        // Título del SO poco identificable ("Awake") mientras el audio puede
+        // arbitrar: no desplaza la letra en pantalla, solo pide confirmación.
+        (this.recognitionSource != null && !isDistinctiveTitle(title)))
+    ) {
       // BLOQUEO DE IDENTIDAD (bug YouTube): con reconocimiento por sistema
       // activo y letra en pantalla, el fingerprint del audio es la verdad de
       // lo que SUENA. Una sesión SMTC cuya metadata no calza (título de video
@@ -777,6 +888,17 @@ export class StateStore {
     // vez por cambio real (evento del SO, autoritativo). Exigir 2 eventos haría
     // que nunca cambiara de canción. En modo micrófono SMTC va suprimido; el
     // parpadeo espurio entre sesiones del PC es raro y se corrige al instante.
+    //
+    // Un título poco identificable ("Awake", "Alone") se muestra igual —mejor
+    // eso que una pantalla vacía— pero queda marcado como PROVISIONAL: el
+    // próximo match por audio lo reemplaza sin pasar por la histéresis.
+    this.currentTrackProvisional = this.recognitionSource != null && !isDistinctiveTitle(title);
+    if (this.currentTrackProvisional) {
+      console.log(
+        `[identidad] título genérico del SO "${title}" ` +
+          `(distintividad ${scoreTitleDistinctiveness(title).toFixed(2)}) → hint, no lock`,
+      );
+    }
     await this.loadLyricsByMetadata(title, artist, positionMs, at, album, durationMs);
     this.externalTrusted = true;
     this.lastUnmatchedExternal = null;

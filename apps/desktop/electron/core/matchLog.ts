@@ -29,6 +29,8 @@ export interface MatchLogEntry {
   changed?: boolean;
   /** Milisegundos que tardó la búsqueda (identify/load). */
   durationMs?: number;
+  /** Confianza del proveedor (0..1) cuando la reporta. */
+  confidence?: number;
   error?: string;
 }
 
@@ -101,6 +103,32 @@ export class MatchLog {
       } catch {
         // Archivo ausente: normal en la primera ejecución.
       }
+    }
+    return entries;
+  }
+
+  /**
+   * Últimos N eventos, del más nuevo al más viejo. Para el endpoint de
+   * diagnóstico: sin esto, "por qué no reconoció" solo se puede responder
+   * abriendo el JSONL a mano en la máquina del usuario.
+   */
+  recent(limit = 20): MatchLogEntry[] {
+    if (limit <= 0) return [];
+    const entries: MatchLogEntry[] = [];
+    try {
+      const lines = fs.readFileSync(this.filePath, 'utf8').split('\n');
+      // Recorrido desde el final: el log puede pesar megas y solo interesa la cola.
+      for (let i = lines.length - 1; i >= 0 && entries.length < limit; i -= 1) {
+        const line = lines[i].trim();
+        if (!line) continue;
+        try {
+          entries.push(JSON.parse(line) as MatchLogEntry);
+        } catch {
+          // Línea corrupta (escritura cortada): se salta.
+        }
+      }
+    } catch {
+      // Sin log todavía.
     }
     return entries;
   }

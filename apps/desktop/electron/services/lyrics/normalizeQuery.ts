@@ -1,4 +1,5 @@
 import type { LyricsQuery } from './types';
+import { extractCoverOriginal } from './coverTitle';
 
 const SPACE_RE = /\s+/g;
 const FEAT_SUFFIX_RE =
@@ -154,6 +155,13 @@ export function buildQueryVariants(query: LyricsQuery, alternates: LyricsQuery[]
   const bracketTitle = extractCornerBracketTitle(query.title);
   if (bracketTitle) uniquePush(titleVariants, bracketTitle);
 
+  // Cover: el catálogo indexa la canción ORIGINAL, no el upload. Solo se gasta
+  // una variante cuando hay marca de cover o artista original detectado; el
+  // ruido de video ("(Official Music Video)") ya lo limpian stripDecorations y
+  // stripAllBrackets más abajo, y las variantes están topeadas (MAX_VARIANTS).
+  const cover = extractCoverOriginal(query.title);
+  if ((cover.isCover || cover.artist) && cover.clean) uniquePush(titleVariants, cover.clean);
+
   // Título estilo video ("Artista - Canción (Official Video)"): la variante
   // completamente limpia va temprano — es la que existe en los catálogos.
   uniquePush(
@@ -182,6 +190,24 @@ export function buildQueryVariants(query: LyricsQuery, alternates: LyricsQuery[]
       if (seen.has(key)) continue;
       seen.add(key);
       variants.push(variant);
+    }
+  }
+
+  // El original detrás de un cover cambia el ARTISTA, no solo el título, así
+  // que no cabe en titleVariants (que fija el artista de la consulta). Con
+  // marca explícita de cover va temprano: el "artista" del upload suele ser el
+  // canal de quien lo cantó y bajo ese nombre no existe ninguna letra.
+  if (cover.artist && cover.clean) {
+    const coverVariant: LyricsQuery = {
+      title: cover.clean,
+      artist: cover.artist,
+      album: query.album ?? null,
+      durationMs: query.durationMs ?? null,
+    };
+    const key = `${normalizeSearchText(coverVariant.artist)}::${normalizeSearchText(coverVariant.title)}`;
+    if (!seen.has(key)) {
+      seen.add(key);
+      variants.splice(cover.isCover ? Math.min(1, variants.length) : variants.length, 0, coverVariant);
     }
   }
 

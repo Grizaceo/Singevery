@@ -52,6 +52,11 @@ import { setupContentSecurityPolicy } from './csp';
 import { AutoContrastService } from './services/autoContrast';
 import { getLogFilePath, initAppLogger, readRecentLog } from './services/appLogger';
 import { parseImportedLyrics } from './services/importLyrics';
+import {
+  resolveDiagnosticsPort,
+  startDiagnosticsServer,
+  type DiagnosticsServerHandle,
+} from './services/diagnostics/diagnosticsServer';
 import { romanizeTimedLyrics } from './services/romanize';
 import {
   buildSupportIssueUrl,
@@ -82,6 +87,10 @@ let wakeWordReader: WakeWordReader | null = null;
 let recognitionService: RecognitionService | null = null;
 let autoContrast: AutoContrastService | null = null;
 let appSettings: AppSettings | null = null;
+/** Endpoint HTTP de diagnóstico (solo si SINGEVERY_DEBUG_PORT está puesto). */
+let diagnosticsServer: DiagnosticsServerHandle | null = null;
+/** Arranque del proceso: base del uptime que reporta /debug. */
+const processStartedAt = Date.now();
 /** Bounds expandidos guardados al colapsar a pill; se restauran al expandir. */
 let savedBounds: Rect | null = null;
 let boundsSaveTimer: NodeJS.Timeout | null = null;
@@ -568,6 +577,7 @@ function registerIpcHandlers(): void {
           source: 'audd',
           outcome: 'matched',
           durationMs,
+          confidence: match.confidence,
           track: { title: match.track.title, artist: match.track.artist },
         });
 
@@ -612,6 +622,7 @@ function registerIpcHandlers(): void {
           outcome: 'matched',
           changed,
           durationMs,
+          confidence: match.confidence,
           track: { title: match.track.title, artist: match.track.artist },
         });
         return { ok: true, matched: true, changed };
@@ -953,6 +964,27 @@ function bootstrap(): void {
   });
   stateStore.start(100); // 10 Hz
 
+  // Endpoint de diagnóstico: APAGADO salvo que SINGEVERY_DEBUG_PORT esté
+  // puesto (entorno o .env junto al ejecutable). Ver diagnosticsServer.ts.
+  const debugPort = resolveDiagnosticsPort();
+  if (debugPort != null) {
+    const serviceForDebug = lyricsService;
+    void startDiagnosticsServer(
+      {
+        appName: app.getName(),
+        appVersion: app.getVersion(),
+        startedAt: processStartedAt,
+        getState: () => stateStore!.getDiagnostics(),
+        getCachedTrack: (key) => serviceForDebug.describeCachedTrack(key),
+        getProviderNames: () => serviceForDebug.getProviderNames(),
+        getRecentAttempts: (limit) => matchLog?.recent(limit) ?? [],
+      },
+      debugPort,
+    ).then((handle) => {
+      diagnosticsServer = handle;
+    });
+  }
+
   if (appSettings) {
     autoContrast = new AutoContrastService(
       () => mainWindow,
@@ -1107,6 +1139,8 @@ if (!gotLock) {
     smtcReader?.stop();
     wakeWordReader?.stop();
     autoContrast?.dispose();
+    void diagnosticsServer?.close();
+    diagnosticsServer = null;
     stateStore?.stop();
     lyricsCache?.flush(); // escribe el índice pendiente (persist debounced)
     globalShortcut.unregisterAll();
@@ -1119,6 +1153,8 @@ if (!gotLock) {
   app.on('before-quit', () => {
     smtcReader?.stop();
     wakeWordReader?.stop();
+    void diagnosticsServer?.close();
+    diagnosticsServer = null;
     stateStore?.stop();
     lyricsCache?.flush();
     globalShortcut.unregisterAll();
