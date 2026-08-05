@@ -1,7 +1,7 @@
 {
   "name": "singevery-desktop",
   "private": true,
-  "version": "0.2.1-beta.1",
+  "version": "0.2.1-beta.2",
   "description": "Transparent desktop widget that recognizes music (Shazam/AudD) and shows synced karaoke lyrics with romaji — sing along without blocking your screen.",
   "author": "Gris",
   "license": "MIT",
