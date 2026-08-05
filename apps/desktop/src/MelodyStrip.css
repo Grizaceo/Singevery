@@ -57,9 +57,29 @@
 }
 
 .melody-note-live {
-  color: #4ade80;
+  color: rgba(255, 255, 255, 0.92);
   font-weight: 700;
   font-size: 0.78em;
+}
+
+/* Dirección de la corrección en vivo: más alto (▲ rojo), más bajo (▼ cielo)
+   o en tono (✓ verde). El delta es contra la nota objetivo de la referencia. */
+.melody-dir {
+  margin-left: 3px;
+  font-size: 0.85em;
+  font-weight: 700;
+}
+
+.melody-dir-up {
+  color: #f87171;
+}
+
+.melody-dir-down {
+  color: #38bdf8;
+}
+
+.melody-dir-ok {
+  color: #4ade80;
 }
 
 .melody-cents {

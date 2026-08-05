@@ -164,6 +164,7 @@ export const LineView = React.memo(function LineView({
           progress={tier === 'current' ? frac : undefined}
           current={tier === 'current'}
           liveNote={livePitch?.note ?? null}
+          liveFreq={livePitch?.freq ?? null}
           liveCents={livePitch ? Math.round(livePitch.cents) : null}
           score={pitchScore}
         />

@@ -32,6 +32,8 @@ interface MelodyStripProps {
   current?: boolean;
   /** Nota detectada del cantante en vivo (micrófono). Solo se pinta si current. */
   liveNote?: string | null;
+  /** Frecuencia del cantante en Hz (para el delta contra la nota objetivo). */
+  liveFreq?: number | null;
   /** Desviación en cents de la nota en vivo (agudo > 0, grave < 0). */
   liveCents?: number | null;
   /** Score 0..100 contra la referencia (compartido con el badge de la barra). */
@@ -45,6 +47,7 @@ export const MelodyStrip = React.memo(function MelodyStrip({
   progress = 0,
   current = false,
   liveNote = null,
+  liveFreq = null,
   liveCents = null,
   score = null,
 }: MelodyStripProps) {
@@ -110,6 +113,16 @@ export const MelodyStrip = React.memo(function MelodyStrip({
   const currentFreq = current && currentIdx >= 0 ? points[currentIdx].freq! : null;
   const currentNote = currentFreq != null ? noteFor(currentFreq) : null;
 
+  // Delta del cantante contra la nota OBJETIVO de la referencia (no contra la
+  // nota más cercana a su voz): es lo que se necesita para corregir en vivo.
+  // ±25 cents de tolerancia = "en tono"; fuera de eso, más alto (▲) o más
+  // bajo (▼) con la desviación en cents.
+  const targetFreq = currentFreq;
+  const deltaCents =
+    targetFreq != null && liveFreq != null ? 1200 * Math.log2(liveFreq / targetFreq) : null;
+  const dir =
+    deltaCents == null ? null : deltaCents >= 25 ? 'up' : deltaCents <= -25 ? 'down' : 'ok';
+
   return (
     <div className={`melody-strip${current ? ' melody-current' : ''}`} aria-hidden="true">
       <div className="melody-bars">
@@ -131,10 +144,12 @@ export const MelodyStrip = React.memo(function MelodyStrip({
           {liveNote && (
             <span className="melody-note melody-note-live">
               {liveNote}
-              {liveCents != null && (
-                <span className="melody-cents">
-                  {liveCents > 0 ? '+' : ''}
-                  {liveCents}¢
+              {dir != null && (
+                <span className={`melody-dir melody-dir-${dir}`}>
+                  {dir === 'ok' ? '✓' : dir === 'up' ? '▲' : '▼'}
+                  {dir !== 'ok' && deltaCents != null
+                    ? ` ${deltaCents > 0 ? '+' : ''}${Math.round(deltaCents)}¢`
+                    : ''}
                 </span>
               )}
             </span>
