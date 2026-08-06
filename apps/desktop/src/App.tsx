@@ -334,7 +334,6 @@ function AppContent() {
           onRecallHiddenChange={setRecallHidden}
           pitchMonitor={pitchMonitor}
           melodyRef={melodyRef}
-          pitchScore={pitchScore}
           onManualSearch={() => setManualSearchOpen(true)}
         />
       </div>

@@ -202,10 +202,18 @@ export function useMelodyReference(
         return;
       }
 
-      // Concatenar los chunks útiles en un solo buffer.
-      const total = chunks.reduce((acc, c) => acc + c.length, 0);
-      const combined = new Float32Array(total);
-      let offset = 0;
+      // Concatenar los chunks útiles en un solo buffer, insertando CEROS por
+      // el tiempo de warmup y los chunks de silencio descartados. Así el
+      // tiempo dentro del buffer combinado = tiempo REAL transcurrido de la
+      // canción, y la melodía queda alineada con los timestamps absolutos.
+      // (Antes se concatenaba solo el audio útil: la referencia quedaba
+      // corrida hacia atrás por warmup + silencios y el objetivo lateral
+      // apuntaba a la nota equivocada.)
+      const warmupSeconds = warmupMs / 1000;
+      const silentSeconds = silentChunks * CHUNK_SECONDS;
+      const totalSamples = Math.round((warmupSeconds + silentSeconds + usefulSeconds) * sampleRate);
+      const combined = new Float32Array(totalSamples);
+      let offset = Math.round(warmupSeconds * sampleRate);
       for (const c of chunks) {
         combined.set(c, offset);
         offset += c.length;

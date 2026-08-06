@@ -23,9 +23,6 @@ interface ChromeBottomBarProps {
   pitchMonitor: ReturnType<typeof usePitchMonitor>;
   /** Referencia melódica de la canción actual. */
   melodyRef: ReturnType<typeof useMelodyReference>;
-  /** Score 0..100 contra la referencia (calculado en App, compartido con la
-   *  columna de entonación del teleprompter). */
-  pitchScore: number | null;
   /** Abre la búsqueda manual de canción (contextual, nunca en el menú por defecto). */
   onManualSearch: () => void;
 }
@@ -38,7 +35,6 @@ export function ChromeBottomBar({
   onRecallHiddenChange,
   pitchMonitor,
   melodyRef,
-  pitchScore,
   onManualSearch,
 }: ChromeBottomBarProps) {
   // La rueda del mouse sobre la barra ajusta el desfase de la letra en el
@@ -61,7 +57,7 @@ export function ChromeBottomBar({
         />
       </div>
       <div className="chrome-bar-group">
-        <PitchMonitorBadge pitchMonitor={pitchMonitor} melodyRef={melodyRef} score={pitchScore} />
+        <PitchMonitorBadge pitchMonitor={pitchMonitor} melodyRef={melodyRef} />
         <PracticeControls
           api={api}
           model={model}

@@ -5,23 +5,15 @@ import './PitchMonitor.css';
 /**
  * Badge de práctica vocal (P0-P3 de SWAP-PITCH-001).
  *
- * Recibe el monitor de pitch y la referencia melódica como props (App los
- * levanta para compartirlos con la columna de entonación del teleprompter).
- *
- * - P0: monitor de pitch del micrófono en vivo (nota + cents).
- * - P1: referencia melódica extraída de la PROPIA canción (loopback) — la app
- *   avisa que es una interpretación automática, no la partitura oficial.
- * - P2: score contra la referencia (ventana deslizante, ±50 cents). El score
- *   se calcula en App y se comparte entre este badge y la columna de
- *   entonación junto a la letra (puntuación persistente en modo karaoke).
- * - P3: guía de uso — la referencia se captura sola del audio del SISTEMA
- *   (loopback), no del micrófono; solo necesita que la canción esté sonando.
+ * La barra inferior muestra SOLO el botón ♪ (activar/detener) y los estados
+ * que la columna lateral no cubre: captura de referencia en curso y errores.
+ * La nota en vivo, el tono objetivo y el veredicto alto/bajo viven en la
+ * columna de entonación junto a la letra (persistente en modo karaoke) —
+ * repetirlos aquí era redundante.
  */
 interface PitchMonitorBadgeProps {
   pitchMonitor: ReturnType<typeof usePitchMonitor>;
   melodyRef: ReturnType<typeof useMelodyReference>;
-  /** Score 0..100 de afinación contra la referencia (P2), calculado en App. */
-  score: number | null;
 }
 
 /** Texto de la guía de uso (P3) — aparece en el tooltip y al capturar. */
@@ -31,10 +23,11 @@ const GUIDE_TEXT =
   'al activar ♪ se capturan ~24 s de la pista y se descartan los silencios; solo necesita que la canción esté sonando. ' +
   'Si está pausada, la app espera a que suene (hasta 30 s) y captura sola. ' +
   'Para mejor precisión al practicar: cuarto silencioso, micrófono a 15-30 cm, canta claro (no susurres). ' +
-  'La referencia es una interpretación automática de la app, no la partitura oficial.';
+  'La referencia es una interpretación automática de la app, no la partitura oficial. ' +
+  'Clic derecho en ♪: recapturar la referencia de esta canción.';
 
-export function PitchMonitorBadge({ pitchMonitor, melodyRef, score }: PitchMonitorBadgeProps) {
-  const { active, pitch, error, start, stop } = pitchMonitor;
+export function PitchMonitorBadge({ pitchMonitor, melodyRef }: PitchMonitorBadgeProps) {
+  const { active, error, start, stop } = pitchMonitor;
   const { status: refStatus, error: refError, recapture } = melodyRef;
 
   const toggle = (): void => {
@@ -42,25 +35,9 @@ export function PitchMonitorBadge({ pitchMonitor, melodyRef, score }: PitchMonit
     else void start();
   };
 
-  // Desviación: >0 = agudo, <0 = grave. Solo se pinta si hay nota.
-  const centsLabel = pitch ? `${pitch.cents > 0 ? '+' : ''}${pitch.cents}¢` : null;
-  const onKey = pitch && Math.abs(pitch.cents) <= 50;
-
-  const statusLabel =
-    refStatus === 'capturing'
-      ? '🎵 capturando referencia del audio…'
-      : refStatus === 'error'
-        ? (refError ?? '⚠ referencia no disponible')
-        : refStatus === 'ready' && active
-          ? score != null
-            ? `afinación ${score}%`
-            : 'escuchando…'
-          : null;
-
   const title = [
     GUIDE_TEXT,
     refError ? `\nError de referencia: ${refError}` : null,
-    refStatus === 'ready' ? '\nClic derecho: recapturar referencia' : null,
   ]
     .filter(Boolean)
     .join('\n');
@@ -80,30 +57,20 @@ export function PitchMonitorBadge({ pitchMonitor, melodyRef, score }: PitchMonit
       >
         ♪
       </button>
-      {/* Error del monitor VISIBLE (no solo tooltip): si el ♪ no arranca, el
-          usuario debe ver por qué (permiso denegado, micrófono no disponible). */}
+      {/* Estados que NO viven en la columna lateral: captura en curso y errores. */}
+      {refStatus === 'capturing' && (
+        <span className="pitch-capturing" role="status">
+          🎵 capturando referencia…
+        </span>
+      )}
       {error && (
         <span className="pitch-err" role="alert">
           ⚠ {error}
         </span>
       )}
-      {!error && active && (
-        <span className={`pitch-readout${onKey ? ' pitch-on-key' : ''}`}>
-          {pitch ? (
-            <>
-              <strong>{pitch.note}</strong>
-              <span className="pitch-cents">{centsLabel}</span>
-            </>
-          ) : (
-            <span className="pitch-none">—</span>
-          )}
-          {score != null && (
-            <span className={`pitch-score${score >= 70 ? ' pitch-score-good' : ''}`}>
-              {statusLabel}
-            </span>
-          )}
-          {refStatus === 'capturing' && <span className="pitch-capturing">{statusLabel}</span>}
-          {refStatus === 'error' && <span className="pitch-err">{statusLabel}</span>}
+      {refStatus === 'error' && refError && (
+        <span className="pitch-err" role="alert">
+          ⚠ {refError}
         </span>
       )}
     </div>

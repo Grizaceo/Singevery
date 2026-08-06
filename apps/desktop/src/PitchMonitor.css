@@ -18,62 +18,6 @@
   border-color: color-mix(in srgb, var(--chrome-accent, #60a5fa) 60%, transparent);
 }
 
-.pitch-readout {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 4px;
-  padding: 2px 8px;
-  border-radius: 10px;
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  font-size: 0.85em;
-  white-space: nowrap;
-  min-width: 52px;
-  justify-content: center;
-}
-
-.pitch-readout strong {
-  font-variant-numeric: tabular-nums;
-  letter-spacing: 0.02em;
-}
-
-.pitch-cents {
-  opacity: 0.75;
-  font-size: 0.85em;
-  font-variant-numeric: tabular-nums;
-}
-
-.pitch-readout.pitch-on-key {
-  border-color: color-mix(in srgb, #3ddc84 50%, transparent);
-  color: #3ddc84;
-}
-
-.pitch-readout.pitch-on-key .pitch-cents {
-  color: #3ddc84;
-  opacity: 0.9;
-}
-
-.pitch-none {
-  opacity: 0.45;
-  letter-spacing: 0.1em;
-}
-
-/* Score de afinación contra la referencia (P2). */
-.pitch-score {
-  margin-left: 4px;
-  padding: 1px 6px;
-  border-radius: 8px;
-  font-size: 0.82em;
-  background: rgba(255, 255, 255, 0.08);
-  opacity: 0.85;
-}
-
-.pitch-score-good {
-  background: color-mix(in srgb, #3ddc84 20%, transparent);
-  color: #3ddc84;
-  opacity: 1;
-}
-
 .pitch-capturing {
   margin-left: 4px;
   font-size: 0.8em;
