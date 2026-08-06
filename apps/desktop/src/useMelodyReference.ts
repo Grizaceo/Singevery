@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { recordChunk, SystemAudioSession } from './audio/capture';
 import { extractMelody, smoothMelody, toReferencePoints, type MelodyPoint } from './audio/melody';
+import { pointsToCurve, curveToPoints } from './useTeacherReference';
 
 /**
  * useMelodyReference — captura y cachea la melodía de referencia de la canción
@@ -11,11 +12,16 @@ import { extractMelody, smoothMelody, toReferencePoints, type MelodyPoint } from
  * analizando la frecuencia dominante en rango vocal. La UI avisa que es una
  * interpretación automática de la app.
  *
- * Cache: por trackKey en memoria (Map) + localStorage (persistente entre
- * sesiones). Se lee con useSyncExternalStore (la caché es una fuente externa).
+ * Persistencia: se guarda en DISCO (ReferenceStore del main, bajo
+ * userData/references) usando el mismo canal que las referencias del profesor
+ * (references:save / references:getForTrack). Así el pitch de una canción se
+ * captura UNA vez y queda en una carpeta del PC del usuario para siempre —
+ * el karaoke funciona directo la próxima vez, sin repetir el proceso.
+ *
+ * Migración: si hay una referencia vieja en localStorage (formato anterior),
+ * se usa y se migra al disco en la primera captura nueva.
  */
 
-const CACHE_KEY_PREFIX = 'espejo.melodyRef.v1.';
 /** Segundos de loopback a capturar para la referencia (audio ÚTIL, sin silencio). */
 const CAPTURE_TARGET_SECONDS = 24;
 /** Duración de cada chunk de captura. */
@@ -30,44 +36,16 @@ const WARMUP_CHUNK_MS = 1000;
 const WARMUP_MAX_MS = 30000;
 /** Mínimo de audio útil para aceptar la referencia. */
 const MIN_USEFUL_SECONDS = 8;
-/** Tamaño máximo de caché persistida (canciones). */
-const MAX_CACHE_ENTRIES = 50;
+
+// --- Caché en memoria (fuente de verdad para el render) ---------------------
+// El disco es la persistencia; esta caché evita re-leer el disco en cada
+// render y permite que recapture() invalide al instante.
 
 type MelodyCache = Record<string, MelodyPoint[]>;
-
-// --- Store externo de caché (fuente de verdad única) -------------------------
 
 class MelodyCacheStore {
   private cache: MelodyCache = {};
   private listeners = new Set<() => void>();
-
-  constructor() {
-    this.cache = this.load();
-  }
-
-  private load(): MelodyCache {
-    try {
-      const raw = localStorage.getItem(CACHE_KEY_PREFIX + 'index');
-      if (!raw) return {};
-      const parsed = JSON.parse(raw) as MelodyCache;
-      return typeof parsed === 'object' && parsed !== null ? parsed : {};
-    } catch {
-      return {};
-    }
-  }
-
-  private persist(): void {
-    try {
-      const keys = Object.keys(this.cache);
-      if (keys.length > MAX_CACHE_ENTRIES) {
-        const drop = keys.length - MAX_CACHE_ENTRIES;
-        for (const k of keys.slice(0, drop)) delete this.cache[k];
-      }
-      localStorage.setItem(CACHE_KEY_PREFIX + 'index', JSON.stringify(this.cache));
-    } catch {
-      /* localStorage lleno o no disponible: la caché vive en memoria igual */
-    }
-  }
 
   get(key: string): MelodyPoint[] | null {
     const v = this.cache[key];
@@ -76,13 +54,11 @@ class MelodyCacheStore {
 
   set(key: string, value: MelodyPoint[]): void {
     this.cache[key] = value;
-    this.persist();
     this.emit();
   }
 
   remove(key: string): void {
     delete this.cache[key];
-    this.persist();
     this.emit();
   }
 
@@ -113,11 +89,14 @@ export function useMelodyReference(
   reference: MelodyPoint[] | null;
   status: MelodyCaptureStatus;
   error: string | null;
+  /** true si la canción aún no tiene referencia guardada (primera vez). */
+  needsCapture: boolean;
   /** Fuerza una recaptura (útil si la referencia salió pobre). */
   recapture: () => void;
 } {
   const [status, setStatus] = useState<MelodyCaptureStatus>('idle');
   const [error, setError] = useState<string | null>(null);
+  const [needsCapture, setNeedsCapture] = useState(false);
 
   const busyRef = useRef(false);
   const wantCaptureRef = useRef(false);
@@ -125,6 +104,47 @@ export function useMelodyReference(
   // La caché es una fuente externa: suscribirse y leer el snapshot.
   useSyncExternalStore(cacheStore.subscribe, cacheStore.getSnapshot);
   const reference = trackKey ? cacheStore.get(trackKey) : null;
+
+  // Carga desde el DISCO al cambiar de canción: la referencia guardada de una
+  // canción ya capturada aparece al instante (sin volver a capturar).
+  // Todo setState vive dentro del callback asíncrono (con guarda de
+  // cancelación): el estado no se toca en el cuerpo del efecto.
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      if (!trackKey) {
+        if (!cancelled) setNeedsCapture(false);
+        return;
+      }
+      if (cacheStore.get(trackKey) != null) {
+        if (!cancelled) setNeedsCapture(false);
+        return;
+      }
+      const api = window.api;
+      if (!api?.getReferenceForTrack) {
+        if (!cancelled) setNeedsCapture(true);
+        return;
+      }
+      try {
+        const result = await api.getReferenceForTrack(trackKey);
+        if (cancelled) return;
+        if (result.ok && result.reference) {
+          const points = curveToPoints(result.reference.curve);
+          if (points.length > 0) {
+            cacheStore.set(trackKey, points);
+            setNeedsCapture(false);
+            return;
+          }
+        }
+      } catch {
+        /* sin almacén: se captura igual */
+      }
+      if (!cancelled) setNeedsCapture(true);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [trackKey]);
 
   const doCapture = useCallback(async (key: string) => {
     if (busyRef.current) return;
@@ -234,7 +254,26 @@ export function useMelodyReference(
         return;
       }
 
+      // Guardar en DISCO (ReferenceStore del main): la curva de tono, nunca el
+      // audio. Así la canción queda lista para siempre — el karaoke funciona
+      // directo la próxima vez sin repetir la captura.
+      const api = window.api;
+      if (api?.saveReference) {
+        const saved = await api.saveReference({
+          trackKey: key,
+          label: 'Karaoke automático',
+          instrument: 'voz',
+          curve: pointsToCurve(ref),
+        });
+        if (!saved.ok) {
+          setStatus('error');
+          setError(saved.error ?? 'No se pudo guardar la referencia en disco.');
+          return;
+        }
+      }
+
       cacheStore.set(key, ref);
+      setNeedsCapture(false);
       setStatus('ready');
     } catch (err) {
       setStatus('error');
@@ -272,7 +311,8 @@ export function useMelodyReference(
     if (!key) return;
     cacheStore.remove(key);
     wantCaptureRef.current = true;
+    setNeedsCapture(true);
   }, [trackKey]);
 
-  return { reference, status, error, recapture };
+  return { reference, status, error, needsCapture, recapture };
 }

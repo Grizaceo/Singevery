@@ -441,6 +441,8 @@ export interface DesktopApi {
     error?: string;
   }>;
   deleteReference: (id: string) => Promise<{ ok: boolean }>;
+  /** Abre en el explorador la carpeta local de referencias (profesor + karaoke). */
+  openReferencesFolder: () => Promise<{ ok: boolean; error?: string }>;
   exportReference: (id: string) => Promise<{ ok: boolean; canceled?: boolean; error?: string }>;
   importReference: () => Promise<{
     ok: boolean;

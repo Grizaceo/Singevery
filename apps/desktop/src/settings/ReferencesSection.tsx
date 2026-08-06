@@ -150,6 +150,15 @@ export function ReferencesSection({
       )}
 
       <h4>Guardadas en este equipo ({all.length})</h4>
+      <div className="settings-actions">
+        <button
+          type="button"
+          onClick={() => void window.api?.openReferencesFolder()}
+          title="Abre en el explorador la carpeta donde se guardan las melodías de referencia (profesor + karaoke automático)"
+        >
+          Abrir carpeta de referencias
+        </button>
+      </div>
       {all.length === 0 ? (
         <p className="settings-hint">Todavía no hay ninguna.</p>
       ) : (

@@ -195,6 +195,8 @@ const api = {
     ipcRenderer.invoke('references:save', input),
   deleteReference: (id: string): Promise<{ ok: boolean }> =>
     ipcRenderer.invoke('references:delete', id),
+  openReferencesFolder: (): Promise<{ ok: boolean; error?: string }> =>
+    ipcRenderer.invoke('references:openFolder'),
   exportReference: (
     id: string,
   ): Promise<{ ok: boolean; canceled?: boolean; error?: string }> =>

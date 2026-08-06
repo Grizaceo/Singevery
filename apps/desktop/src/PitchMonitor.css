@@ -25,6 +25,15 @@
   animation: pitch-pulse 1.2s ease-in-out infinite;
 }
 
+/* Aviso de primera vez: la canción aún no tiene referencia guardada. */
+.pitch-first {
+  margin-left: 4px;
+  font-size: 0.8em;
+  color: #fbbf24;
+  opacity: 0.95;
+  white-space: nowrap;
+}
+
 .pitch-err {
   margin-left: 4px;
   font-size: 0.8em;

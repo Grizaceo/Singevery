@@ -19,8 +19,9 @@ interface PitchMonitorBadgeProps {
 /** Texto de la guía de uso (P3) — aparece en el tooltip y al capturar. */
 const GUIDE_TEXT =
   'Práctica vocal: canta y compara tu tono con la melodía de la canción. ' +
-  'La referencia se obtiene automáticamente del audio del sistema (loopback) — NO usa tu micrófono: ' +
-  'al activar ♪ se capturan ~24 s de la pista y se descartan los silencios; solo necesita que la canción esté sonando. ' +
+  'La primera vez con una canción, ponla a SONAR y pulsa ♪: la app captura ~24 s del audio del sistema (loopback), ' +
+  'extrae la melodía y la guarda en una carpeta de tu PC (Ajustes → Otros → Abrir carpeta de referencias). ' +
+  'Las siguientes veces con esa canción, el karaoke funciona directo — sin repetir la captura. ' +
   'Si está pausada, la app espera a que suene (hasta 30 s) y captura sola. ' +
   'Para mejor precisión al practicar: cuarto silencioso, micrófono a 15-30 cm, canta claro (no susurres). ' +
   'La referencia es una interpretación automática de la app, no la partitura oficial. ' +
@@ -28,7 +29,7 @@ const GUIDE_TEXT =
 
 export function PitchMonitorBadge({ pitchMonitor, melodyRef }: PitchMonitorBadgeProps) {
   const { active, error, start, stop } = pitchMonitor;
-  const { status: refStatus, error: refError, recapture } = melodyRef;
+  const { status: refStatus, error: refError, recapture, needsCapture } = melodyRef;
 
   const toggle = (): void => {
     if (active) stop();
@@ -57,10 +58,16 @@ export function PitchMonitorBadge({ pitchMonitor, melodyRef }: PitchMonitorBadge
       >
         ♪
       </button>
-      {/* Estados que NO viven en la columna lateral: captura en curso y errores. */}
+      {/* Estados que NO viven en la columna lateral: captura en curso, errores
+          y el aviso de primera vez (canción sin referencia guardada). */}
       {refStatus === 'capturing' && (
         <span className="pitch-capturing" role="status">
           🎵 capturando referencia…
+        </span>
+      )}
+      {!active && needsCapture && refStatus !== 'capturing' && (
+        <span className="pitch-first" role="status">
+          🎤 1ª vez: pon la canción a sonar y pulsa ♪
         </span>
       )}
       {error && (

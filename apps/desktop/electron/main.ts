@@ -573,6 +573,20 @@ function registerIpcHandlers(): void {
     return { ok: referenceStore?.remove(id) ?? false };
   });
 
+  // Abre en el explorador la carpeta donde se guardan las melodías de
+  // referencia (profesor + karaoke automático). Todo local, sin red.
+  ipcMain.handle('references:openFolder', async (): Promise<{ ok: boolean; error?: string }> => {
+    if (!referenceStore) return { ok: false, error: 'El almacén no está disponible' };
+    try {
+      const dir = referenceStore.directory();
+      await fs.promises.mkdir(dir, { recursive: true });
+      const err = await shell.openPath(dir);
+      return err ? { ok: false, error: err } : { ok: true };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : 'No se pudo abrir la carpeta' };
+    }
+  });
+
   ipcMain.handle(
     'references:export',
     async (_event, id: string): Promise<{ ok: boolean; canceled?: boolean; error?: string }> => {
