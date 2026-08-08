@@ -231,5 +231,5 @@ basta `npm run package`.
 
 ## Licencia
 
-[MIT](LICENSE) — Copyright © 2026 Gris. Licencias de terceros: se generan en
+[Apache-2.0](LICENSE) — Copyright © 2026 Gris. Licencias de terceros: se generan en
 `apps/desktop/build/THIRD-PARTY-NOTICES.txt` y se instalan con la app.

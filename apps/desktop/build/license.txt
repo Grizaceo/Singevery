@@ -1,12 +1,16 @@
 SINGEVERY — ACUERDO DE LICENCIA
 
-Singevery es software libre distribuido bajo la Licencia MIT.
-Resumen (no reemplaza al texto legal): puedes usar, copiar, modificar y
-redistribuir la aplicacion, incluso con fines comerciales, siempre que
-conserves el aviso de copyright. El software se entrega "TAL CUAL", sin
-garantias de ningun tipo.
+Singevery es software libre distribuido bajo la Apache License 2.0 (archivo
+LICENSE, incluido con la aplicacion). Resumen (no reemplaza al texto legal):
+puedes usar, copiar, modificar y redistribuir la aplicacion, incluso con fines
+comerciales, siempre que conserves el aviso de copyright y la copia de la
+licencia, y que indiques cualquier cambio que hagas en los archivos. La
+licencia incluye una cesion de licencias de patente del licenciante y no
+permite usar las marcas de Singevery sin permiso. El software se entrega
+"TAL CUAL", sin garantias de ningun tipo.
 
 Junto a la aplicacion se instalan ademas:
+ - LICENSE: texto completo de la Apache License 2.0.
  - THIRD-PARTY-NOTICES.txt: licencias del software de terceros incluido.
  - AVISO_LEGAL.md: condiciones de uso de los servicios de terceros
    (reconocimiento de musica y letras) y avisos sobre marcas.
@@ -19,25 +23,21 @@ sus titulares. Singevery esta pensada para uso personal (cantar mientras
 suena la musica). No esta afiliada a Shazam, Apple, AudD, Musixmatch,
 LRCLIB ni Letras.mus.br.
 
---------------------------------------------------------------------------
-MIT License
+----------------------------------------------------------------------
+Apache License
+Version 2.0, January 2004
+http://www.apache.org/licenses/
 
-Copyright (c) 2026 Gris
+Copyright 2026 Gris
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+    http://www.apache.org/licenses/LICENSE-2.0
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.

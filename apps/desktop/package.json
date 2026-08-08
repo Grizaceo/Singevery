@@ -4,7 +4,7 @@
   "version": "0.2.1-beta.2",
   "description": "Transparent desktop widget that recognizes music (Shazam/AudD) and shows synced karaoke lyrics with romaji — sing along without blocking your screen.",
   "author": "Gris",
-  "license": "MIT",
+  "license": "Apache-2.0",
   "main": "dist-electron/electron/main.js",
   "scripts": {
     "check:secrets": "node scripts/check-secrets.cjs",

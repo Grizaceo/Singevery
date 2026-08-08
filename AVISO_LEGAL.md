@@ -1,10 +1,10 @@
 # Aviso legal — Singevery
 
-*Última actualización: julio de 2026*
+*Última actualización: agosto de 2026*
 
 ## 1. Licencia del software
 
-Singevery se distribuye bajo la **Licencia MIT** (archivo `LICENSE`). El software se entrega **"tal cual" (AS IS), sin garantías de ningún tipo**, expresas o implícitas, incluyendo garantías de comerciabilidad, idoneidad para un fin particular y no infracción. El uso de la aplicación es bajo tu propia responsabilidad.
+Singevery se distribuye bajo la **Apache License 2.0** (archivo `LICENSE`). El software se entrega **"tal cual" (AS IS), sin garantías de ningún tipo**, expresas o implícitas, incluyendo garantías de comerciabilidad, idoneidad para un fin particular y no infracción. El uso de la aplicación es bajo tu propia responsabilidad.
 
 Las bibliotecas de terceros incluidas en la aplicación y sus licencias están listadas en `THIRD-PARTY-NOTICES.txt`.
 

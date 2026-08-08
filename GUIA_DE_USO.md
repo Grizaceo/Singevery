@@ -99,4 +99,4 @@ rendimiento apreciable. En ese modo el widget se ve y los atajos funcionan.
 
 ## 10. Legal y licencias
 
-Singevery es software libre (MIT). Las letras se obtienen de servicios de terceros y pertenecen a sus autores; el uso previsto es personal. Detalles en `AVISO_LEGAL.md` y licencias de componentes en `THIRD-PARTY-NOTICES.txt`, ambos en la carpeta de instalación.
+Singevery es software libre (Apache License 2.0). Las letras se obtienen de servicios de terceros y pertenecen a sus autores; el uso previsto es personal. Detalles en `AVISO_LEGAL.md` y licencias de componentes en `THIRD-PARTY-NOTICES.txt`, ambos en la carpeta de instalación.
