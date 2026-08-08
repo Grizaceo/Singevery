@@ -7,8 +7,12 @@ export function loadDotEnv(): void {
   // En dev compilado: __dirname = apps/desktop/dist-electron/electron/services
   // Repo root = ../../../../../
   const candidates = [
-    path.join(process.cwd(), '.env'),
-    path.join(app.getAppPath(), '.env'),
+      // App empaquetada: .env copiado a los recursos por electron-builder
+      // (app.asar.unpacked → process.resourcesPath). Primero, para que un
+      // instalador que lleva el token de beta controlada lo encuentre siempre.
+      path.join(process.resourcesPath, '.env'),
+      path.join(process.cwd(), '.env'),
+      path.join(app.getAppPath(), '.env'),
     // Desde dist-electron/electron/services → repo root
     path.join(__dirname, '..', '..', '..', '..', '..', '.env'),
     // Desde dist-electron/electron (fallback)

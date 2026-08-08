@@ -22,6 +22,13 @@ extraResources:
   - from: build/smtc-dist
     to: native/smtc/dist
     filter: ['**/*', '!*.pdb']
+  # Token de AudD para la beta cerrada. Se copia el .env local (contiene
+  # AUDD_API_TOKEN) a resources/.env; loadDotEnv() lo encuentra vía
+  # process.resourcesPath. ADVERTENCIA: el instalador generado lleva este
+  # token. Solo distribuirlo en la beta controlada y avisar que no se difunda.
+  - from: ./.env
+    to: .env
+    filter: ['*.env']
 
 # Documentos que el usuario final debe poder leer: quedan junto a Singevery.exe.
 extraFiles:
