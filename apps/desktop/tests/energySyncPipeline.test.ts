@@ -232,4 +232,74 @@ describe('StateStore.reportAudioWindow', () => {
     expect(m!.skipped).toContain('tope');
     expect(store.getDisplayedPosition()).toBe(before);
   });
+
+  it('no dispara resync con un alineamiento limpio (misma canción)', () => {
+    const store = storeWithLyrics(1000);
+    const onResync = vi.fn();
+    store.setResyncRequester(onResync);
+
+    const m = store.reportAudioWindow(buildAudio(), Date.now());
+
+    expect(m).not.toBeNull();
+    expect(m!.confidence).toBeGreaterThan(ENERGY_SYNC_MIN_CONFIDENCE);
+    expect(onResync).not.toHaveBeenCalled();
+  });
+
+  it('dispara resync cuando el audio NO se parece a la letra mostrada', () => {
+    const store = storeWithLyrics(1000);
+    store.setEnergySyncEnabled(true);
+    const onResync = vi.fn();
+    store.setResyncRequester(onResync);
+
+    // Voz en las posiciones que la letra marca como silencio: patrón vocal
+    // completamente distinto → la canción ya no es la que se muestra.
+    const differentAudio = buildAudioWhereVoiceFillsTheGaps();
+    const m = store.reportAudioWindow(differentAudio, Date.now());
+
+    expect(m).not.toBeNull();
+    // La correlación debe fallar (no es la letra mostrada).
+    expect(m!.confidence).toBeLessThan(ENERGY_SYNC_MIN_CONFIDENCE);
+    expect(onResync).toHaveBeenCalledTimes(1);
+  });
+
+  it('throttlea los resyncs encadenados (máximo uno por ventana)', () => {
+    const store = storeWithLyrics(1000);
+    store.setEnergySyncEnabled(true);
+    const onResync = vi.fn();
+    store.setResyncRequester(onResync);
+
+    const differentAudio = buildAudioWhereVoiceFillsTheGaps();
+    store.reportAudioWindow(differentAudio, Date.now());
+    store.reportAudioWindow(differentAudio, Date.now() + 1_000); // dentro del throttle
+
+    expect(onResync).toHaveBeenCalledTimes(1);
+  });
+
+  it('no dispara antes de tener una letra en pantalla', () => {
+    const store = new StateStore(null);
+    const onResync = vi.fn();
+    store.setResyncRequester(onResync);
+
+    // Sin letra no hay máscara: reportAudioWindow no mide ni dispara.
+    expect(store.reportAudioWindow(buildAudio(), Date.now())).toBeNull();
+    expect(onResync).not.toHaveBeenCalled();
+  });
 });
+
+/** Voz en las posiciones silenciosas de VOICE_SEGMENTS: patrón que la letra de
+ *  buildLyrics() (que tiene voz en los segmentos) NO reconoce. */
+function buildAudioWhereVoiceFillsTheGaps(): ArrayBuffer {
+  const chunks: Float32Array[] = [];
+  const gaps: Array<[number, number]> = [
+    [4000, 4600],
+    [6000, 8000],
+    [12000, 14000],
+  ];
+  let cursor = 0;
+  for (const [from, to] of gaps) {
+    if (from > cursor) chunks.push(tone(60, from - cursor));
+    chunks.push(tone(900, to - from));
+    cursor = to;
+  }
+  return encodeWav(concat(chunks));
+}

@@ -364,6 +364,42 @@ export class StateStore {
     this.resyncRequester();
   }
 
+  /**
+   * Decide si una ventana de energía que NO coincide con la letra mostrada
+   * amerita re-identificar de inmediato. Es el disparador de cambio de tema
+   * por energía: el patrón vocal del audio ya no explica lo que se muestra.
+   *
+   * Solo cuando la no-coincidencia es estructural, no una mera ventana pobre:
+   *   - `confidence < ENERGY_SYNC_MIN_CONFIDENCE` (la letra no responde al
+   *     audio en ningún desplazamiento) PERO el pico de correlación es bajo
+   *     en términos absolutos. Si el pico estuviera bien pero ambigüo (chorus
+   *     trap), AudD confirmaría la misma pista: re-identificar es inocuo pero
+   *     gasta una llamada; preferimos no disparar en ese caso.
+   *   - O el desfase "mejor" rompe gravemente el tope: ni desplazando se alinea.
+   *
+   * No dispara cuando no hay letra protegida (no hay nada que re-sincronizar
+   * de forma útil) ni cuando la pista es provisional (el audio ya manda).
+   */
+  private maybeRequestResyncOnMiss(
+    correlation: EnergyCorrelation,
+    at: number,
+  ): void {
+    if (!this.resyncRequester) return;
+    // Sin letra mostrándose o sin pista lockeada no hay nada que salvar.
+    if (!this.engine.getLyrics() || this.currentTrackProvisional) return;
+    const structurallyApart =
+      (correlation.confidence < ENERGY_SYNC_MIN_CONFIDENCE &&
+        correlation.peak < ENERGY_SYNC_MIN_CONFIDENCE) ||
+      Math.abs(correlation.offsetMs) > ENERGY_SYNC_MAX_CORRECTION_MS;
+    if (!structurallyApart) return;
+    console.warn(
+      `[energía] el audio no se alinea con la letra mostrada (confianza ` +
+        `${correlation.confidence.toFixed(2)}, pico ${correlation.peak.toFixed(2)}, ` +
+        `offset ${correlation.offsetMs}ms) → re-identificando`,
+    );
+    this.requestResync(at);
+  }
+
   start(intervalMs = 100): void {
     if (this.intervalHandle) return;
     this.intervalHandle = setInterval(() => this.tick(), intervalMs);
@@ -765,6 +801,18 @@ export class StateStore {
       bins: audioMask.length,
       applied: false,
     };
+
+    // DISPARADOR DE CAMBIO DE CANCIÓN (P1): cuando hay voz clara en el audio
+    // pero la letra mostrada no se alinea en NINGÚN desfase razonable, es la
+    // huella de que ya no suena la canción que se muestra. Dos señales:
+    //   - Correlación baja: el patrón vocal no responde a la máscara actual.
+    //   - Desfase absurdo: ni aun desplazando todo coincide.
+    // Disparar una re-identificación inmediata (en vez de esperar el ciclo de
+    // ~18s) acorta la detección del cambio de tema de decenas de segundos a
+    // unos pocos. El throttle de RESYNC_THROTTLE_MS evita que encadene
+    // resyncs; AudD resuelve la ambigüedad (estribillo repetido) confirmando
+    // la misma pista, con lo que el resync se vuelve una corrección inofensiva.
+    this.maybeRequestResyncOnMiss(correlation, at);
 
     if (correlation.confidence < ENERGY_SYNC_MIN_CONFIDENCE) {
       measurement.skipped = `confianza ${correlation.confidence.toFixed(2)} < ${ENERGY_SYNC_MIN_CONFIDENCE}`;
