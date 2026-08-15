@@ -5,6 +5,14 @@ const RECORD_MS = 6000;
 const PAUSE_MS = 2000;
 /** Pausa entre ciclos de corrección de deriva una vez identificada la canción. */
 const RESYNC_PAUSE_MS = 12000;
+/**
+ * Pausa cuando hay un cambio de canción EN CURSO de confirmarse: el main vio
+ * otra pista pero la histéresis todavía no la dio por buena, o el monitor
+ * detectó un corte de audio. Esperar los 12s normales significaba cerrar la
+ * confirmación ~20s más tarde y dejar la letra vieja en pantalla todo ese rato.
+ * Casi cero: el ciclo siguiente ya cuesta 6s de grabación + red.
+ */
+const FAST_PAUSE_MS = 300;
 
 /** Pico de amplitud (0..1) por debajo del cual consideramos que no llega señal. */
 export const SILENCE_PEAK = 0.012;
@@ -84,13 +92,32 @@ function createLevelMeter(stream: MediaStream): LevelMeter | null {
 }
 
 /**
+ * Fuente de audio persistente para una sesión de reconocimiento.
+ *
+ * Existe para que el stream se abra UNA vez y siga vivo entre ciclos: sobre él
+ * cuelgan a la vez el MediaRecorder (grabación de cada chunk) y el monitor
+ * continuo (audio/monitor.ts), que necesita oír también durante las pausas.
+ */
+export interface AudioCaptureSession {
+  acquire(): Promise<MediaStream>;
+  /** Stream ya abierto, o null si todavía no se adquirió. */
+  current(): MediaStream | null;
+  release(): void;
+}
+
+/**
  * Mantiene vivo el stream de captura mientras se usa solo su audio.
  * El handler en main.ts entrega video = frame propio del widget + loopback;
  * este objeto conserva el stream para no re-adquirir en cada ciclo (re-adquirir
  * getDisplayMedia dispararía el selector de captura de Windows cada vez).
  */
-export class SystemAudioSession {
+export class SystemAudioSession implements AudioCaptureSession {
   private displayStream: MediaStream | null = null;
+
+  current(): MediaStream | null {
+    if (!this.displayStream?.active) return null;
+    return new MediaStream(this.displayStream.getAudioTracks());
+  }
 
   async acquire(): Promise<MediaStream> {
     if (this.displayStream?.active) {
@@ -160,6 +187,36 @@ export async function openMicrophoneStream(): Promise<MediaStream> {
   return request(true);
 }
 
+/**
+ * Micrófono persistente. Antes se abría y cerraba un stream por chunk: además
+ * del coste de re-adquirir (y del parpadeo del indicador de micrófono del SO),
+ * dejaba a la app SORDA entre ciclos, que es justo cuando hay que notar el
+ * cambio de canción. Con la sesión abierta, el monitor continuo oye siempre.
+ */
+export class MicrophoneSession implements AudioCaptureSession {
+  private stream: MediaStream | null = null;
+
+  current(): MediaStream | null {
+    return this.stream?.active ? this.stream : null;
+  }
+
+  async acquire(): Promise<MediaStream> {
+    if (this.stream?.active) return this.stream;
+    this.stream = await openMicrophoneStream();
+    return this.stream;
+  }
+
+  release(): void {
+    this.stream?.getTracks().forEach((track) => track.stop());
+    this.stream = null;
+  }
+}
+
+/** Sesión de captura para la fuente indicada (aún sin adquirir el stream). */
+export function createCaptureSession(source: AudioSource): AudioCaptureSession {
+  return source === 'system' ? new SystemAudioSession() : new MicrophoneSession();
+}
+
 async function recordWithMediaRecorder(
   stream: MediaStream,
   durationMs: number,
@@ -187,9 +244,10 @@ async function recordWithMediaRecorder(
         }, 100)
       : null;
 
-    // Solo detenemos los tracks si este stream nos pertenece. El stream del
-    // sistema lo gestiona SystemAudioSession (debe seguir vivo entre ciclos de
-    // re-sync); detenerlo aquí cortaría el loopback en capturas posteriores.
+    // Solo detenemos los tracks si este stream nos pertenece. El stream lo
+    // gestiona la AudioCaptureSession (debe seguir vivo entre ciclos: el
+    // loopback no se re-adquiere sin volver a pedir permiso, y el monitor
+    // continuo escucha por él durante las pausas).
     const cleanup = (): void => {
       if (meterTimer != null) window.clearInterval(meterTimer);
       meter?.close();
@@ -237,24 +295,20 @@ export async function recordChunk(
   source: AudioSource,
   durationMs = RECORD_MS,
   signal?: AbortSignal,
-  systemSession?: SystemAudioSession,
+  captureSession?: AudioCaptureSession,
   onLevel?: (level: number) => void,
 ): Promise<RecordedChunk> {
-  if (source === 'system') {
-    const session = systemSession ?? new SystemAudioSession();
-    const ownsSession = !systemSession;
+  const session = captureSession ?? createCaptureSession(source);
+  const ownsSession = !captureSession;
 
-    try {
-      const stream = await session.acquire();
-      // El stream del sistema lo gestiona la sesión, no el grabador.
-      return await recordWithMediaRecorder(stream, durationMs, signal, false, onLevel);
-    } finally {
-      if (ownsSession) session.release();
-    }
+  try {
+    const stream = await session.acquire();
+    // El stream lo gestiona la sesión (sigue vivo entre ciclos para el monitor
+    // continuo), así que el grabador nunca detiene sus tracks.
+    return await recordWithMediaRecorder(stream, durationMs, signal, false, onLevel);
+  } finally {
+    if (ownsSession) session.release();
   }
-
-  const stream = await openMicrophoneStream();
-  return await recordWithMediaRecorder(stream, durationMs, signal, true, onLevel);
 }
 
 export function sleep(ms: number, signal?: AbortSignal): Promise<void> {
@@ -281,5 +335,6 @@ export function sleep(ms: number, signal?: AbortSignal): Promise<void> {
 export const CAPTURE_RECORD_MS = RECORD_MS;
 export const CAPTURE_PAUSE_MS = PAUSE_MS;
 export const CAPTURE_RESYNC_PAUSE_MS = RESYNC_PAUSE_MS;
+export const CAPTURE_FAST_PAUSE_MS = FAST_PAUSE_MS;
 
 export { blobToWav16kMono } from './wav';

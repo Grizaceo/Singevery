@@ -56,6 +56,16 @@ export interface WrongSongStrikes {
   titleStillSays: string;
 }
 
+/**
+ * Corte de pista visto por el monitor local de audio (renderer):
+ *   - 'gap'     → hueco de silencio entre canciones. Señal FUERTE: el
+ *                 reproductor terminó una pista y empezó otra.
+ *   - 'novelty' → el timbre cambió de golpe sin hueco (crossfade, mezcla).
+ *                 Señal DÉBIL: sirve para re-identificar antes, no para
+ *                 saltarse la histéresis.
+ */
+export type AudioBoundaryKind = 'gap' | 'novelty';
+
 /** Estado interno expuesto al endpoint de diagnóstico (solo lectura). */
 export interface StateDiagnostics {
   status: Status;
@@ -79,6 +89,8 @@ export interface StateDiagnostics {
     lastExternalTitle: { title: string; artist: string; at: number } | null;
     lastUnmatchedExternal: { title: string; artist: string; at: number } | null;
     autoRetryPending: boolean;
+    /** Último corte de pista que reportó el monitor local de audio. */
+    lastAudioBoundary: { kind: AudioBoundaryKind; at: number } | null;
   };
   sync: {
     displayedPositionMs: number;
@@ -181,6 +193,21 @@ export class StateStore {
   private lastUnmatchedExternal: { title: string; artist: string; at: number } | null = null;
   private static readonly EXTERNAL_CORROBORATION_TTL_MS = 90_000;
 
+  /**
+   * Último corte de pista visto por el monitor local de audio (renderer).
+   *
+   * Es la tercera señal del arbitraje, y la única que funciona SIN reproductor
+   * del SO (parlante externo, micrófono, vinilo): un hueco de silencio entre
+   * canciones es evidencia física de que la pista terminó. Cuando el
+   * fingerprint identifica otra canción justo después de un hueco, hay dos
+   * señales independientes y el cambio se aplica sin gastar el segundo ciclo
+   * de histéresis (~20 s de letra vieja en pantalla).
+   */
+  private lastAudioBoundary: { kind: AudioBoundaryKind; at: number } | null = null;
+  /** Pasado este lapso, el corte ya no explica el match que llega. Cubre con
+   *  holgura grabar (6 s) + identificar, incluso con un reintento por medio. */
+  private static readonly BOUNDARY_CORROBORATION_TTL_MS = 30_000;
+
   /** Pide al renderer re-identificar YA (cambio de pista no confirmable). */
   private resyncRequester: (() => void) | null = null;
   /** -Infinity y no 0: con 0 la primera petición quedaba dentro del throttle. */
@@ -266,6 +293,7 @@ export class StateStore {
         lastExternalTitle: this.lastExternalTitle,
         lastUnmatchedExternal: this.lastUnmatchedExternal,
         autoRetryPending: this.autoRetry.isPending,
+        lastAudioBoundary: this.lastAudioBoundary ? { ...this.lastAudioBoundary } : null,
       },
       sync: {
         displayedPositionMs: Math.round(this.clock.getDisplayedPosition(at)),
@@ -594,6 +622,46 @@ export class StateStore {
     return same;
   }
 
+  /**
+   * El monitor local de audio vio un corte de pista. Solo se anota: la letra
+   * NO se toca aquí. Quien decide sigue siendo el fingerprint; el corte es la
+   * evidencia que le permite confirmar el cambio a la primera.
+   *
+   * No dispara un resync por su cuenta a propósito: el renderer, que es quien
+   * lo detectó, ya corta su pausa y re-identifica de inmediato.
+   */
+  noteAudioBoundary(kind: AudioBoundaryKind, at: number = Date.now()): void {
+    this.lastAudioBoundary = { kind, at };
+  }
+
+  /**
+   * ¿Hay un cambio de canción a medio confirmar? El renderer lo consulta tras
+   * cada corrección para encadenar el ciclo siguiente sin pausa: la histéresis
+   * necesita otra identificación y esperarla 12 s deja la letra vieja en
+   * pantalla todo ese rato.
+   */
+  isChangeSuspected(): boolean {
+    return this.wrongSong != null;
+  }
+
+  /**
+   * ¿Un corte de audio reciente respalda que la canción cambió DE VERDAD?
+   *
+   * Solo el hueco de silencio ('gap') cuenta: es evidencia física de que una
+   * pista terminó. La novedad espectral es demasiado fácil de disparar con un
+   * cambio de sección para saltarse la histéresis con ella.
+   *
+   * Y no vale si la sesión del SO sigue afirmando la canción que se muestra:
+   * ahí el hueco es casi seguro otra cosa (el usuario pausó, un bache de
+   * volumen) y el SO —que sí sabe qué está reproduciendo— manda.
+   */
+  private boundaryCorroborates(at: number): boolean {
+    const boundary = this.lastAudioBoundary;
+    if (!boundary || boundary.kind !== 'gap') return false;
+    if (at - boundary.at > StateStore.BOUNDARY_CORROBORATION_TTL_MS) return false;
+    return !this.osStillConfirmsCurrentTrack(at);
+  }
+
   setRecognitionPhase(phase: RecognitionPhase): void {
     if (phase) {
       this.overrideStatus = phase;
@@ -628,6 +696,10 @@ export class StateStore {
     // actual descarta cualquier cambio pendiente.
     if (this.engine.getLyrics() && this.matchesCurrentTrack(matchKey, title, artist)) {
       this.wrongSong = null;
+      // El fingerprint dice que sigue sonando lo mismo: si había un corte
+      // anotado, no era un cambio de canción (una pausa, un bache de volumen).
+      // Descartarlo evita que corrobore una mis-identificación posterior.
+      this.lastAudioBoundary = null;
       // Dos señales independientes (título del SO + huella del audio) dicen lo
       // mismo: la identidad deja de ser provisional y pasa a estar lockeada.
       this.currentTrackProvisional = false;
@@ -642,11 +714,19 @@ export class StateStore {
     // pista (bloqueada por el arbitraje) y este match de AudD la reconoce como
     // la misma canción, el cambio es real → confirmar sin esperar la
     // histéresis (ahorra un ciclo de corrección de ~18s).
+    const now = Date.now();
     const ext = this.lastUnmatchedExternal;
-    const corroborated =
+    const corroboratedByOs =
       ext != null &&
-      Date.now() - ext.at < StateStore.EXTERNAL_CORROBORATION_TTL_MS &&
+      now - ext.at < StateStore.EXTERNAL_CORROBORATION_TTL_MS &&
       looksLikeSameTrack({ title, artist }, ext);
+
+    // Misma idea, pero con la señal que SÍ existe cuando no hay reproductor
+    // accesible (parlante externo, micrófono): el monitor local oyó el hueco
+    // de silencio entre pistas justo antes de este match. Dos señales
+    // independientes → cambio confirmado a la primera.
+    const corroboratedByAudio = !corroboratedByOs && this.boundaryCorroborates(now);
+    const corroborated = corroboratedByOs || corroboratedByAudio;
 
     // Histéresis compartida (mic + SMTC): un cambio de pista no se aplica al
     // primer indicio; una mis-identificación puntual no debe arrancar la letra.
@@ -658,6 +738,16 @@ export class StateStore {
     if (corroborated) {
       this.wrongSong = null;
     }
+    if (corroboratedByAudio) {
+      console.log(
+        `[identidad] corte de audio reciente + match distinto ("${matchKey}") → ` +
+          'cambio confirmado sin histéresis',
+      );
+    }
+    // El corte ya cumplió su función: consumirlo para que no corrobore también
+    // el próximo match (una mis-identificación posterior no debe heredar la
+    // evidencia de un hueco que ya se explicó).
+    this.lastAudioBoundary = null;
 
     // El reconocimiento por audio identifica lo que SUENA: la pista deja de ser
     // provisional aunque haya entrado por un título genérico del SO.

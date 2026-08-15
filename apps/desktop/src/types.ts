@@ -360,9 +360,27 @@ export interface DesktopApi {
     audio: ArrayBuffer,
     mimeType: string,
     recordStartedAt: number,
-  ) => Promise<{ ok: boolean; matched: boolean; changed?: boolean; error?: string }>;
+  ) => Promise<{
+    ok: boolean;
+    matched: boolean;
+    changed?: boolean;
+    /**
+     * El fingerprint ya identificó OTRA canción pero la histéresis todavía no
+     * la confirmó. El renderer lo usa para encadenar el ciclo siguiente sin
+     * pausa: la confirmación llega en ~7s en vez de ~20s.
+     */
+    suspected?: boolean;
+    error?: string;
+  }>;
   stopRecognition: () => Promise<{ ok: boolean }>;
   reportLevel: (level: number) => Promise<{ ok: boolean }>;
+  /**
+   * Corte de pista detectado localmente por el monitor de audio (hueco de
+   * silencio o cambio brusco de timbre). Es una señal INDEPENDIENTE del
+   * fingerprint y del reproductor del SO: el main la usa para confirmar un
+   * cambio de canción sin gastar otro ciclo de histéresis.
+   */
+  reportTrackBoundary: (kind: 'gap' | 'novelty') => Promise<{ ok: boolean }>;
 
   // Loop de mejora: feedback del usuario sobre la precisión del
   // reconocimiento + estadísticas agregadas (matchlog.jsonl en userData/logs).

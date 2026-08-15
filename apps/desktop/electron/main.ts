@@ -739,7 +739,13 @@ function registerIpcHandlers(): void {
       audio: ArrayBuffer,
       mimeType: string,
       recordStartedAt: number,
-    ): Promise<{ ok: boolean; matched: boolean; changed?: boolean; error?: string }> => {
+    ): Promise<{
+      ok: boolean;
+      matched: boolean;
+      changed?: boolean;
+      suspected?: boolean;
+      error?: string;
+    }> => {
       if (!stateStore) {
         return { ok: false, matched: false, error: 'StateStore no inicializado' };
       }
@@ -749,7 +755,7 @@ function registerIpcHandlers(): void {
         const durationMs = Date.now() - startedAt;
         if (!match) {
           matchLog?.log({ type: 'correct', source: 'audd', outcome: 'no_match', durationMs });
-          return { ok: true, matched: false };
+          return { ok: true, matched: false, suspected: stateStore.isChangeSuspected() };
         }
         const changed = await stateStore.applyMatch(match, recordStartedAt);
         // El mismo chunk sirve para medir el desfase de la letra por energía
@@ -771,12 +777,28 @@ function registerIpcHandlers(): void {
           confidence: match.confidence,
           track: { title: match.track.title, artist: match.track.artist },
         });
-        return { ok: true, matched: true, changed };
+        // `suspected` = el fingerprint vio otra canción y la histéresis aún no
+        // la confirma. El renderer encadena el ciclo siguiente sin pausa para
+        // cerrar la confirmación en ~7s en vez de ~20s.
+        return { ok: true, matched: true, changed, suspected: stateStore.isChangeSuspected() };
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Error desconocido';
         matchLog?.log({ type: 'correct', source: 'audd', outcome: 'error', error: message });
         return { ok: false, matched: false, error: message };
       }
+    },
+  );
+
+  // Corte de pista detectado localmente por el monitor de audio del renderer
+  // (hueco de silencio entre canciones o cambio brusco de timbre). Señal
+  // independiente del fingerprint y del reproductor del SO: sirve para
+  // confirmar un cambio de canción sin gastar otro ciclo de histéresis.
+  ipcMain.handle(
+    'recognition:boundary',
+    (_event, kind: 'gap' | 'novelty'): { ok: boolean } => {
+      if (kind !== 'gap' && kind !== 'novelty') return { ok: false };
+      stateStore?.noteAudioBoundary(kind);
+      return { ok: true };
     },
   );
 

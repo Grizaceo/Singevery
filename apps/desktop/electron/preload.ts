@@ -86,10 +86,19 @@ const api = {
     audio: ArrayBuffer,
     mimeType: string,
     recordStartedAt: number,
-  ): Promise<{ ok: boolean; matched: boolean; changed?: boolean; error?: string }> =>
-    ipcRenderer.invoke('recognition:correct', audio, mimeType, recordStartedAt),
+  ): Promise<{
+    ok: boolean;
+    matched: boolean;
+    changed?: boolean;
+    suspected?: boolean;
+    error?: string;
+  }> => ipcRenderer.invoke('recognition:correct', audio, mimeType, recordStartedAt),
 
   stopRecognition: (): Promise<{ ok: boolean }> => ipcRenderer.invoke('recognition:stop'),
+
+  // Corte de pista visto por el monitor local de audio (sin red).
+  reportTrackBoundary: (kind: 'gap' | 'novelty'): Promise<{ ok: boolean }> =>
+    ipcRenderer.invoke('recognition:boundary', kind),
 
   // Loop de mejora: feedback del usuario sobre la precisión + estadísticas.
   logMatchFeedback: (correct: boolean): Promise<{ ok: boolean; resynced?: boolean; error?: string }> =>
