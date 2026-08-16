@@ -49,6 +49,30 @@ class Program
     /// repetidos para la misma pista (los navegadores lo disparan varias veces).
     static string _lastTrackSig = "";
 
+    /// Momento (UTC) en que se detectó el último cambio de pista.
+    ///
+    /// Los navegadores disparan MediaPropertiesChanged ANTES que
+    /// TimelinePropertiesChanged: justo tras cambiar de vídeo, el timeline que
+    /// se lee todavía es el del vídeo ANTERIOR. Emitir su Position —y peor, su
+    /// proyección— manda la posición de otra canción, y del lado de Electron eso
+    /// se traduce en un salto duro hacia adelante (computeDrift → snap).
+    static DateTimeOffset _trackChangedAt = DateTimeOffset.MinValue;
+
+    /// Techo de la proyección del snapshot.
+    ///
+    /// El snapshot de un navegador puede quedarse quieto minutos. Proyectar todo
+    /// ese hueco asume que el vídeo estuvo reproduciendo sin anuncios, sin
+    /// buffering y sin pausas; el error se acumula ENTERO hacia adelante y la
+    /// letra corre de más. Pasado este techo el snapshot ya no es información
+    /// fresca: mejor una posición acotada que una inventada.
+    const double MAX_PROJECTION_MS = 30_000;
+
+    /// Cuánto se desconfía del timeline tras un cambio de pista. Pasado el
+    /// plazo se vuelve a aceptar aunque su marca sea vieja: hay reproductores
+    /// que no refrescan el timeline nunca, y quedarse sin posición para siempre
+    /// sería peor que una posición acotada.
+    const double STALE_GRACE_MS = 5000;
+
     // ==========================================================================
     // Detección de padre muerto (anti-zombie).
     // Electron spawna este exe con stdio pipe. Si el proceso main muere (crash,
@@ -171,9 +195,33 @@ class Program
         return status == GlobalSystemMediaTransportControlsSessionPlaybackStatus.Playing;
     }
 
+    /// ¿El timeline que estamos leyendo es todavía el de la pista ANTERIOR?
+    ///
+    /// Solo se puede saber comparando su marca con el instante del cambio de
+    /// pista. Si la sesión no reporta marca fiable (LastUpdatedTime = 1601) no
+    /// hay nada que comparar y se confía: negarse siempre dejaría sin posición a
+    /// reproductores que hoy funcionan.
+    static bool TimelineIsStale(GlobalSystemMediaTransportControlsSessionTimelineProperties tl)
+    {
+        if (_trackChangedAt == DateTimeOffset.MinValue) return false;
+        // Pasado el plazo de gracia se acepta igual (ver STALE_GRACE_MS).
+        if ((DateTimeOffset.UtcNow - _trackChangedAt).TotalMilliseconds > STALE_GRACE_MS) return false;
+        var updated = tl.LastUpdatedTime;
+        if (updated.Year <= 2000) return false;
+        return updated.ToUniversalTime() < _trackChangedAt;
+    }
+
     /// Posición real "ahora": snapshot + tiempo transcurrido desde que el
     /// reproductor lo reportó (si está sonando). Clave para navegadores, cuyo
     /// snapshot puede quedarse quieto varios segundos (o minutos) en YouTube.
+    ///
+    /// La proyección va ACOTADA por dos lados. Sin esos topes, un snapshot viejo
+    /// de YouTube (que solo se refresca en play/pausa/seek) sumaba minutos
+    /// enteros y la letra se disparaba hacia adelante:
+    ///   - por tiempo: MAX_PROJECTION_MS, porque proyectar un hueco largo asume
+    ///     reproducción continua (sin anuncios, buffering ni pausas);
+    ///   - por duración: una posición mayor que la canción es imposible, y
+    ///     delata justo una proyección desbocada o un snapshot de otra pista.
     static long ProjectedPositionMs(GlobalSystemMediaTransportControlsSessionTimelineProperties tl, bool playing)
     {
         var pos = tl.Position.TotalMilliseconds;
@@ -184,11 +232,12 @@ class Program
             if (updated.Year > 2000)
             {
                 var elapsed = (DateTimeOffset.UtcNow - updated.ToUniversalTime()).TotalMilliseconds;
-                // Guard contra relojes absurdos (suspensión, snapshots corruptos).
-                if (elapsed > 0 && elapsed < 6 * 60 * 60 * 1000) pos += elapsed;
+                if (elapsed > 0) pos += Math.Min(elapsed, MAX_PROJECTION_MS);
             }
         }
         if (pos < 0) pos = 0;
+        var end = tl.EndTime.TotalMilliseconds;
+        if (end > 0 && pos > end) pos = end;
         return (long)pos;
     }
 
@@ -210,6 +259,7 @@ class Program
             {
                 if (sig == _lastTrackSig) return;
                 _lastTrackSig = sig;
+                _trackChangedAt = DateTimeOffset.UtcNow;
             }
 
             // Pista sin identidad útil (metadata aún no cargada): no emitir.
@@ -217,14 +267,20 @@ class Program
 
             var playing = IsPlaying(s);
             var tl = s.GetTimelineProperties();
+            // Timeline aún sin refrescar para esta pista: su Position y su
+            // EndTime son los de la canción ANTERIOR. Una canción que acaba de
+            // empezar está en 0, y el canal 'position' corrige en ≤1s ya con el
+            // timeline fresco. Mandar la posición vieja PROYECTADA era el salto
+            // hacia adelante al cambiar de canción en YouTube.
+            var stale = TimelineIsStale(tl);
             Write(new
             {
                 type = "track",
                 title,
                 artist,
                 album,
-                durationMs = (long)tl.EndTime.TotalMilliseconds,
-                positionMs = ProjectedPositionMs(tl, playing),
+                durationMs = stale ? (long?)null : (long)tl.EndTime.TotalMilliseconds,
+                positionMs = stale ? 0 : ProjectedPositionMs(tl, playing),
                 playing,
             });
         }
@@ -238,6 +294,11 @@ class Program
         {
             var playing = IsPlaying(s);
             var tl = s.GetTimelineProperties();
+            // Timeline de la pista anterior: callar. El tick de 1s vuelve a
+            // preguntar, y TimelinePropertiesChanged dispara en cuanto llega el
+            // primero de la pista nueva. Emitir aquí sería mandar la posición de
+            // otra canción justo cuando la letra nueva se está anclando.
+            if (TimelineIsStale(tl)) return;
             Write(new
             {
                 type = "position",

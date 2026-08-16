@@ -126,6 +126,9 @@ export class StateStore {
 
   private trackTitle: string | undefined;
   private trackArtist: string | undefined;
+  /** Duración de la pista en curso (ms), si alguna fuente la reportó. Sirve de
+   *  cota superior para las posiciones externas: ver applyExternalPosition. */
+  private trackDurationMs: number | null = null;
 
   private overrideStatus: Status | null = null;
   private lastMatchKey: string | null = null;
@@ -207,6 +210,16 @@ export class StateStore {
   /** Pasado este lapso, el corte ya no explica el match que llega. Cubre con
    *  holgura grabar (6 s) + identificar, incluso con un reintento por medio. */
   private static readonly BOUNDARY_CORROBORATION_TTL_MS = 30_000;
+
+  /** Holgura al comparar una posición externa con la duración de la pista: las
+   *  duraciones de SMTC y del reconocedor no coinciden al segundo. */
+  private static readonly EXTERNAL_POSITION_SLACK_MS = 5_000;
+
+  /** Re-identificaciones ya pedidas por "la letra no explica el audio", para la
+   *  pista en curso. Se reinicia al cargar otra. */
+  private mismatchResyncs = 0;
+  /** Tope: pasadas estas, insistir no aporta (ver maybeRequestResyncOnMiss). */
+  private static readonly MISMATCH_RESYNC_LIMIT = 2;
 
   /** Pide al renderer re-identificar YA (cambio de pista no confirmable). */
   private resyncRequester: (() => void) | null = null;
@@ -415,16 +428,30 @@ export class StateStore {
     if (!this.resyncRequester) return;
     // Sin letra mostrándose o sin pista lockeada no hay nada que salvar.
     if (!this.engine.getLyrics() || this.currentTrackProvisional) return;
+    // Ya se re-identificó por esta razón y el fingerprint sigue diciendo que es
+    // la misma canción: la letra no se alinea por otro motivo (es de otra
+    // VERSIÓN de la pista, o la correlación no la explica). Volver a preguntar
+    // lo mismo no lo va a arreglar — solo gasta llamadas en bucle. Se corta
+    // hasta que cambie la pista, que es lo único que cambia la respuesta.
+    if (this.mismatchResyncs >= StateStore.MISMATCH_RESYNC_LIMIT) return;
     const structurallyApart =
       (correlation.confidence < ENERGY_SYNC_MIN_CONFIDENCE &&
         correlation.peak < ENERGY_SYNC_MIN_CONFIDENCE) ||
       Math.abs(correlation.offsetMs) > ENERGY_SYNC_MAX_CORRECTION_MS;
     if (!structurallyApart) return;
+    this.mismatchResyncs += 1;
     console.warn(
       `[energía] el audio no se alinea con la letra mostrada (confianza ` +
         `${correlation.confidence.toFixed(2)}, pico ${correlation.peak.toFixed(2)}, ` +
-        `offset ${correlation.offsetMs}ms) → re-identificando`,
+        `offset ${correlation.offsetMs}ms) → re-identificando ` +
+        `(${this.mismatchResyncs}/${StateStore.MISMATCH_RESYNC_LIMIT})`,
     );
+    if (this.mismatchResyncs >= StateStore.MISMATCH_RESYNC_LIMIT) {
+      console.warn(
+        '[energía] si el reconocedor reconfirma esta canción, la letra es de otra ' +
+          'versión de la pista: no se pedirán más re-identificaciones hasta que cambie',
+      );
+    }
     this.requestResync(at);
   }
 
@@ -487,6 +514,9 @@ export class StateStore {
     this.currentTrackProvisional = false;
     this.currentTrackKey = trackKey;
     this.lastMatchKey = trackKey;
+    // Letra elegida a mano: no sabemos a qué grabación corresponde, así que no
+    // hay duración de referencia contra la que acotar posiciones externas.
+    this.trackDurationMs = null;
     this.autoRetry.reset();
     this.clock.setCurrentTrackKey(trackKey);
     this.clock.loadSyncOffset(trackKey);
@@ -545,10 +575,13 @@ export class StateStore {
     durationMs: number | null = null,
   ): Promise<void> {
     const trackKey = normalizeTrackKey(artist, title);
+    const isNewTrack = trackKey !== this.currentTrackKey;
     // Identidad nueva: limpiar aliases y contador de reintentos de la anterior.
-    if (trackKey !== this.currentTrackKey) {
+    if (isNewTrack) {
       this.trackAliasKeys.clear();
       this.autoRetry.reset();
+      // Pista distinta = la desalineación anterior ya no aplica.
+      this.mismatchResyncs = 0;
     }
     this.autoRetry.cancel();
     this.currentTrackKey = trackKey;
@@ -560,6 +593,11 @@ export class StateStore {
     this.overrideStatus = 'FETCHING_LYRICS';
     this.trackTitle = title;
     this.trackArtist = artist;
+    // Solo se pisa cuando la fuente la trae: un evento sin duración (el sidecar
+    // la omite si su timeline todavía es el de la pista anterior) no debe
+    // borrar la que ya conocíamos.
+    if (durationMs != null && durationMs > 0) this.trackDurationMs = durationMs;
+    else if (isNewTrack) this.trackDurationMs = null;
 
     try {
       // El servicio busca (cache-first), parsea y romaniza; devuelve TimedLyrics.
@@ -1120,6 +1158,23 @@ export class StateStore {
       this.clock.pauseClock(at);
       return;
     }
+    // Defensa en profundidad contra la proyección del sidecar. La Position de
+    // SMTC es un snapshot que el sidecar proyecta a "ahora"; con un navegador
+    // (que solo la refresca en play/pausa/seek) esa proyección puede sumar
+    // tiempo que el vídeo no reprodujo — anuncios, buffering — o venir
+    // directamente del timeline de la canción ANTERIOR. Una posición más allá
+    // del final de la pista es imposible y delata justo ese caso: aceptarla
+    // disparaba un snap duro hacia adelante y la letra se iba corriendo.
+    if (
+      this.trackDurationMs != null &&
+      positionMs > this.trackDurationMs + StateStore.EXTERNAL_POSITION_SLACK_MS
+    ) {
+      console.warn(
+        `[smtc] posición ${Math.round(positionMs)}ms fuera de la pista ` +
+          `(dura ${this.trackDurationMs}ms) → descartada`,
+      );
+      return;
+    }
     if (this.clock.isClockPaused()) this.clock.resumeClock(at);
     const target = Math.max(0, positionMs) + this.clock.getSyncOffsetMs();
     const decision = computeDrift(target, this.clock.getDisplayedPosition(at));
@@ -1164,6 +1219,10 @@ export class StateStore {
       // (sus posiciones y play/pausa aplican).
       this.externalTrusted = true;
       this.lastUnmatchedExternal = null;
+      // La duración puede llegar en un evento posterior al que cargó la pista
+      // (el sidecar la omite mientras su timeline sigue siendo el de la canción
+      // anterior). Recogerla aquí habilita la cota de applyExternalPosition.
+      if (durationMs != null && durationMs > 0) this.trackDurationMs = durationMs;
       if (this.engine.getLyrics()) {
         this.applyExternalPosition(positionMs, playing, at);
         return false;

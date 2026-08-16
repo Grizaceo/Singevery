@@ -284,6 +284,23 @@ ruby.line-spoken > rt {
 
 .line-col {
     min-width: 0; /* permite que el texto largo haga wrap dentro de su columna */
+
+    /* Sin esto, una secuencia SIN oportunidad de ruptura (una palabra muy larga,
+       texto sin espacios, un tramo de <ruby>) no cabe en la columna, desborda su
+       caja —`overflow` es `visible` por defecto— y se pinta ENCIMA de la columna
+       vecina. Como `.line-col-main` va alineada a la derecha, el desborde salía
+       justo sobre la traducción. `min-width: 0` deja que la columna se encoja por
+       debajo de su contenido, así que sin una regla de ruptura el solape era
+       cuestión de tiempo.
+
+       `anywhere` y no `break-word`: solo `anywhere` hace que el punto de ruptura
+       cuente para el ancho mínimo de la caja, que es lo que impide el desborde.
+       Se hereda a la letra, la traducción y el romaji: una sola regla los cubre.
+
+       NO se añade `overflow: hidden` como red de seguridad: recortaría el <rt>
+       del furigana (sobresale por encima de la línea) y el glow de la línea
+       actual. Con la ruptura garantizada, el desborde ya no puede ocurrir. */
+    overflow-wrap: anywhere;
 }
 
 .line-col-main {

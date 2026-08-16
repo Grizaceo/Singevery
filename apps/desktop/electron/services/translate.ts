@@ -76,6 +76,65 @@ function normalizeTargetLang(lang: string): string {
   return trimmed.length >= 2 ? trimmed.slice(0, 2) : 'ES';
 }
 
+// ============================================================================
+// Detección de "traducción" que en realidad es el original.
+//
+// Ningún proveedor avisa cuando no tradujo: MyMemory con un langpair X|X
+// responde 200 y devuelve el texto tal cual, y un modelo local pequeño puede
+// reemitir la lista numerada sin tocarla. Sin esta comprobación ese eco se
+// trataba como una traducción buena, se guardaba en la caché de letras y el
+// guard `alreadyDone` del StateStore impedía reintentarlo nunca más: la canción
+// quedaba con la "traducción" idéntica al original de forma permanente.
+// ============================================================================
+
+/** Proporción de líneas sin traducir a partir de la cual se da por fallida. */
+export const UNTRANSLATED_FAIL_RATIO = 0.8;
+
+/**
+ * Longitud mínima para que una línea cuente en el veredicto.
+ *
+ * Las interjecciones ("Oh", "Yeah", "La la la") y los nombres propios se
+ * traducen igual a sí mismos con toda legitimidad; contarlas inflaría el ratio
+ * y haría fallar traducciones correctas. 12 caracteres es una frase en
+ * cualquier escritura (en CJK, que no separa por espacios, de sobra).
+ */
+const SUBSTANTIAL_MIN_CHARS = 12;
+
+/** Muestras que votan el idioma de origen (ver detectSourceLang). */
+const DETECT_SAMPLES = 3;
+
+/** Error que se devuelve cuando la letra ya está en el idioma de destino. */
+export const SAME_LANGUAGE_ERROR =
+  'La letra ya parece estar en el idioma de destino. Cambia el idioma en ' +
+  'Ajustes → Traducción si querías otro.';
+
+function normalizeForCompare(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/[\p{P}\p{S}]/gu, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/**
+ * Fracción de las líneas con contenido que volvieron idénticas al original
+ * (0..1). Devuelve 0 si no hay ninguna línea juzgable: sin evidencia no se
+ * acusa. Pura y testeable.
+ */
+export function untranslatedRatio(originals: string[], translations: string[]): number {
+  let considered = 0;
+  let identical = 0;
+  for (let i = 0; i < originals.length; i += 1) {
+    const source = originals[i] ?? '';
+    if (source.trim().length < SUBSTANTIAL_MIN_CHARS) continue;
+    considered += 1;
+    if (normalizeForCompare(source) === normalizeForCompare(translations[i] ?? '')) {
+      identical += 1;
+    }
+  }
+  return considered === 0 ? 0 : identical / considered;
+}
+
 function byteLength(text: string): number {
   return new TextEncoder().encode(text).length;
 }
@@ -315,23 +374,49 @@ async function detectSourceLang(
   }
 
   // Fallback: detección vía MyMemory (solo para casos latín/other/error).
-  const sample = lines
-    .filter((line) => line.trim())
-    .sort((a, b) => b.length - a.length)[0];
-  if (!sample) return 'Autodetect';
+  //
+  // Se vota con VARIAS muestras, no con una. Una línea suelta de una letra es
+  // poquísimo texto: basta con que MyMemory se equivoque una vez para que toda
+  // la canción se pida en el par equivocado — y si el idioma que devuelve es el
+  // de destino, el par queda X|X y las ~40 líneas vuelven idénticas al
+  // original. Con tres muestras, un error aislado queda en minoría.
+  // Se prefieren líneas largas (detectan mejor), pero si la canción no tiene
+  // ninguna se vota con las que haya: quedarse sin detectar sería peor.
+  const substantial = lines.filter((line) => line.trim().length >= SUBSTANTIAL_MIN_CHARS);
+  const pool = substantial.length > 0 ? substantial : lines.filter((line) => line.trim());
+  const samples = pool.sort((a, b) => b.length - a.length).slice(0, DETECT_SAMPLES);
+  if (samples.length === 0) return 'Autodetect';
 
-  try {
-    const { detected } = await myMemoryRequest(
-      splitForMyMemory(sample)[0],
-      'Autodetect',
-      targetLang,
-      email,
-      signal,
-    );
-    return detected && detected.length >= 2 ? detected : 'Autodetect';
-  } catch {
-    return 'Autodetect';
+  const votes = new Map<string, number>();
+  await Promise.all(
+    samples.map(async (sample) => {
+      try {
+        const { detected } = await myMemoryRequest(
+          splitForMyMemory(sample)[0],
+          'Autodetect',
+          targetLang,
+          email,
+          signal,
+        );
+        if (detected && detected.length >= 2) {
+          const lang = detected.toLowerCase().slice(0, 2);
+          votes.set(lang, (votes.get(lang) ?? 0) + 1);
+        }
+      } catch {
+        /* una muestra que falla simplemente no vota */
+      }
+    }),
+  );
+
+  let winner = 'Autodetect';
+  let winnerVotes = 0;
+  for (const [lang, count] of votes) {
+    if (count > winnerVotes) {
+      winner = lang;
+      winnerVotes = count;
+    }
   }
+  return winner;
 }
 
 async function translateWithMyMemory(
@@ -342,6 +427,13 @@ async function translateWithMyMemory(
 ): Promise<string[]> {
   const target = normalizeTargetLang(targetLang).toLowerCase();
   const source = await detectSourceLang(lines, target, email, signal);
+
+  // Pedir un par X|X es tirar la cuota para que MyMemory devuelva el texto tal
+  // cual: es la vía principal por la que la "traducción" salía idéntica al
+  // original. Mejor decírselo al usuario que gastar 40 peticiones en un eco.
+  if (source.toLowerCase() === target) {
+    throw new Error(SAME_LANGUAGE_ERROR);
+  }
 
   return mapWithConcurrency(lines.length, MYMEMORY_CONCURRENCY, (i) =>
     translateLineWithMyMemory(lines[i], source, target, email, signal),
@@ -626,6 +718,21 @@ export async function translateLines(
       );
     } else {
       translations = await translateWithMyMemory(lines, key, config.targetLang, budget.signal);
+    }
+
+    // Última red: ningún proveedor avisa cuando NO tradujo. Si la mayoría de
+    // las líneas con contenido vuelven idénticas, esto no es una traducción, y
+    // devolverla como buena la dejaba cacheada para siempre (ver la nota sobre
+    // el eco arriba). Falla explícitamente para que no se guarde.
+    const echo = untranslatedRatio(lines, translations);
+    if (echo >= UNTRANSLATED_FAIL_RATIO) {
+      return {
+        ok: false,
+        error:
+          `El proveedor devolvió el texto sin traducir (${Math.round(echo * 100)}% de las ` +
+          'líneas iguales al original). Puede que la letra ya esté en el idioma de destino, ' +
+          'o que el proveedor no soporte ese par de idiomas.',
+      };
     }
     return { ok: true, translations };
   } catch (err) {

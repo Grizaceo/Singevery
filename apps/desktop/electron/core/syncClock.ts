@@ -17,6 +17,15 @@ const SILENCE_LEVEL = 0.012;
 const SILENCE_HOLD_MS = 400;
 
 /**
+ * Quién congeló el reloj:
+ *   - 'external' → el reproductor del SO (SMTC) dijo que está en pausa. Es la
+ *     verdad: sabe qué está reproduciendo.
+ *   - 'silence'  → no llega señal de audio. Es la capa de FALLBACK, para cuando
+ *     no hay reproductor accesible (micrófono, parlante externo, vinilo).
+ */
+export type PauseSource = 'silence' | 'external';
+
+/**
  * Reloj anclado: la posición mostrada = base cruda + tiempo de pared desde el
  * ancla + offset crónico persistido + corrección de deriva en rampa.
  * El reloj se puede congelar (pausa/silencio) y reanudar sin saltos.
@@ -45,6 +54,8 @@ export class SyncClock {
   private clockPaused = false;
   /** Momento en que empezó el silencio actual (null = hay señal). */
   private silentSince: number | null = null;
+  /** Quién congeló el reloj. Decide quién puede reanudarlo (ver resumeClock). */
+  private pauseSource: PauseSource | null = null;
 
   /** Pistas distintas con corrección coherente antes de aprender la latencia. */
   private static readonly LATENCY_LEARN_MIN_TRACKS = 3;
@@ -168,19 +179,36 @@ export class SyncClock {
   // ---------------------------------------------------------------------------
 
   /** Congela el reloj en la posición mostrada actual. */
-  pauseClock(at: number = Date.now()): void {
-    if (this.clockPaused) return;
+  pauseClock(at: number = Date.now(), source: PauseSource = 'external'): void {
+    if (this.clockPaused) {
+      // Ya congelado: si ahora lo confirma el reproductor, la pausa PASA a ser
+      // suya (y solo él podrá levantarla). Al revés no: el silencio no degrada
+      // una pausa del reproductor.
+      if (source === 'external') this.pauseSource = 'external';
+      return;
+    }
     // Consolida SIEMPRE la posición (incluido el tiempo acumulado) antes de
     // congelar, no solo la corrección en curso.
     this.reanchor(this.currentPosition(at), at);
     this.clockPaused = true;
+    this.pauseSource = source;
   }
 
-  /** Reanuda el reloj desde la posición congelada, sin salto. */
-  resumeClock(at: number = Date.now()): void {
+  /**
+   * Reanuda el reloj desde la posición congelada, sin salto.
+   *
+   * `source` importa: el silencio NO puede levantar una pausa del reproductor.
+   * En modo "audio del sistema" el loopback capta todo lo que suena en el PC
+   * —una notificación, otra pestaña, un anuncio—, así que cualquier ruido
+   * ajeno reanudaba una letra que el reproductor tenía en pausa y la dejaba
+   * corriendo sola. Solo quien pausó (o el reproductor, que manda) reanuda.
+   */
+  resumeClock(at: number = Date.now(), source: PauseSource = 'external'): void {
     if (!this.clockPaused) return;
+    if (source === 'silence' && this.pauseSource === 'external') return;
     this.reanchor(this.currentPosition(at), at);
     this.clockPaused = false;
+    this.pauseSource = null;
   }
 
   isClockPaused(): boolean {
@@ -200,11 +228,11 @@ export class SyncClock {
       } else if (!this.clockPaused && at - this.silentSince >= SILENCE_HOLD_MS) {
         // Congela en el instante en que EMPEZÓ el silencio (no tras el hold),
         // para no arrastrar los ~400ms de deadband en la posición congelada.
-        this.pauseClock(this.silentSince);
+        this.pauseClock(this.silentSince, 'silence');
       }
     } else {
       this.silentSince = null;
-      if (this.clockPaused) this.resumeClock(at);
+      if (this.clockPaused) this.resumeClock(at, 'silence');
     }
   }
 
@@ -212,6 +240,7 @@ export class SyncClock {
   resetPlaybackState(): void {
     this.clockPaused = false;
     this.silentSince = null;
+    this.pauseSource = null;
   }
 
   // ---------------------------------------------------------------------------

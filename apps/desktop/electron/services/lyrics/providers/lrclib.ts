@@ -16,6 +16,18 @@ const BASE = 'https://lrclib.net/api';
 /** Tolerancia de duración al elegir en /api/search (segundos). */
 const DURATION_TOLERANCE_S = 2;
 
+/**
+ * Diferencia de duración a partir de la cual la entrada es OTRA VERSIÓN de la
+ * canción (extendida, remix, en vivo, radio edit), no esta grabación.
+ *
+ * Importa porque una letra SINCRONIZADA de otra versión es peor que una plana
+ * de la correcta: se muestra con timestamps que no corresponden y la letra
+ * corre desfasada toda la canción, sin que nada lo detecte después. Un
+ * remaster o una diferencia de fade-out se quedan holgadamente por debajo de
+ * 15s; una versión extendida se pasa de largo.
+ */
+export const VERSION_MISMATCH_S = 15;
+
 interface LrcLibEntry {
   trackName?: string | null;
   artistName?: string | null;
@@ -25,15 +37,50 @@ interface LrcLibEntry {
   duration?: number | null; // segundos
 }
 
-function toRaw(entry: LrcLibEntry): RawLyrics | null {
+/**
+ * ¿La entrada corresponde a OTRA versión de la canción? Solo se puede afirmar
+ * cuando ambas duraciones se conocen. Pura (testeable).
+ */
+export function isOtherVersion(
+  entryDurationS: number | null | undefined,
+  queryDurationMs: number | null | undefined,
+): boolean {
+  if (entryDurationS == null || queryDurationMs == null) return false;
+  return Math.abs(entryDurationS - queryDurationMs / 1000) > VERSION_MISMATCH_S;
+}
+
+/**
+ * `otherVersion` degrada la letra a PLANA aunque venga sincronizada.
+ *
+ * Es la misma canción (la similitud de título/artista ya lo filtró), así que el
+ * texto sirve; lo que no sirve son sus timestamps, que son de una grabación de
+ * otra duración. Mostrarla sincronizada dejaba la letra corriendo desfasada
+ * toda la canción y ningún mecanismo posterior lo corregía — el reloj solo sabe
+ * ajustar la POSICIÓN, no cuestionar la letra. En plano el usuario ve el texto
+ * correcto y ninguna sincronía mentirosa.
+ */
+function toRaw(entry: LrcLibEntry, otherVersion = false): RawLyrics | null {
   if (entry.instrumental) return null;
-  if (entry.syncedLyrics && entry.syncedLyrics.trim()) {
+  if (!otherVersion && entry.syncedLyrics && entry.syncedLyrics.trim()) {
     return { source: 'lrclib', synced: true, lrc: entry.syncedLyrics };
   }
   if (entry.plainLyrics && entry.plainLyrics.trim()) {
     return { source: 'lrclib', synced: false, plain: entry.plainLyrics };
   }
+  // Otra versión y solo hay LRC: se sirve el texto sin sus timestamps.
+  if (entry.syncedLyrics && entry.syncedLyrics.trim()) {
+    return { source: 'lrclib', synced: false, plain: stripLrcTimestamps(entry.syncedLyrics) };
+  }
   return null;
+}
+
+/** Quita los `[mm:ss.xx]` de un LRC para poder servirlo como texto plano. */
+export function stripLrcTimestamps(lrc: string): string {
+  return lrc
+    .split('\n')
+    .map((line) => line.replace(/\[[0-9]{1,3}:[0-9]{2}(?:[.:][0-9]{1,3})?\]/g, '').trim())
+    .filter((line) => line.length > 0)
+    .join('\n');
 }
 
 async function tryGet(query: LyricsQuery, signal?: AbortSignal): Promise<RawLyrics | null> {
@@ -51,7 +98,9 @@ async function tryGet(query: LyricsQuery, signal?: AbortSignal): Promise<RawLyri
   if (res.status === 404) return null;
   if (!res.ok) throw new Error(`LRCLIB /get HTTP ${res.status}`);
   const entry = (await res.json()) as LrcLibEntry;
-  return toRaw(entry);
+  // /api/get busca por duración exacta, así que normalmente calza; se comprueba
+  // igual porque la firma incluye álbum y LRCLIB puede responder con holgura.
+  return toRaw(entry, isOtherVersion(entry.duration, query.durationMs));
 }
 
 async function trySearch(query: LyricsQuery, signal?: AbortSignal): Promise<RawLyrics | null> {
@@ -97,7 +146,14 @@ export function pickBest(results: LrcLibEntry[], query: LyricsQuery): RawLyrics 
     if (similarity <= 0) return Number.NEGATIVE_INFINITY;
 
     let s = 0;
-    if (e.syncedLyrics && e.syncedLyrics.trim()) s += 1000; // sincronizado pesa mucho
+    // El bonus de "sincronizada" solo cuenta si sus timestamps sirven para ESTA
+    // grabación. Sin esta condición, una letra sincronizada de otra versión
+    // (+1000) aplastaba a la plana correcta aunque su duración se fuera por
+    // minutos: era el camino por el que una extendida terminaba con la letra
+    // de la versión de álbum, corriendo desfasada de principio a fin.
+    if (!isOtherVersion(e.duration, query.durationMs) && e.syncedLyrics && e.syncedLyrics.trim()) {
+      s += 1000;
+    }
     s += similarity * 250;
     if (wantS != null && e.duration != null) {
       const diff = Math.abs(e.duration - wantS);
@@ -129,7 +185,7 @@ export function pickBest(results: LrcLibEntry[], query: LyricsQuery): RawLyrics 
     return null;
   }
   const best = ranked.reduce((a, b) => (b.score > a.score ? b : a)).entry;
-  return toRaw(best);
+  return toRaw(best, isOtherVersion(best.duration, query.durationMs));
 }
 
 export const lrclibProvider: LyricsProvider = {
