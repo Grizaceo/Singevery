@@ -47,6 +47,9 @@ function rotateIfNeeded(file: string): void {
 function append(level: string, values: unknown[]): void {
   if (!logFilePath) return;
   try {
+    // S6: el límite anunciado (~1 MB) se aplica DURANTE la sesión, no solo al
+    // arrancar. Sin esto, una sesión larga podía crecer sin tope.
+    rotateIfNeeded(logFilePath);
     const rendered = formatWithOptions(
       { colors: false, depth: 4, maxArrayLength: 30, maxStringLength: 4_000 },
       ...values,

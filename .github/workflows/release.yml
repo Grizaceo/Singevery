@@ -79,6 +79,30 @@ jobs:
           "### Verificación`n`nSHA-256 de ``$($exe.Name)``:`n`n``````$hash```````n" |
             Out-File -FilePath release-notes.md -Encoding utf8
 
+      # Puerta de smoke test: un instalador que va a manos de terceros no se
+      # publica sin que la app empaquetada demuestre que arranca. Lanza el
+      # win-unpacked, espera a que el proceso siga vivo (no crasheó al iniciar)
+      # y lo cierra. Si el arranque falla, el tag no publica release.
+      - name: Smoke test packaged app
+        shell: pwsh
+        env:
+          # Un fallo de inicialización de GPU/compositor en el runner no debe
+          # tumbar el release: la app de los usuarios corre con GPU normal.
+          ELECTRON_DISABLE_GPU: '1'
+        run: |
+          $exe = 'apps/desktop/release/win-unpacked/Singevery.exe'
+          if (-not (Test-Path $exe)) { throw "Singevery.exe no existe en win-unpacked" }
+          $proc = Start-Process -FilePath $exe -PassThru
+          Start-Sleep -Seconds 10
+          if ($proc.HasExited) {
+            throw "Smoke test falló: Singevery.exe salió con código $($proc.ExitCode) a los 10 s"
+          }
+          Write-Host "Smoke test OK: proceso vivo tras 10 s (PID $($proc.Id))"
+          Stop-Process -Id $proc.Id -Force
+          # El sidecar SMTC queda huérfano si el padre muere con -Force.
+          Stop-Process -Name espejo-smtc -ErrorAction SilentlyContinue
+          Start-Sleep -Seconds 2
+
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:

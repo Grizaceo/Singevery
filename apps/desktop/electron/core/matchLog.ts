@@ -16,6 +16,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import type { TrackMatch } from '../../src/types';
 import type { RecognitionProviderMode } from '../services/recognition/provider';
+import { redactSensitiveText } from '../services/appLogger';
 
 export type MatchSource = 'audd' | 'shazam' | 'smtc' | 'manual' | 'auto' | 'unknown';
 
@@ -90,7 +91,16 @@ export class MatchLog {
   log(entry: Omit<MatchLogEntry, 'ts'>): void {
     try {
       this.rotateIfNeeded();
-      fs.appendFileSync(this.filePath, JSON.stringify({ ts: new Date().toISOString(), ...entry }) + '\n', 'utf8');
+      // S7: el matchlog puede terminar en un diagnóstico exportado; se redacta
+      // igual que main.log (tokens, emails, rutas del perfil).
+      const safe: Omit<MatchLogEntry, 'ts'> = {
+        ...entry,
+        error: entry.error ? redactSensitiveText(entry.error) : undefined,
+        track: entry.track
+          ? { title: redactSensitiveText(entry.track.title), artist: redactSensitiveText(entry.track.artist) }
+          : undefined,
+      };
+      fs.appendFileSync(this.filePath, JSON.stringify({ ts: new Date().toISOString(), ...safe }) + '\n', 'utf8');
     } catch (err) {
       // Un fallo de disco no debe tumbar la identificación de la canción.
       const now = Date.now();

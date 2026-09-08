@@ -35,7 +35,7 @@
     "verify:package-output": "node scripts/verify-package.cjs --output",
     "package": "npm run build && npm run notices && npm run verify:package-inputs && electron-builder --config electron-builder.yml && npm run verify:package-output",
     "package:installer": "node scripts/edit-executable-metadata.cjs && electron-builder --prepackaged release/win-unpacked --config electron-builder.yml && npm run verify:package-output",
-    "package:signed": "npm run build && npm run notices && npm run verify:package-inputs && electron-builder --config electron-builder.yml && npm run verify:package-output",
+    "package:signed": "node scripts/package-signed.cjs",
     "package:full": "npm run build:smtc && npm run package"
   },
   "dependencies": {
@@ -66,7 +66,7 @@
     "typescript": "~5.9.3",
     "typescript-eslint": "^8.46.4",
     "vite": "^7.2.4",
-    "vitest": "^2.1.5",
+    "vitest": "^5.0.0",
     "wait-on": "^8.0.0"
   }
 }

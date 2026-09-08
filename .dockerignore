@@ -2,6 +2,11 @@
 **/dist
 **/dist-electron
 **/release
+**/.env
+**/.env.*
+!**/.env.example
+**/build/smtc-dist
+**/build/dotnet-artifacts
 legacy
 docs/demo.mp4
 docs/demo-readme.mp4
@@ -12,3 +17,5 @@ docs/demo-poster.jpg
 *.md
 !apps/desktop/**/*.md
 !native/**/*.md
+!AVISO_LEGAL.md
+!GUIA_DE_USO.md

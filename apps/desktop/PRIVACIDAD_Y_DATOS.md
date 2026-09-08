@@ -67,7 +67,12 @@ La carpeta de datos de usuario de Electron puede contener:
 - caché de letras y traducciones;
 - hasta 200 líneas guardadas para repaso;
 - melodías de referencia grabadas por la persona (ver abajo);
-- logs técnicos rotativos: `main.log` y `main.previous.log`.
+- logs técnicos rotativos: `main.log` y `main.previous.log`;
+- bitácora de reconocimiento `matchlog.jsonl` (hasta 5 MB, rota a `.1`): registra
+  cada identificación (fuente, resultado, pista), la carga de letras y el
+  feedback explícito ("se equivocó" / "estaba bien"). Se redacta igual que los
+  logs técnicos: tokens, claves, emails y la ruta del perfil no quedan en texto
+  plano.
 
 ### Melodías de referencia
 

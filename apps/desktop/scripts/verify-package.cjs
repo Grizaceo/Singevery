@@ -61,14 +61,46 @@ function findExecutable(root, filename, depth = 6) {
   return null;
 }
 
-function verifyInstallerPayload(installer) {
+function findSevenZip() {
   const cacheRoot = process.env.LOCALAPPDATA
     ? path.join(process.env.LOCALAPPDATA, 'electron-builder', 'Cache')
     : '';
-  const sevenZip = findExecutable(cacheRoot, '7za.exe');
+  const fromCache = findExecutable(cacheRoot, '7za.exe');
+  if (fromCache) return fromCache;
+  // Entornos no-Windows (Docker): 7za puede estar en el cache de
+  // electron-builder bajo ~/.cache o en el PATH (p7zip-full).
+  const homeCache = process.env.HOME
+    ? path.join(process.env.HOME, '.cache', 'electron-builder', 'Cache')
+    : '';
+  const fromHome = findExecutable(homeCache, '7za.exe');
+  if (fromHome) return fromHome;
+  for (const name of ['7za', '7z']) {
+    const which = childProcess.spawnSync(
+      process.platform === 'win32' ? 'where' : 'which',
+      [name],
+      { encoding: 'utf8' },
+    );
+    if (which.status === 0 && which.stdout.trim()) {
+      const candidate = which.stdout.trim().split(/\r?\n/)[0];
+      if (fs.existsSync(candidate)) return candidate;
+    }
+  }
+  return null;
+}
+
+function verifyInstallerPayload(installer) {
+  const sevenZip = findSevenZip();
   if (!sevenZip) {
-    fail('no se encontró 7za.exe para inspeccionar el contenido real del instalador');
-    return false;
+    if (process.platform === 'win32') {
+      fail('no se encontró 7za.exe para inspeccionar el contenido real del instalador');
+      return false;
+    }
+    // Linux/Docker: sin 7za no se puede inspeccionar el NSIS; el contenido
+    // ya se verificó en win-unpacked. Avisar sin fallar (ALTA 4 del audit
+    // Opus): el build de Docker no debe morir después de generar el
+    // instalador correctamente.
+    process.stderr.write('[package verify] AVISO: sin 7za no se inspecciona el instalador NSIS (solo Windows).\n');
+    return true;
   }
   const result = childProcess.spawnSync(sevenZip, ['l', '-slt', installer], {
     encoding: 'utf8',
