@@ -184,7 +184,10 @@ export class SyncClock {
       // Ya congelado: si ahora lo confirma el reproductor, la pausa PASA a ser
       // suya (y solo él podrá levantarla). Al revés no: el silencio no degrada
       // una pausa del reproductor.
-      if (source === 'external') this.pauseSource = 'external';
+      if (source === 'external' && this.pauseSource !== source) {
+        this.pauseSource = source;
+        console.log(`[clock] pause-owner=${source} at=${at} position_ms=${Math.round(this.currentPosition(at))}`);
+      }
       return;
     }
     // Consolida SIEMPRE la posición (incluido el tiempo acumulado) antes de
@@ -192,6 +195,7 @@ export class SyncClock {
     this.reanchor(this.currentPosition(at), at);
     this.clockPaused = true;
     this.pauseSource = source;
+    console.log(`[clock] paused source=${source} at=${at} position_ms=${Math.round(this.currentPosition(at))}`);
   }
 
   /**
@@ -209,6 +213,18 @@ export class SyncClock {
     this.reanchor(this.currentPosition(at), at);
     this.clockPaused = false;
     this.pauseSource = null;
+    console.log(`[clock] resumed source=${source} at=${at} position_ms=${Math.round(this.currentPosition(at))}`);
+  }
+
+  releaseExternalPause(): void {
+    if (this.pauseSource !== 'external') return;
+    this.pauseSource = 'silence';
+    console.log(`[clock] pause-owner=silence reason=external-untrusted at=${Date.now()}`);
+  }
+
+  getDiagnostics() {
+    return { paused: this.clockPaused, pauseSource: this.pauseSource, anchoredAt: this.anchoredAt,
+      correctionTargetMs: this.correctionTargetMs, correctionStartedAt: this.correctionStartedAt };
   }
 
   isClockPaused(): boolean {
@@ -238,6 +254,7 @@ export class SyncClock {
 
   /** Reinicia pausa/silencio (carga de pista nueva: hay audio sonando). */
   resetPlaybackState(): void {
+    if (this.clockPaused) console.log(`[clock] reset source=${this.pauseSource} at=${Date.now()}`);
     this.clockPaused = false;
     this.silentSince = null;
     this.pauseSource = null;

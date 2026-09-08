@@ -14,8 +14,19 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import type { TrackMatch } from '../../src/types';
+import type { RecognitionProviderMode } from '../services/recognition/provider';
 
-export type MatchSource = 'audd' | 'shazam' | 'smtc' | 'manual';
+export type MatchSource = 'audd' | 'shazam' | 'smtc' | 'manual' | 'auto' | 'unknown';
+
+/** Successful events name the actual provider; misses name only the requested mode. */
+export function recognitionLogFields(match: TrackMatch | null, recordStartedAt: number, mode: RecognitionProviderMode) {
+  const source: MatchSource = match
+    ? (match.track.provider === 'audd' || match.track.provider === 'shazam' ? match.track.provider : 'unknown')
+    : mode;
+  return match ? { source, recordStartedAt, position_ms: match.position_ms,
+    sample_offset_ms: match.sample_offset_ms ?? 0, matched_at: match.matched_at } : { source, recordStartedAt };
+}
 export type MatchOutcome = 'matched' | 'no_match' | 'error' | 'correct' | 'wrong' | 'loaded' | 'no_lyrics';
 
 export interface MatchLogEntry {
@@ -31,6 +42,10 @@ export interface MatchLogEntry {
   durationMs?: number;
   /** Confianza del proveedor (0..1) cuando la reporta. */
   confidence?: number;
+  position_ms?: number;
+  sample_offset_ms?: number;
+  matched_at?: number;
+  recordStartedAt?: number;
   error?: string;
 }
 

@@ -97,6 +97,7 @@ export interface StateDiagnostics {
     offsetMs: number;
     calibrationOffsetMs: number;
     paused: boolean;
+    clock: ReturnType<SyncClock['getDiagnostics']>;
     /** Última medición por correlación de energía vocal (null si no hubo). */
     energy: EnergyMeasurement | null;
   };
@@ -190,6 +191,19 @@ export class StateStore {
   /** true si la sesión SMTC actual corresponde a la pista mostrada; en false
    *  sus eventos de posición/pausa se ignoran (son de OTRA cosa). */
   private externalTrusted = true;
+  private pendingAnchor: { key: string | null; position: number; at: number; sampleAt: number } | null = null;
+
+  private refreshExternalTrust(): void {
+    const external = this.lastExternalTitle;
+    this.externalTrusted = !this.externalInputSuppressed && (this.recognitionSource == null ||
+      (external != null && this.trackTitle != null && this.trackArtist != null &&
+        looksLikeSameTrack(external, {title: this.trackTitle, artist: this.trackArtist})));
+    if (!this.externalTrusted && this.clock.getDiagnostics().pauseSource === 'external') {
+      // Keep the frozen position, but return pause ownership to the audio fallback.
+      this.clock.releaseExternalPause();
+    }
+  }
+
 
   /** Última pista SMTC ignorada por el bloqueo de identidad: sirve para
    *  corroborar el próximo match de AudD y saltarse la histéresis. */
@@ -313,6 +327,7 @@ export class StateStore {
         offsetMs: this.clock.getSyncOffsetMs(),
         calibrationOffsetMs: this.clock.getCalibrationOffsetMs(),
         paused: this.clock.isClockPaused(),
+        clock: this.clock.getDiagnostics(),
         energy: this.lastEnergyMeasurement,
       },
     };
@@ -521,6 +536,7 @@ export class StateStore {
     this.clock.setCurrentTrackKey(trackKey);
     this.clock.loadSyncOffset(trackKey);
     this.overrideStatus = null;
+    this.pendingAnchor = null;
     this.clock.resetPlaybackState();
     this.setLyrics(lyrics, title, artist);
     this.clock.reanchor(Math.max(0, anchorMs) + this.clock.getSyncOffsetMs(), anchorAt);
@@ -589,6 +605,7 @@ export class StateStore {
     this.clock.setCurrentTrackKey(trackKey);
     this.clock.loadSyncOffset(trackKey); // offset crónico persistido + resetea corrección
     // Cargar una pista nueva implica que hay audio sonando: salir de pausa.
+    this.pendingAnchor = null;
     this.clock.resetPlaybackState();
     this.overrideStatus = 'FETCHING_LYRICS';
     this.trackTitle = title;
@@ -747,7 +764,7 @@ export class StateStore {
       // letra. La deriva real (segundos) la corrige el próximo match con
       // timecode. Se calcula aquí y se propaga a applyCorrection.
       const positionTrusted = match.position_ms > 0 || (match.sample_offset_ms ?? 0) > 0;
-      this.applyCorrection(anchor, positionTrusted);
+      this.applyCorrection(anchor, positionTrusted, match, recordStartedAt);
       if (this.overrideStatus === 'LISTENING' || this.overrideStatus === 'IDENTIFYING') {
         this.overrideStatus = null;
       }
@@ -804,7 +821,8 @@ export class StateStore {
       album ?? null,
       duration_ms ?? null,
     );
-    if (corroborated && ext) {
+    if (this.currentTrackKey !== matchKey) return true;
+    if (corroboratedByOs && ext) {
       // La sesión SMTC bloqueada ERA esta canción: registrar su clave como
       // alias (los próximos eventos 'track' resuelven por comparación exacta)
       // y volver a confiar en sus posiciones.
@@ -812,6 +830,7 @@ export class StateStore {
       this.externalTrusted = true;
       this.lastUnmatchedExternal = null;
     }
+    this.refreshExternalTrust();
     return true;
   }
 
@@ -915,6 +934,8 @@ export class StateStore {
     // Sin letra sincronizada no hay máscara contra la cual correlacionar.
     if (!lyrics?.synced || lyrics.lines.length === 0) return null;
     if (this.clock.isClockPaused()) return null;
+    // The clock has no historical segments: never extrapolate through a reanchor.
+    if (recordStartedAt < this.clock.getDiagnostics().anchoredAt) return null;
 
     const decoded = decodeWav(audio);
     if (!decoded) return null;
@@ -984,11 +1005,17 @@ export class StateStore {
   private applyCorrection(
     anchor: { positionMs: number; anchorAt: number },
     positionTrusted: boolean,
+    match: TrackMatch,
+    recordStartedAt?: number,
   ): void {
     const now = Date.now();
     // Estimación real "ahora" según el match = crudo proyectado + offset crónico.
     const estimatedNow =
       anchor.positionMs + Math.max(0, now - anchor.anchorAt) + this.clock.getSyncOffsetMs();
+
+    console.log('[sync] anchor', JSON.stringify({ provider: match.track.provider, position_ms: match.position_ms,
+      sample_offset_ms: match.sample_offset_ms ?? 0, matched_at: match.matched_at, recordStartedAt,
+      ...anchor, estimatedNow, positionTrusted, ...this.clock.getDiagnostics() }));
 
     // Ancla sin timecode: el crudo es 0 y la proyección caería al inicio del
     // chunk (~6s) aunque la canción lleve minutos. Aplicarla es un snap
@@ -1013,8 +1040,23 @@ export class StateStore {
         `(mostrado=${Math.round(this.clock.getDisplayedPosition(now))}ms, medido=${Math.round(estimatedNow)}ms)`,
     );
 
+    if (decision.action !== 'snap') this.pendingAnchor = null;
     if (decision.action === 'ignore') return;
     if (decision.action === 'snap') {
+      const sampleAt = recordStartedAt ?? match.matched_at;
+      const pending = this.pendingAnchor;
+      if (pending && sampleAt <= pending.sampleAt) return;
+      const corroborated = pending != null && pending.key === this.currentTrackKey &&
+        now - pending.at <= StateStore.EXTERNAL_CORROBORATION_TTL_MS &&
+        computeDrift(estimatedNow, pending.position + Math.max(0, now - pending.at)).action !== 'snap';
+      if (!corroborated) {
+        this.pendingAnchor = { key: this.currentTrackKey, position: estimatedNow, at: now, sampleAt };
+        console.log(`[sync] quarantined position_ms=${estimatedNow} sample_at=${sampleAt}`);
+        this.requestResync(now);
+        return;
+      }
+      this.pendingAnchor = null;
+      console.log(`[sync] corroborated seek position_ms=${estimatedNow}`);
       this.clock.reanchor(estimatedNow, now);
       return;
     }
@@ -1046,6 +1088,7 @@ export class StateStore {
    * Usado por seek (rueda del mouse) y por ajuste fino.
    */
   nudgePosition(deltaMs: number): void {
+    this.pendingAnchor = null;
     this.clock.nudgePosition(deltaMs);
   }
 
@@ -1135,6 +1178,7 @@ export class StateStore {
    */
   setExternalInputSuppressed(suppressed: boolean): void {
     this.externalInputSuppressed = suppressed;
+    this.refreshExternalTrust();
   }
 
   /**
@@ -1146,8 +1190,9 @@ export class StateStore {
   setRecognitionSource(source: 'microphone' | 'system' | null): void {
     this.recognitionSource = source;
     this.externalInputSuppressed = source === 'microphone';
-    // Cambio de modo: resetear la confianza y la corroboración pendiente.
-    this.externalTrusted = true;
+    // A mode change is not evidence that the OS session belongs to the audio.
+    this.refreshExternalTrust();
+    this.pendingAnchor = null;
     this.lastUnmatchedExternal = null;
   }
 
@@ -1205,6 +1250,7 @@ export class StateStore {
     const target = Math.max(0, positionMs) + this.clock.getSyncOffsetMs();
     const decision = computeDrift(target, this.clock.getDisplayedPosition(at));
     if (decision.action === 'ignore') return;
+    console.log(`[smtc] accepted position_ms=${positionMs} at=${at} action=${decision.action}`);
     if (decision.action === 'snap') {
       this.clock.reanchor(target, at);
       return;
@@ -1265,11 +1311,10 @@ export class StateStore {
         return false;
       }
     } else if (
-      this.engine.getLyrics() &&
-      (this.recognitionSource === 'system' ||
-        // Título del SO poco identificable ("Awake") mientras el audio puede
-        // arbitrar: no desplaza la letra en pantalla, solo pide confirmación.
-        (this.recognitionSource != null && !isDistinctiveTitle(title)))
+      (this.recognitionSource === 'system' && (this.trackTitle != null || !playing)) ||
+      // A paused unrelated session cannot acquire ownership during cold start.
+      // A playing session may still bootstrap the existing provisional workflow.
+      (this.engine.getLyrics() && this.recognitionSource != null && !isDistinctiveTitle(title))
     ) {
       // BLOQUEO DE IDENTIDAD (bug YouTube): con reconocimiento por sistema
       // activo y letra en pantalla, el fingerprint del audio es la verdad de
@@ -1280,6 +1325,7 @@ export class StateStore {
       // canción confirma rápido) y la sesión queda como NO confiable: sus
       // posiciones dejan de tirar la letra hacia otra pista.
       this.externalTrusted = false;
+      this.clock.releaseExternalPause();
       const isNewSignal =
         this.lastUnmatchedExternal == null ||
         normalizeTrackKey(this.lastUnmatchedExternal.artist, this.lastUnmatchedExternal.title) !== key;

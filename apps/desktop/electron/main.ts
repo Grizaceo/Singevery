@@ -14,7 +14,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'path';
 import { StateStore } from './core/stateStore';
-import { MatchLog } from './core/matchLog';
+import { MatchLog, recognitionLogFields } from './core/matchLog';
 import { loadDotEnv } from './services/env';
 import {
   createPersistentSettings,
@@ -705,12 +705,12 @@ function registerIpcHandlers(): void {
         const durationMs = Date.now() - startedAt;
         if (!match) {
           stateStore.setRecognitionPhase('LISTENING');
-          matchLog?.log({ type: 'identify', source: 'audd', outcome: 'no_match', durationMs });
+          matchLog?.log({ type: 'identify', ...recognitionLogFields(match, recordStartedAt, appSettings?.recognitionProviderStore.get() ?? 'auto'), outcome: 'no_match', durationMs });
           return { ok: true, matched: false };
         }
         matchLog?.log({
           type: 'identify',
-          source: 'audd',
+          ...recognitionLogFields(match, recordStartedAt, appSettings?.recognitionProviderStore.get() ?? 'auto'),
           outcome: 'matched',
           durationMs,
           confidence: match.confidence,
@@ -754,7 +754,7 @@ function registerIpcHandlers(): void {
         const match = await recognitionService!.identify(Buffer.from(audio), mimeType);
         const durationMs = Date.now() - startedAt;
         if (!match) {
-          matchLog?.log({ type: 'correct', source: 'audd', outcome: 'no_match', durationMs });
+          matchLog?.log({ type: 'correct', ...recognitionLogFields(match, recordStartedAt, appSettings?.recognitionProviderStore.get() ?? 'auto'), outcome: 'no_match', durationMs });
           return { ok: true, matched: false, suspected: stateStore.isChangeSuspected() };
         }
         const changed = await stateStore.applyMatch(match, recordStartedAt);
@@ -770,7 +770,7 @@ function registerIpcHandlers(): void {
         }
         matchLog?.log({
           type: 'correct',
-          source: 'audd',
+          ...recognitionLogFields(match, recordStartedAt, appSettings?.recognitionProviderStore.get() ?? 'auto'),
           outcome: 'matched',
           changed,
           durationMs,
@@ -783,7 +783,7 @@ function registerIpcHandlers(): void {
         return { ok: true, matched: true, changed, suspected: stateStore.isChangeSuspected() };
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Error desconocido';
-        matchLog?.log({ type: 'correct', source: 'audd', outcome: 'error', error: message });
+        matchLog?.log({ type: 'correct', ...recognitionLogFields(null, recordStartedAt, appSettings?.recognitionProviderStore.get() ?? 'auto'), outcome: 'error', error: message });
         return { ok: false, matched: false, error: message };
       }
     },
@@ -819,7 +819,7 @@ function registerIpcHandlers(): void {
       const model = stateStore.getLastModel();
       matchLog.log({
         type: 'feedback',
-        source: 'audd',
+        source: 'unknown',
         outcome: correct ? 'correct' : 'wrong',
         track: model ? { title: model.track_title ?? 'desconocida', artist: model.track_artist ?? 'desconocido' } : undefined,
       });

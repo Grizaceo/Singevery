@@ -4,6 +4,8 @@ import { deadline, isAbortError, seconds } from '../http';
 import type { RecognitionProvider } from './provider';
 
 const AUDD_URL = 'https://api.audd.io/';
+// Session-only credential failure: no persistence, no token in diagnostics.
+let invalidToken: string | null = null;
 
 /**
  * Tope para AudD. Más holgado que el de Shazam porque aquí se SUBE el audio
@@ -60,6 +62,10 @@ export async function identifyFromAudd(
 ): Promise<TrackMatch | null> {
   const form = new FormData();
   const token = getAuddToken();
+  if (invalidToken != null && invalidToken === token) {
+    throw new Error('AudD #900: credencial inválida (cache de sesión; cambia el token o reinicia)');
+  }
+  invalidToken = null;
   if (token) form.append('api_token', token);
 
   const bytes = audio instanceof Buffer ? new Uint8Array(audio) : audio;
@@ -95,6 +101,7 @@ export async function identifyFromAudd(
   }
   if (data.status === 'error') {
     const code = data.error?.error_code;
+    if (code === 900 && token) invalidToken = token;
     const msg = data.error?.error_message ?? 'Error de AudD';
     throw new Error(code ? `AudD #${code}: ${msg}` : msg);
   }

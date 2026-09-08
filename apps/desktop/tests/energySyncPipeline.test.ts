@@ -138,6 +138,14 @@ describe('StateStore.reportAudioWindow', () => {
     return store;
   }
 
+  it('skips windows whose historical clock was invalidated by a seek', () => {
+    const store = storeWithLyrics(0);
+    const started = Date.now();
+    vi.setSystemTime(started + 6000);
+    store.nudgePosition(10000);
+    expect(store.reportAudioWindow(buildAudio(), started)).toBeNull();
+  });
+
   it('mide que la letra va adelantada y NO corrige en modo observación', () => {
     const store = storeWithLyrics(1000);
     const before = store.getDisplayedPosition();
