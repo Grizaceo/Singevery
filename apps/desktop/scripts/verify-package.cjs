@@ -94,6 +94,20 @@ function verifyInstallerPayload(installer) {
       ok = false;
     }
   }
+
+  // Ningún .env debe viajar dentro del instalador. Durante la beta, un
+  // extraResources copiaba el .env del desarrollador a resources/.env y el
+  // AUDD_API_TOKEN quedaba en texto plano para cualquiera que instalara la app.
+  // check-secrets.cjs no puede detectarlo (salta los .env a propósito, porque el
+  // .env local del desarrollador SÍ lleva un token real), así que la única
+  // barrera posible es esta: mirar el artefacto que se va a repartir.
+  for (const line of listing.split(/\r?\n/)) {
+    const match = /^Path = (.*)$/.exec(line.trim());
+    if (match && /(^|\\)\.env(\.|$)/i.test(match[1])) {
+      fail(`el instalador contiene ${match[1]} — un .env empaquetado reparte credenciales`);
+      ok = false;
+    }
+  }
   return ok;
 }
 
@@ -123,6 +137,17 @@ function verifyOutput() {
   ];
   let ok = required.every((file) => requireFile(file));
   ok = verifySelfContained(path.join(unpacked, 'resources', 'native', 'smtc', 'dist')) && ok;
+  // Espejo del check del instalador, un paso antes: si un .env se coló en
+  // win-unpacked, se colará en el .exe.
+  for (const dir of [unpacked, path.join(unpacked, 'resources')]) {
+    if (!fs.existsSync(dir)) continue;
+    for (const entry of fs.readdirSync(dir)) {
+      if (/^\.env(\.|$)/i.test(entry)) {
+        fail(`${path.join(path.relative(releaseDir, dir), entry)} no debe empaquetarse (credenciales)`);
+        ok = false;
+      }
+    }
+  }
   if (ok) {
     const installerTime = fs.statSync(installer).mtimeMs;
     const newestPayloadTime = Math.max(...required.slice(0, -1).map((file) => fs.statSync(file).mtimeMs));

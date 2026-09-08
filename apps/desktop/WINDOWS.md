@@ -84,9 +84,14 @@ También existe `npm start` (equivale a compilar + abrir en producción).
 ```powershell
 npm run package
 ```
-Genera el instalador en `apps\desktop\release\Singevery-Setup-0.1.0.exe`
-(NSIS x64, según `electron-builder.yml`). Incluye el diccionario de kuromoji para
-que el furigana funcione en la app empaquetada.
+Genera el instalador en `apps\desktop\release\Singevery-Setup-<version>.exe`
+(NSIS x64, según `electron-builder.yml`; la versión sale de `package.json`).
+Incluye el diccionario de kuromoji para que el furigana funcione en la app
+empaquetada.
+
+Para entregarlo a terceros usa `npm run package:full`, que además recompila el
+sidecar SMTC **autocontenido** — si no, el equipo destino necesita .NET 8
+instalado o pierde la sincronía por SMTC.
 
 ## 5. SMTC — el reproductor del SO como reloj maestro (recomendado)
 

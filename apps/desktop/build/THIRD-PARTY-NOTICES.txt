@@ -1,4 +1,4 @@
-AVISOS DE SOFTWARE DE TERCEROS — Singevery 0.2.1-beta.1
+AVISOS DE SOFTWARE DE TERCEROS — Singevery 0.2.1-beta.2
 ================================================================================
 Este archivo enumera las bibliotecas de terceros incluidas en la aplicación
 y reproduce sus licencias. Generado con scripts/generate-third-party-notices.cjs

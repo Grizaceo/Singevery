@@ -195,7 +195,7 @@ Selector en **Ajustes (⚙)** del widget. También ahí: opacidad, **color de le
 ## Scripts útiles
 
 ```bash
-npm test              # Vitest (456 tests)
+npm test              # Vitest (667 tests)
 npm run build         # Build producción
 npm run package       # Instalador Windows (electron-builder)
 ```

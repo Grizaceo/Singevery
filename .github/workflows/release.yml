@@ -57,10 +57,16 @@ jobs:
       - name: Verify SMTC sidecar was bundled
         shell: pwsh
         run: |
-          if (-not (Test-Path native/smtc/dist/espejo-smtc.exe)) {
+          # OJO con la ruta: build:smtc publica en apps/desktop/build/smtc-dist.
+          # Este check apuntaba a native/smtc/dist —la salida del build.ps1 local,
+          # que está gitignoreada y por tanto NO existe en un checkout limpio—, así
+          # que el job moría aquí después de empaquetar y ningún tag llegaba a
+          # publicar release.
+          $sidecar = 'apps/desktop/build/smtc-dist/espejo-smtc.exe'
+          if (-not (Test-Path $sidecar)) {
             throw "espejo-smtc.exe no se generó: el instalador quedaría sin SMTC."
           }
-          Write-Host "Sidecar OK:" (Get-Item native/smtc/dist/espejo-smtc.exe).Length "bytes"
+          Write-Host "Sidecar OK:" (Get-Item $sidecar).Length "bytes"
 
       # Sin firma de código, el hash es lo único que permite a alguien
       # desconfiado verificar que el .exe que bajó es el que se publicó aquí.

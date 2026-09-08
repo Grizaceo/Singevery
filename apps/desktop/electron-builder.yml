@@ -22,13 +22,16 @@ extraResources:
   - from: build/smtc-dist
     to: native/smtc/dist
     filter: ['**/*', '!*.pdb']
-  # Token de AudD para la beta cerrada. Se copia el .env local (contiene
-  # AUDD_API_TOKEN) a resources/.env; loadDotEnv() lo encuentra vía
-  # process.resourcesPath. ADVERTENCIA: el instalador generado lleva este
-  # token. Solo distribuirlo en la beta controlada y avisar que no se difunda.
-  - from: ./.env
-    to: .env
-    filter: ['*.env']
+  # NO empaquetar ./.env. Copiarlo a resources/.env dejaba el AUDD_API_TOKEN en
+  # texto plano dentro del instalador: cualquiera que instale la app lo abre con
+  # el Bloc de notas, y basta con que alguien reenvíe el .exe para que la cuota
+  # de AudD se vaya con él. check-secrets.cjs salta los .env a propósito, así que
+  # la puerta de calidad pasaba en verde mientras el token viajaba.
+  #
+  # Sin token no se pierde el reconocimiento: recognitionService usa Shazam
+  # (gratis, sin API key) como motor por defecto y AudD solo es el fallback.
+  # Quien quiera AudD puede poner su propio .env junto al ejecutable —
+  # loadDotEnv() lo sigue buscando y GUIA_DE_USO.md §7 explica cómo.
 
 # Documentos que el usuario final debe poder leer: quedan junto a Singevery.exe.
 extraFiles:

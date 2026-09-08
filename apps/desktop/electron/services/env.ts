@@ -7,9 +7,10 @@ export function loadDotEnv(): void {
   // En dev compilado: __dirname = apps/desktop/dist-electron/electron/services
   // Repo root = ../../../../../
   const candidates = [
-    // App empaquetada: .env copiado a los recursos por electron-builder
-    // (→ process.resourcesPath). Primero, para que un instalador que lleva el
-    // credential de la beta cerrada lo encuentre siempre.
+    // App empaquetada: .env que el PROPIO USUARIO deja junto a la instalación
+    // para configurar su AUDD_API_TOKEN (ver GUIA_DE_USO.md §7). El instalador
+    // ya no empaqueta ningún .env: hacerlo repartía el token del desarrollador
+    // en texto plano a todo el que instalara la app.
     path.join(process.resourcesPath, '.env'),
     path.join(process.cwd(), '.env'),
     path.join(app.getAppPath(), '.env'),

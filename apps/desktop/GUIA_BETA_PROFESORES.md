@@ -9,7 +9,7 @@ a aprender y practicar, no sólo si sus botones funcionan.
 
 ## Antes de instalar
 
-1. Recibe `Singevery-Setup-0.2.1-beta.1.exe` y su SHA-256 por el mismo canal de
+1. Recibe `Singevery-Setup-0.2.1-beta.2.exe` y su SHA-256 por el mismo canal de
    confianza usado con la persona responsable de la prueba.
 2. Esta beta aún no está firmada digitalmente. Windows SmartScreen puede mostrar
    un aviso de "editor desconocido". Continúa sólo si el nombre y el hash
