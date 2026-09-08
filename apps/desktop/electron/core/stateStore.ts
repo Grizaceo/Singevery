@@ -549,6 +549,13 @@ export class StateStore {
       return { ok: false, error: 'No hay letra cargada' };
     }
 
+    // F1: identidad capturada al INICIO. Si durante el fetch de traducción el
+    // audio identifica otra canción, el resultado se descarta: aplicar la
+    // traducción de A sobre B contaminaría la letra y la caché de B.
+    const trackKeyAtStart = this.currentTrackKey;
+    const titleAtStart = this.trackTitle;
+    const artistAtStart = this.trackArtist;
+
     const config = this.translationStore.get();
     const targetLang = config.targetLang;
     const alreadyDone =
@@ -563,6 +570,11 @@ export class StateStore {
       return { ok: false, error: result.error ?? 'Error de traducción' };
     }
 
+    // La canción cambió mientras traducíamos: descartar (F1).
+    if (this.currentTrackKey !== trackKeyAtStart) {
+      return { ok: false, error: 'La canción cambió durante la traducción' };
+    }
+
     const updated: TimedLyrics = {
       ...lyrics,
       translationLang: targetLang,
@@ -572,10 +584,10 @@ export class StateStore {
       })),
     };
 
-    this.setLyrics(updated, this.trackTitle, this.trackArtist);
-    await this.lyricsService.updateCachedLyrics(this.currentTrackKey, updated, {
-      title: this.trackTitle ?? '',
-      artist: this.trackArtist ?? '',
+    this.setLyrics(updated, titleAtStart, artistAtStart);
+    await this.lyricsService.updateCachedLyrics(trackKeyAtStart, updated, {
+      title: titleAtStart ?? '',
+      artist: artistAtStart ?? '',
       album: null,
       durationMs: null,
     });

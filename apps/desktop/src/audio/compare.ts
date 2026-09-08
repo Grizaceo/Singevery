@@ -8,6 +8,19 @@
 // la ventana reciente de pitch del usuario. El score = % de puntos del usuario
 // dentro de la tolerancia en cents, en el mejor offset.
 //
+// Correcciones del audit (2026-09-08):
+//  - Normalización temporal: el tiempo del usuario se mide RELATIVO al inicio
+//    de su ventana (up.timeMs - userStart). Antes se usaba el tiempo absoluto
+//    acumulado del monitor: la misma ventana puntuaba distinto según cuánto
+//    llevara el monitor encendido, y el barrido quedaba corrido por userStart.
+//  - Sin extrapolación: los puntos cuya posición caería FUERA de la cobertura
+//    temporal de la referencia se descartan. Antes, nearestRef devolvía la
+//    primera/última nota indefinidamente, permitiendo score perfecto con un
+//    offset completamente anterior (o posterior) a la canción.
+//  - Cobertura mínima: un candidato solo se acepta si al menos minCoverage de
+//    los puntos del usuario caen dentro de la referencia; la cobertura real
+//    se reporta en el resultado.
+//
 // Puro y testeable: no toca DOM ni audio.
 // ============================================================================
 
@@ -28,6 +41,8 @@ export interface MatchResult {
   targetFreq: number | null;
   /** Cantidad de puntos del usuario con señal válida (denominador del score). */
   validCount: number;
+  /** Fracción (0..1) de puntos del usuario con cobertura real en la referencia. */
+  coverage: number;
 }
 
 export interface CompareOptions {
@@ -37,12 +52,15 @@ export interface CompareOptions {
   offsetHopMs?: number;
   /** Máximo desplazamiento a buscar en ms (por defecto ±20 s). */
   maxOffsetMs?: number;
+  /** Cobertura mínima (0..1) para aceptar un candidato. */
+  minCoverage?: number;
 }
 
 const DEFAULT_COMPARE: Required<CompareOptions> = {
   toleranceCents: 50,
   offsetHopMs: 200,
   maxOffsetMs: 20000,
+  minCoverage: 0.5,
 };
 
 /**
@@ -57,10 +75,11 @@ export function matchWindow(
   const opts = { ...DEFAULT_COMPARE, ...options };
   const valid = userPitches.filter((p) => p.freq != null);
   if (valid.length === 0 || reference.length === 0) {
-    return { score: 0, bestOffsetMs: 0, targetFreq: null, validCount: 0 };
+    return { score: 0, bestOffsetMs: 0, targetFreq: null, validCount: 0, coverage: 0 };
   }
 
-  // Duracion de la ventana del usuario.
+  // Duracion de la ventana del usuario (tiempo RELATIVO: el inicio de la
+  // ventana es el origen, no el arranque del monitor).
   const userStart = valid[0].timeMs;
   const userEnd = valid[valid.length - 1].timeMs;
   const userDur = Math.max(1, userEnd - userStart);
@@ -72,6 +91,7 @@ export function matchWindow(
   let bestScore = -1;
   let bestOffset = 0;
   let bestTarget: number | null = null;
+  let bestCoverage = 0;
 
   // Barrido de offsets: el inicio de la ventana del usuario se alinea con
   // (refStart - maxOffset) .. (refEnd - userDur + maxOffset).
@@ -80,26 +100,47 @@ export function matchWindow(
 
   for (let offset = firstOffset; offset <= lastOffset; offset += opts.offsetHopMs) {
     let hits = 0;
-    let total = 0;
+    let covered = 0;
     let targetFreq: number | null = null;
 
     for (const up of valid) {
-      const refTime = up.timeMs + offset; // donde estaría el usuario en la ref
+      // Tiempo del usuario RELATIVO a su ventana: el inicio de la ventana se
+      // alinea con la referencia en `offset`. Sin esta normalización, una
+      // ventana capturada tarde (monitor encendido hace rato) queda corrida
+      // por userStart y el score depende del tiempo acumulado.
+      const refTime = up.timeMs - userStart + offset;
+      // Fuera de la cobertura temporal de la referencia: no extrapolar la
+      // primera/última nota (permitía score perfecto sin solapamiento real).
+      if (refTime < refStart || refTime > refEnd) continue;
+      covered++;
       // Buscar el punto de referencia más cercano en tiempo.
       const ref = nearestRef(reference, refTime);
       if (!ref || ref.freq == null) continue;
-      total++;
       const cents = Math.abs(centsBetween(up.freq!, ref.freq));
       if (cents <= opts.toleranceCents) hits++;
       if (targetFreq == null) targetFreq = ref.freq;
     }
 
-    if (total === 0) continue;
-    const score = hits / total;
-    if (score > bestScore) {
+    if (covered === 0) continue;
+    const coverage = covered / valid.length;
+    // Score sobre TODOS los puntos válidos, no solo los cubiertos: la
+    // cobertura entra sola en el denominador y un alineamiento parcial en el
+    // borde de la referencia no puede ganarle a uno completo (MEDIA 7 del
+    // audit Opus). Antes (hits/covered), un borde con coverage 0.5 y score
+    // 1.00 le ganaba a un alineamiento completo con 0.97.
+    const score = hits / valid.length;
+    // Exigir solapamiento mínimo: un puñado de puntos pegados al borde de la
+    // referencia no debe bastar para un score perfecto. Ante score empatado,
+    // gana el alineamiento con MAYOR cobertura (el parcial no debe ganarle al
+    // completo solo por aparecer primero en el barrido).
+    if (
+      coverage >= opts.minCoverage &&
+      (score > bestScore || (score === bestScore && coverage > bestCoverage))
+    ) {
       bestScore = score;
       bestOffset = offset;
       bestTarget = targetFreq;
+      bestCoverage = coverage;
     }
   }
 
@@ -108,6 +149,7 @@ export function matchWindow(
     bestOffsetMs: bestOffset,
     targetFreq: bestTarget,
     validCount: valid.length,
+    coverage: bestCoverage,
   };
 }
 

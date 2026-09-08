@@ -265,6 +265,7 @@ export function useRecognition(): RecognitionState {
             // Corrección silenciosa de deriva. Errores se ignoran (la letra
             // sigue corriendo); un cambio de canción recarga la letra solo.
             const result = await window.api.correctAudio(buffer, mimeType, recordStartedAt);
+            if (controller.signal.aborted) break; // F2: se detuvo mientras corregía.
             if (result.ok && result.matched && result.changed) {
               setHint('Nueva canción detectada…');
               fastCycles = 0;
@@ -294,6 +295,7 @@ export function useRecognition(): RecognitionState {
 
           setHint('Identificando canción…');
           const result = await window.api.identifyAudio(buffer, mimeType, recordStartedAt);
+          if (controller.signal.aborted) break; // F2: se detuvo mientras identificaba.
 
           if (!result.ok) {
             const retryable =
