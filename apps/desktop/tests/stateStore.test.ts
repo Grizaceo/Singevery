@@ -685,3 +685,84 @@ describe('StateStore — auto-reintento de búsqueda (sin panel de rescate)', ()
     state.stop();
   });
 });
+
+describe('StateStore — fix de sync en Discord (match sin timecode)', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(0);
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  const LYRICS = {
+    lines: [
+      { start_ms: 0, text: 'hola' },
+      { start_ms: 3000, text: 'mundo' },
+    ],
+    source: 'lrclib',
+    synced: true,
+  };
+
+  function makeState() {
+    const getLyrics = vi.fn(async () => LYRICS);
+    const forgetTrack = vi.fn(async () => {});
+    const lyricsService = { getLyrics, forgetTrack } as unknown as LyricsService;
+    const state = new StateStore(null, undefined, lyricsService);
+    return { state, getLyrics };
+  }
+
+  it('un match SÍN timecode (position_ms=0) no revienta la letra cuando la canción lleva 2 minutos', async () => {
+    const { state } = makeState();
+    // La canción arranca anclada en 0, corre 2 minutos y la letra sigue fiel.
+    await state.loadLyricsByMetadata('Pina Colada', 'Rupert Holmes', 0, 0);
+    vi.setSystemTime(120_000);
+    const posBefore = state.getDisplayedPosition(120_000);
+    expect(posBefore).toBe(120_000); // la letra corrió con el audio (offset crónico 0)
+
+    // En la mezcla de Discord el loop de corrección re-identifica la MISMA
+    // canción sin timecode: AudD dejó position_ms=0 y el ancla cae al inicio
+    // del chunk. Este match es exactamente el que producía el snap de 117s.
+    const changed = await state.applyMatch(
+      {
+        track: {
+          provider: 'audd',
+          provider_track_id: 'x',
+          title: 'Pina Colada',
+          artist: 'Rupert Holmes',
+        },
+        confidence: 1,
+        position_ms: 0, // timecode ausente
+        matched_at: Date.now(),
+      },
+      120_000, // recordStartedAt: el chunk se grabó recién empezando
+    );
+
+    expect(changed).toBe(false); // misma pista: corrección, no recarga
+    // La letra NO saltó al inicio del chunk (~6s): quedó donde iba.
+    expect(state.getDisplayedPosition()).toBeCloseTo(posBefore, -1);
+  });
+
+  it('el siguiente match CON timecode sigue corrigiendo la deriva', async () => {
+    const { state } = makeState();
+    await state.loadLyricsByMetadata('Pina Colada', 'Rupert Holmes', 0, 0);
+    vi.setSystemTime(120_000);
+
+    // Match sin timecode: se ignora.
+    await state.applyMatch(
+      { track: { provider: 'audd', provider_track_id: 'x', title: 'Pina Colada', artist: 'Rupert Holmes' }, confidence: 1, position_ms: 0, matched_at: Date.now() },
+      120_000,
+    );
+    const posAfterBad = state.getDisplayedPosition(121_000);
+
+    // Match con timecode real (la canción lleva 2 min): la deriva (mínima en
+    // el test) se absorbe normal y la letra ya no salta.
+    vi.setSystemTime(121_000);
+    const changed = await state.applyMatch(
+      { track: { provider: 'audd', provider_track_id: 'x', title: 'Pina Colada', artist: 'Rupert Holmes' }, confidence: 1, position_ms: 121_000, matched_at: Date.now() },
+      121_000,
+    );
+    expect(changed).toBe(false);
+    expect(state.getDisplayedPosition()).toBeCloseTo(posAfterBad, -1);
+  });
+});

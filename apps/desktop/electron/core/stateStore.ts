@@ -741,7 +741,13 @@ export class StateStore {
       // Dos señales independientes (título del SO + huella del audio) dicen lo
       // mismo: la identidad deja de ser provisional y pasa a estar lockeada.
       this.currentTrackProvisional = false;
-      this.applyCorrection(anchor);
+      // Un match sin timecode (position_ms=0, p.ej. AudD omitiéndolo en una
+      // mezcla con voz) no puede re-anclar: su posición cae al inicio del
+      // chunk (~6s) aunque la canción lleve minutos, y un snap así rompe la
+      // letra. La deriva real (segundos) la corrige el próximo match con
+      // timecode. Se calcula aquí y se propaga a applyCorrection.
+      const positionTrusted = match.position_ms > 0 || (match.sample_offset_ms ?? 0) > 0;
+      this.applyCorrection(anchor, positionTrusted);
       if (this.overrideStatus === 'LISTENING' || this.overrideStatus === 'IDENTIFYING') {
         this.overrideStatus = null;
       }
@@ -971,12 +977,32 @@ export class StateStore {
    * Reconcilia la posición estimada por un match con la mostrada ahora.
    * Suave por defecto (rampa de una fracción del error); salto duro si el error
    * es enorme (seek/cambio brusco); se ignora si es minúsculo (anti-jitter).
+   *
+   * `positionTrusted=false` → el ancla no tiene posición creíble (timecode 0):
+   * NO se aplica ninguna corrección (la proyección caería al inicio del chunk).
    */
-  private applyCorrection(anchor: { positionMs: number; anchorAt: number }): void {
+  private applyCorrection(
+    anchor: { positionMs: number; anchorAt: number },
+    positionTrusted: boolean,
+  ): void {
     const now = Date.now();
     // Estimación real "ahora" según el match = crudo proyectado + offset crónico.
     const estimatedNow =
       anchor.positionMs + Math.max(0, now - anchor.anchorAt) + this.clock.getSyncOffsetMs();
+
+    // Ancla sin timecode: el crudo es 0 y la proyección caería al inicio del
+    // chunk (~6s) aunque la canción lleve minutos. Aplicarla es un snap
+    // destructivo (ver applyMatch); ignorarla deja correr la letra y la deriva
+    // la corrige el próximo match con timecode.
+    if (!positionTrusted) {
+      console.log(
+        `[sync] match sin timecode (position_ms=0): se ignora el ancla ` +
+          `(mostrado=${Math.round(this.clock.getDisplayedPosition(now))}ms, ` +
+          `proyección corrupta=${Math.round(estimatedNow)}ms)`,
+      );
+      return;
+    }
+
     const decision = computeDrift(estimatedNow, this.clock.getDisplayedPosition(now));
 
     // Diagnóstico de sincronía: el signo del error debe alternar alrededor de
