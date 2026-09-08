@@ -13,6 +13,7 @@ import { app, BrowserWindow, dialog, ipcMain, shell, session, globalShortcut, sc
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'path';
+import { pathToFileURL } from 'node:url';
 import { StateStore } from './core/stateStore';
 import { MatchLog, recognitionLogFields } from './core/matchLog';
 import { loadDotEnv } from './services/env';
@@ -82,6 +83,53 @@ import type { SupportTicketDraft } from '../src/types';
 
 const isDev = process.env.NODE_ENV === 'development' || !!process.env.VITE_DEV_SERVER_URL;
 const devServerUrl = process.env.VITE_DEV_SERVER_URL ?? 'http://localhost:5173';
+/** URL exacta de la UI empaquetada (producción): única navegación permitida. */
+const appIndexUrl = pathToFileURL(path.join(__dirname, '..', '..', 'dist', 'index.html')).href;
+
+/** S3: destinos externos permitidos para openExternal (https únicamente). */
+const ALLOWED_EXTERNAL_HOSTS = new Set(['github.com', 'www.tofugu.com']);
+
+/**
+ * S3: abre URLs externas SOLO si son https a destinos permitidos. Cualquier
+ * otro protocolo (file:, ms-*, etc.) u host se bloquea: un window.open o un
+ * enlace manipulado no debe poder escapar del widget.
+ * Rechaza (no resuelve) cuando bloquea: el llamador debe saber que el enlace
+ * no se abrió (BAJA 9 del audit Opus).
+ */
+function openExternalSafe(url: string): Promise<void> {
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol === 'https:' && ALLOWED_EXTERNAL_HOSTS.has(parsed.hostname)) {
+      return shell.openExternal(url);
+    }
+  } catch {
+    /* URL inválida */
+  }
+  console.warn(`[main] openExternal bloqueado (destino no permitido): ${url}`);
+  return Promise.reject(new Error(`Destino no permitido: ${url}`));
+}
+
+/** S2: la ventana solo navega a su propia UI. Comparación exacta, no prefijo
+ *  (MEDIA 8 del audit Opus): startsWith('file://') permitía cualquier ruta
+ *  local y startsWith(devServerUrl) aceptaba localhost:5173.evil.com. */
+function isAllowedNavigation(url: string): boolean {
+  try {
+    if (isDev) {
+      return new URL(url).origin === new URL(devServerUrl).origin;
+    }
+    return url.split('#')[0].split('?')[0] === appIndexUrl;
+  } catch {
+    return false;
+  }
+}
+
+/** BAJA 12: defensa en profundidad — solo el frame principal de la ventana
+ *  puede invocar IPC que muta estado o abre URLs. Con sandbox +
+ *  contextIsolation no hay camino práctico para un webContents ajeno, pero
+ *  si la navegación restringida fallara, esto sigue cerrando la puerta. */
+function isTrustedSender(event: Electron.IpcMainInvokeEvent): boolean {
+  return !!mainWindow && !mainWindow.isDestroyed() && event.senderFrame === mainWindow.webContents.mainFrame;
+}
 
 /** Debe llamarse antes de app.whenReady(). */
 function configureElectronRuntime(): void {
@@ -110,6 +158,8 @@ const processStartedAt = Date.now();
 /** Bounds expandidos guardados al colapsar a pill; se restauran al expandir. */
 let savedBounds: Rect | null = null;
 let boundsSaveTimer: NodeJS.Timeout | null = null;
+/** Época de reconocimiento: se incrementa al detener; invalida identificaciones en vuelo (F2). */
+let recognitionEpoch = 0;
 
 /** Tamaño expandido por defecto (coincide con createWindow). */
 const EXPANDED_WIDTH = 760;
@@ -229,7 +279,7 @@ function createWindow(): BrowserWindow {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: false,
+      sandbox: true, // S2: renderer aislado; el preload solo usa contextBridge/ipcRenderer
     },
   });
 
@@ -254,11 +304,29 @@ function createWindow(): BrowserWindow {
   });
   win.once('closed', () => clearTimeout(showFallback));
 
-  // Abrir links externos en el navegador, no dentro del widget.
+  // Abrir links externos en el navegador, no dentro del widget. S3: solo
+  // https a destinos permitidos; file: y protocolos arbitrarios se bloquean.
   win.webContents.setWindowOpenHandler(({ url }) => {
-    shell.openExternal(url);
+    // openExternalSafe rechaza cuando bloquea (BAJA 9): el rechazo es
+    // esperado aquí — el enlace no se abre y el usuario no ve nada.
+    void openExternalSafe(url).catch(() => {});
     return { action: 'deny' };
   });
+
+  // S2: la ventana solo navega a su propia UI (dev server en desarrollo,
+  // file:// local en producción). Comparación EXACTA, no prefijo (MEDIA 8 del
+  // audit Opus): startsWith('file://') permitía cualquier ruta local y
+  // startsWith(devServerUrl) aceptaba localhost:5173.evil.com.
+  // (will-frame-navigate no existe en los typings de Electron 43; will-navigate
+  // cubre la navegación del frame principal, que es la única que puede salir
+  // de la UI local.)
+  const blockNavigation = (event: { preventDefault(): void }, url: string): void => {
+    if (!isAllowedNavigation(url)) {
+      console.warn(`[main] Navegación bloqueada: ${url}`);
+      event.preventDefault();
+    }
+  };
+  win.webContents.on('will-navigate', blockNavigation);
 
   if (isDev) {
     win.loadURL(devServerUrl);
@@ -297,11 +365,23 @@ function attachWindowBoundsPersistence(win: BrowserWindow): void {
 }
 
 function setupMediaPermissions(): void {
-  session.defaultSession.setPermissionRequestHandler((_webContents, permission, callback) => {
+  // S2: solo la ventana principal de la app puede pedir permisos de captura.
+  // Un frame ajeno (ventana emergente, contenido inyectado) no recibe nada.
+  const isTrustedFrame = (wc: Electron.WebContents | null): boolean => {
+    if (!wc || wc.isDestroyed()) return false;
+    return mainWindow !== null && !mainWindow.isDestroyed() && wc === mainWindow.webContents;
+  };
+
+  session.defaultSession.setPermissionRequestHandler((wc, permission, callback) => {
+    if (!isTrustedFrame(wc)) {
+      callback(false);
+      return;
+    }
     callback(permission === 'media' || (permission as string) === 'display-capture');
   });
 
-  session.defaultSession.setPermissionCheckHandler((_webContents, permission) => {
+  session.defaultSession.setPermissionCheckHandler((wc, permission) => {
+    if (!isTrustedFrame(wc)) return false;
     return permission === 'media' || (permission as string) === 'display-capture';
   });
 }
@@ -556,9 +636,10 @@ function registerIpcHandlers(): void {
   ipcMain.handle(
     'references:save',
     (
-      _event,
+      event,
       input: SaveReferenceInput,
     ): { ok: boolean; reference?: ReferenceMeta; error?: string } => {
+      if (!isTrustedSender(event)) return { ok: false, error: 'Origen no autorizado' };
       if (!referenceStore) return { ok: false, error: 'El almacén no está disponible' };
       try {
         const saved = referenceStore.save({ ...input, appVersion: app.getVersion() });
@@ -569,13 +650,15 @@ function registerIpcHandlers(): void {
     },
   );
 
-  ipcMain.handle('references:delete', (_event, id: string): { ok: boolean } => {
+  ipcMain.handle('references:delete', (event, id: string): { ok: boolean } => {
+    if (!isTrustedSender(event)) return { ok: false };
     return { ok: referenceStore?.remove(id) ?? false };
   });
 
   // Abre en el explorador la carpeta donde se guardan las melodías de
   // referencia (profesor + karaoke automático). Todo local, sin red.
-  ipcMain.handle('references:openFolder', async (): Promise<{ ok: boolean; error?: string }> => {
+  ipcMain.handle('references:openFolder', async (event): Promise<{ ok: boolean; error?: string }> => {
+    if (!isTrustedSender(event)) return { ok: false, error: 'Origen no autorizado' };
     if (!referenceStore) return { ok: false, error: 'El almacén no está disponible' };
     try {
       const dir = referenceStore.directory();
@@ -589,7 +672,8 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle(
     'references:export',
-    async (_event, id: string): Promise<{ ok: boolean; canceled?: boolean; error?: string }> => {
+    async (event, id: string): Promise<{ ok: boolean; canceled?: boolean; error?: string }> => {
+      if (!isTrustedSender(event)) return { ok: false, error: 'Origen no autorizado' };
       if (!referenceStore) return { ok: false, error: 'El almacén no está disponible' };
       const reference = referenceStore.get(id);
       if (!reference) return { ok: false, error: 'La referencia ya no existe' };
@@ -680,7 +764,8 @@ function registerIpcHandlers(): void {
   // (arbitraje anti-loop de YouTube). null devuelve el mando a SMTC.
   ipcMain.handle(
     'recognition:setSource',
-    (_event, source: 'microphone' | 'system' | null): { ok: boolean } => {
+    (event, source: 'microphone' | 'system' | null): { ok: boolean } => {
+      if (!isTrustedSender(event)) return { ok: false };
       stateStore?.setRecognitionSource(source);
       return { ok: true };
     },
@@ -689,19 +774,29 @@ function registerIpcHandlers(): void {
   ipcMain.handle(
     'recognition:identify',
     async (
-      _event,
+      event,
       audio: ArrayBuffer,
       mimeType: string,
       recordStartedAt: number,
     ): Promise<{ ok: boolean; matched: boolean; error?: string }> => {
+      if (!isTrustedSender(event)) {
+        return { ok: false, matched: false, error: 'Origen no autorizado' };
+      }
       if (!stateStore) {
         return { ok: false, matched: false, error: 'StateStore no inicializado' };
       }
 
       try {
+        const epoch = recognitionEpoch;
         stateStore.setRecognitionPhase('IDENTIFYING');
         const startedAt = Date.now();
         const match = await recognitionService!.identify(Buffer.from(audio), mimeType);
+        // F2: si se detuvo el reconocimiento mientras identificaba, descartar
+        // el resultado: un match tardío no debe recargar letras ni cambiar
+        // estado después de pulsar detener.
+        if (epoch !== recognitionEpoch) {
+          return { ok: false, matched: false, error: 'Reconocimiento detenido' };
+        }
         const durationMs = Date.now() - startedAt;
         if (!match) {
           stateStore.setRecognitionPhase('LISTENING');
@@ -721,6 +816,14 @@ function registerIpcHandlers(): void {
         // re-forzamos 'LISTENING' aquí: taparía la letra recién cargada (el
         // seguimiento continuo ya no llama a stopRecognition para limpiarlo).
         await stateStore.applyMatch(match, recordStartedAt);
+        // F2: re-comprobar la época DESPUÉS del await. applyMatch es la parte
+        // más lenta (fetch de letras por red): si el usuario pulsó detener
+        // mientras cargaba, deshacer lo que dejó puesto y no propagar el
+        // match tardío (un stop no debe terminar pintando letras).
+        if (epoch !== recognitionEpoch) {
+          stateStore.clearRecognition();
+          return { ok: false, matched: false, error: 'Reconocimiento detenido' };
+        }
         return { ok: true, matched: true };
       } catch (err) {
         stateStore.setRecognitionPhase(null);
@@ -735,7 +838,7 @@ function registerIpcHandlers(): void {
   ipcMain.handle(
     'recognition:correct',
     async (
-      _event,
+      event,
       audio: ArrayBuffer,
       mimeType: string,
       recordStartedAt: number,
@@ -746,18 +849,34 @@ function registerIpcHandlers(): void {
       suspected?: boolean;
       error?: string;
     }> => {
+      if (!isTrustedSender(event)) {
+        return { ok: false, matched: false, error: 'Origen no autorizado' };
+      }
       if (!stateStore) {
         return { ok: false, matched: false, error: 'StateStore no inicializado' };
       }
       try {
+        const epoch = recognitionEpoch;
         const startedAt = Date.now();
         const match = await recognitionService!.identify(Buffer.from(audio), mimeType);
+        // F2: mismo descarte que en identify — detener invalida la corrección
+        // en vuelo.
+        if (epoch !== recognitionEpoch) {
+          return { ok: false, matched: false, error: 'Reconocimiento detenido' };
+        }
         const durationMs = Date.now() - startedAt;
         if (!match) {
           matchLog?.log({ type: 'correct', ...recognitionLogFields(match, recordStartedAt, appSettings?.recognitionProviderStore.get() ?? 'auto'), outcome: 'no_match', durationMs });
           return { ok: true, matched: false, suspected: stateStore.isChangeSuspected() };
         }
         const changed = await stateStore.applyMatch(match, recordStartedAt);
+        // F2: re-comprobar la época tras el await (applyMatch incluye el fetch
+        // de letras por red). Si se detuvo mientras cargaba, deshacer y no
+        // propagar el match tardío.
+        if (epoch !== recognitionEpoch) {
+          stateStore.clearRecognition();
+          return { ok: false, matched: false, error: 'Reconocimiento detenido' };
+        }
         // El mismo chunk sirve para medir el desfase de la letra por energía
         // vocal: ya está grabado y ya se sabe a qué posición corresponde.
         // No aplica nada salvo que SINGEVERY_ENERGY_SYNC esté encendido.
@@ -795,14 +914,17 @@ function registerIpcHandlers(): void {
   // confirmar un cambio de canción sin gastar otro ciclo de histéresis.
   ipcMain.handle(
     'recognition:boundary',
-    (_event, kind: 'gap' | 'novelty'): { ok: boolean } => {
+    (event, kind: 'gap' | 'novelty'): { ok: boolean } => {
+      if (!isTrustedSender(event)) return { ok: false };
       if (kind !== 'gap' && kind !== 'novelty') return { ok: false };
       stateStore?.noteAudioBoundary(kind);
       return { ok: true };
     },
   );
 
-  ipcMain.handle('recognition:stop', (): { ok: boolean } => {
+  ipcMain.handle('recognition:stop', (event): { ok: boolean } => {
+    if (!isTrustedSender(event)) return { ok: false };
+    recognitionEpoch += 1; // F2: invalida cualquier identificación en vuelo.
     stateStore?.clearRecognition();
     return { ok: true };
   });
@@ -837,7 +959,8 @@ function registerIpcHandlers(): void {
   });
 
   // Nivel de audio capturado (0..1): alimenta la pausa del reloj por silencio.
-  ipcMain.handle('recognition:level', (_event, level: number): { ok: boolean } => {
+  ipcMain.handle('recognition:level', (event, level: number): { ok: boolean } => {
+    if (!isTrustedSender(event)) return { ok: false };
     stateStore?.reportAudioLevel(level);
     return { ok: true };
   });
@@ -992,7 +1115,7 @@ function registerIpcHandlers(): void {
   ipcMain.handle(
     'support:createTicket',
     async (
-      _event,
+      event,
       input: SupportTicketDraft,
     ): Promise<{
       ok: boolean;
@@ -1003,6 +1126,9 @@ function registerIpcHandlers(): void {
       warning?: string;
       error?: string;
     }> => {
+      if (!isTrustedSender(event)) {
+        return { ok: false, error: 'Origen no autorizado' };
+      }
       const validation = validateSupportTicketDraft(input);
       if (!validation.ok) return { ok: false, error: validation.error };
 
@@ -1043,7 +1169,7 @@ function registerIpcHandlers(): void {
       let issueOpened = false;
       let warning: string | undefined;
       try {
-        await shell.openExternal(issueUrl);
+        await openExternalSafe(issueUrl);
         issueOpened = true;
       } catch (err) {
         warning = err instanceof Error ? err.message : 'No se pudo abrir el portal de soporte';

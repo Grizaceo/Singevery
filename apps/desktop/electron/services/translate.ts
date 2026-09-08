@@ -64,6 +64,23 @@ export const DEFAULT_LOCAL_ENDPOINT = 'http://localhost:11434/v1/chat/completion
 /** Gemma 3 afinado para traducir, 55 idiomas. `ollama pull translategemma:4b`. */
 export const DEFAULT_LOCAL_MODEL = 'translategemma:4b';
 
+/**
+ * S4: el proveedor "local" es LOCAL de verdad. Solo se aceptan endpoints en
+ * loopback (localhost / 127.0.0.1 / ::1) con http; un endpoint remoto
+ * configurado a mano no debe poder recibir las letras sin pasar por el
+ * consentimiento de proveedor externo.
+ */
+export function isLoopbackEndpoint(endpoint: string): boolean {
+  try {
+    const parsed = new URL(endpoint);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return false;
+    const host = parsed.hostname.toLowerCase();
+    return host === 'localhost' || host === '127.0.0.1' || host === '::1' || host === '[::1]';
+  } catch {
+    return false;
+  }
+}
+
 /** Tope duro del parámetro `q` de MyMemory. Por encima, la API rechaza. */
 export const MYMEMORY_MAX_BYTES = 500;
 /** Peticiones en paralelo. La cuota es por caracteres, no por peticiones, así
@@ -499,6 +516,15 @@ async function callLocalModel(
   const dl = deadline(REQUEST_TIMEOUT_MS.local, signal);
   let connected = false;
   try {
+    // S4: endpoint remoto disfrazado de "local" se rechaza antes de enviar
+    // nada. El usuario debe configurarlo como proveedor externo (con
+    // consentimiento) si quiere un servidor en otra máquina.
+    if (!isLoopbackEndpoint(endpoint)) {
+      throw new Error(
+        'El endpoint local debe estar en esta máquina (localhost/127.0.0.1). ' +
+          'Para un servidor remoto usa un proveedor externo.',
+      );
+    }
     const res = await fetch(endpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
