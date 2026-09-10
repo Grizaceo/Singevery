@@ -126,6 +126,16 @@ function verifyInstallerPayload(installer) {
       ok = false;
     }
   }
+  // Runtime LLM embebido: si el binario existe en inputs, debe viajar en el
+  // instalador. Es condicional porque en dev puede no estar compilado.
+  const llmBin = path.join(appRoot, 'native', 'llm', 'llama-server.exe');
+  if (fs.existsSync(llmBin)) {
+    const llmPath = 'resources\\native\\llm\\llama-server.exe';
+    if (!listing.includes(`Path = ${llmPath}`)) {
+      fail(`el instalador no contiene ${llmPath} (runtime LLM embebido)`);
+      ok = false;
+    }
+  }
 
   // Ningún .env debe viajar dentro del instalador. Durante la beta, un
   // extraResources copiaba el .env del desarrollador a resources/.env y el

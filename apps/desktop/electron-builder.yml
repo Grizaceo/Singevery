@@ -22,6 +22,13 @@ extraResources:
   - from: build/smtc-dist
     to: native/smtc/dist
     filter: ['**/*', '!*.pdb']
+  # Runtime LLM embebido (llama.cpp server): binario win-x64. El MODELO no va
+  # aquí (pesa GB): se descarga bajo demanda en userData/models/ la primera
+  # vez que el usuario activa la traducción IA local. Si native/llm no existe
+  # (dev sin binario), electron-builder omite la entrada sin fallar.
+  - from: native/llm
+    to: native/llm
+    filter: ['**/*']
   # NO empaquetar ./.env. Copiarlo a resources/.env dejaba el AUDD_API_TOKEN en
   # texto plano dentro del instalador: cualquiera que instale la app lo abre con
   # el Bloc de notas, y basta con que alguien reenvíe el .exe para que la cuota

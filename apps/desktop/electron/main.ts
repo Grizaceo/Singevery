@@ -39,6 +39,10 @@ import { LyricsService } from './services/lyrics/lyricsService';
 import { SmtcReader } from './services/smtc/smtcReader';
 import { resolveSmtcSidecar } from './services/smtc/smtcPath';
 import { WakeWordReader } from './services/wakeword/wakeWordReader';
+import { LlmRuntime } from './services/llm/llmRuntime';
+import { EmbeddedTranslationStore } from './services/llm/embeddedTranslationStore';
+import { resolveLlmServer, resolveLlmModel, DEFAULT_MODEL_URL } from './services/llm/llmPath';
+import { downloadModel } from './services/llm/modelDownloader';
 import {
   pillBounds,
   expandedBounds,
@@ -146,6 +150,7 @@ let matchLog: MatchLog | null = null;
 let lyricsCache: FileLyricsCache | null = null;
 let smtcReader: SmtcReader | null = null;
 let wakeWordReader: WakeWordReader | null = null;
+let llmRuntime: LlmRuntime | null = null;
 let recognitionService: RecognitionService | null = null;
 let autoContrast: AutoContrastService | null = null;
 let appSettings: AppSettings | null = null;
@@ -1191,6 +1196,66 @@ function registerIpcHandlers(): void {
     },
   );
 
+  // --- Runtime LLM embebido (traducción IA local) ---
+  // La UI de Ajustes consulta el estado, arranca/para el runtime y dispara la
+  // descarga del modelo bajo demanda. El progreso de descarga viaja por
+  // 'llm:downloadProgress' (evento main → renderer).
+
+  ipcMain.handle('llm:getStatus', (): { ok: boolean; status: ReturnType<LlmRuntime['getStatus']> } => {
+    if (!llmRuntime) {
+      return {
+        ok: true,
+        status: { state: 'disabled', binPath: '', modelPath: '', error: '', endpoint: '' },
+      };
+    }
+    return { ok: true, status: llmRuntime.getStatus() };
+  });
+
+  ipcMain.handle('llm:start', (): { ok: boolean; status: ReturnType<LlmRuntime['getStatus']> } => {
+    if (!llmRuntime) return { ok: false, status: { state: 'disabled', binPath: '', modelPath: '', error: '', endpoint: '' } };
+    llmRuntime.start();
+    return { ok: true, status: llmRuntime.getStatus() };
+  });
+
+  ipcMain.handle('llm:stop', (): { ok: boolean; status: ReturnType<LlmRuntime['getStatus']> } => {
+    if (!llmRuntime) return { ok: false, status: { state: 'disabled', binPath: '', modelPath: '', error: '', endpoint: '' } };
+    llmRuntime.stop();
+    return { ok: true, status: llmRuntime.getStatus() };
+  });
+
+  ipcMain.handle(
+    'llm:downloadModel',
+    async (event): Promise<{ ok: boolean; error?: string; filePath?: string }> => {
+      if (!llmRuntime) return { ok: false, error: 'Runtime no disponible' };
+      const modelPath = llmRuntime.getStatus().modelPath;
+      if (!modelPath) return { ok: false, error: 'Ruta de modelo no disponible' };
+      const url = process.env.LLM_MODEL_URL?.trim() || DEFAULT_MODEL_URL;
+      try {
+        const result = await downloadModel(url, modelPath, (p) => {
+          event.sender.send('llm:downloadProgress', {
+            received: p.received,
+            total: p.total,
+            resumedFrom: p.resumedFrom,
+          });
+        });
+        if (!result.ok) return { ok: false, error: result.error ?? 'Descarga fallida' };
+        // Modelo listo: arrancar el runtime automáticamente.
+        llmRuntime.start();
+        return { ok: true, filePath: result.filePath };
+      } catch (err) {
+        return { ok: false, error: err instanceof Error ? err.message : 'Descarga fallida' };
+      }
+    },
+  );
+
+  ipcMain.handle(
+    'llm:getModelInfo',
+    (): { ok: boolean; url: string; filename: string } => {
+      const filename = llmRuntime?.getStatus().modelPath.split(/[\\/]/).pop() ?? '';
+      return { ok: true, url: process.env.LLM_MODEL_URL?.trim() || DEFAULT_MODEL_URL, filename };
+    },
+  );
+
 }
 
 function bootstrap(): void {
@@ -1254,7 +1319,13 @@ function bootstrap(): void {
     lyricsService,
     calibrationStore,
     displayStore,
-    appSettings?.translationStore ?? NULL_TRANSLATION_STORE,
+    // El store envuelto redirige la traducción local al runtime embebido
+    // cuando está ready (sin tocar el core). Si el runtime no existe o no
+    // está listo, delega al store persistente tal cual.
+    new EmbeddedTranslationStore(
+      appSettings?.translationStore ?? NULL_TRANSLATION_STORE,
+      () => llmRuntime,
+    ),
     appSettings?.readingStore ?? NULL_READING_STORE,
   );
   stateStore.applyReadingSettings();
@@ -1309,6 +1380,24 @@ function bootstrap(): void {
   const smtcExe = resolveSmtcSidecar(process.env.SMTC_SIDECAR, smtcSidecarRoots());
   smtcReader = new SmtcReader(stateStore, smtcExe);
   smtcReader.start();
+
+  // Runtime LLM embebido (llama.cpp server): traducción IA local sin que el
+  // usuario configure Ollama/LM Studio. No-op si no hay binario o modelo;
+  // el proveedor 'local' manual sigue funcionando como hoy.
+  const llmBin = resolveLlmServer(process.env.LLM_SERVER_BIN, llmServerRoots());
+  const llmModel = resolveLlmModel(process.env.LLM_MODEL_PATH, app.getPath('userData'));
+  llmRuntime = new LlmRuntime(llmBin, llmModel, (status) => {
+    if (status.state === 'ready') {
+      console.log(`[llm] runtime listo en ${status.endpoint}`);
+    } else if (status.state === 'error') {
+      console.warn(`[llm] ${status.error}`);
+    }
+  });
+  // Arranque automático solo si ya hay modelo en disco (la descarga es
+  // explícita vía IPC; no se descargan 2.5 GB sin que el usuario lo pida).
+  if (llmRuntime.canStart()) {
+    llmRuntime.start();
+  }
 
   // Palabra wake opt-in (P3.9): si WAKEWORD_SIDECAR apunta a un ejecutable que
   // existe, lo lanza y dispara command:sing al detectar la palabra. Sin esa
@@ -1399,6 +1488,20 @@ function smtcSidecarRoots(): string[] {
   ].filter((r): r is string => typeof r === 'string' && r.length > 0);
 }
 
+/**
+ * Raíces candidatas donde buscar native/llm/llama-server.exe.
+ * Misma lógica que smtcSidecarRoots: dev (repo root) y empaquetado (resources).
+ */
+function llmServerRoots(): string[] {
+  const fromDirname = path.join(__dirname, '..', '..', '..', '..');
+  return [
+    process.cwd(),
+    app.getAppPath(),
+    fromDirname,
+    process.resourcesPath,
+  ].filter((r): r is string => typeof r === 'string' && r.length > 0);
+}
+
 // Solo una instancia en producción. En dev omitimos el lock (reinicios tras Ctrl+C).
 const gotLock = isDev ? true : app.requestSingleInstanceLock();
 if (!gotLock) {
@@ -1444,6 +1547,7 @@ if (!gotLock) {
   app.on('window-all-closed', () => {
     smtcReader?.stop();
     wakeWordReader?.stop();
+    llmRuntime?.stop();
     autoContrast?.dispose();
     void diagnosticsServer?.close();
     diagnosticsServer = null;
@@ -1459,6 +1563,7 @@ if (!gotLock) {
   app.on('before-quit', () => {
     smtcReader?.stop();
     wakeWordReader?.stop();
+    llmRuntime?.stop();
     void diagnosticsServer?.close();
     diagnosticsServer = null;
     stateStore?.stop();
