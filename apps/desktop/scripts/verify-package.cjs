@@ -212,9 +212,69 @@ function verifyOutput() {
   process.stdout.write(`[package verify] SHA-256: ${digest}\n`);
 }
 
+/** Linux no lleva sidecar SMTC ni .ico: el reproductor se lee por MPRIS. */
+function verifyInputsLinux() {
+  const required = ['GUIA_BETA_PROFESORES.md', 'PRIVACIDAD_Y_DATOS.md', 'build/THIRD-PARTY-NOTICES.txt', 'build/icon.png'];
+  if (required.every((relative) => requireFile(path.join(appRoot, relative)))) {
+    process.stdout.write('[package verify] Entradas de release Linux completas.\n');
+  }
+}
+
+/** .env en cualquier nivel del árbol empaquetado (credenciales). */
+function findDotEnv(dir, depth = 4) {
+  if (depth < 0 || !fs.existsSync(dir)) return [];
+  const hits = [];
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    const full = path.join(dir, entry.name);
+    if (/^\.env(\.|$)/i.test(entry.name)) hits.push(full);
+    else if (entry.isDirectory() && entry.name !== 'node_modules') hits.push(...findDotEnv(full, depth - 1));
+  }
+  return hits;
+}
+
+function verifyOutputLinux() {
+  const unpacked = path.join(releaseDir, 'linux-unpacked');
+  const required = [
+    path.join(unpacked, 'singevery'),
+    path.join(unpacked, 'resources', 'app.asar'),
+    path.join(unpacked, 'GUIA_DE_USO.md'),
+    path.join(unpacked, 'GUIA_BETA_PROFESORES.md'),
+    path.join(unpacked, 'PRIVACIDAD_Y_DATOS.md'),
+    path.join(unpacked, 'THIRD-PARTY-NOTICES.txt'),
+  ];
+  let ok = required.every((file) => requireFile(file));
+  if (fs.existsSync(path.join(unpacked, 'resources', 'native', 'smtc'))) {
+    fail('el paquete Linux no debe llevar el sidecar SMTC de Windows');
+    ok = false;
+  }
+  for (const hit of findDotEnv(unpacked)) {
+    fail(`${path.relative(releaseDir, hit)} no debe empaquetarse (credenciales)`);
+    ok = false;
+  }
+  const appImage = fs
+    .readdirSync(releaseDir)
+    .find((f) => f.startsWith(`Singevery-${pkg.version}-`) && f.endsWith('.AppImage'));
+  if (!appImage) {
+    fail(`falta el AppImage de la versión ${pkg.version}`);
+    ok = false;
+  } else if (fs.statSync(path.join(releaseDir, appImage)).size < 50_000_000) {
+    fail('el AppImage parece incompleto (menos de 50 MB)');
+    ok = false;
+  }
+  if (!ok) return;
+
+  const file = path.join(releaseDir, appImage);
+  const digest = crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
+  fs.writeFileSync(`${file}.sha256.txt`, `${digest}  ${appImage}\n`, 'utf8');
+  process.stdout.write(`[package verify] AppImage verificado: ${appImage}\n`);
+  process.stdout.write(`[package verify] SHA-256: ${digest}\n`);
+}
+
 const mode = process.argv[2];
 if (mode === '--inputs') verifyInputs();
 else if (mode === '--output') verifyOutput();
+else if (mode === '--inputs-linux') verifyInputsLinux();
+else if (mode === '--output-linux') verifyOutputLinux();
 else {
-  fail('usa --inputs o --output');
+  fail('usa --inputs, --output, --inputs-linux o --output-linux');
 }

@@ -1,11 +1,15 @@
 # Configuración de empaquetado con electron-builder.
-# Foco: Windows NSIS (.exe). macOS/Linux se pueden añadir después.
+# Windows: instalador NSIS (.exe). Linux: AppImage + tar.gz.
 #
 # Flujo completo (en Windows):
 #   npm run package:full   → recompila el sidecar SMTC autocontenido (.NET),
 #                            build de la app, avisos de terceros e instalador.
 #   npm run package        → igual pero sin recompilar el sidecar.
 # Salida: release/Singevery-Setup-<version>.exe
+#
+# Linux (en Linux):
+#   npm run package:linux  → build, avisos, AppImage y tar.gz verificados.
+# Salida: release/Singevery-<version>-x86_64.AppImage (+ .tar.gz)
 appId: com.gris.singevery
 productName: Singevery
 copyright: Copyright © 2026 Gris
@@ -14,15 +18,9 @@ directories:
   output: release
   buildResources: build
 
-# Incluye el sidecar SMTC compilado (native/smtc/dist) en los recursos de la
-# app empaquetada; smtcPath.ts lo autodetecta bajo process.resourcesPath.
-# IMPORTANTE: publicar el sidecar AUTOCONTENIDO (npm run build:smtc) antes de
-# empaquetar para terceros — si no, exige .NET 8 instalado en el equipo destino.
 extraResources:
-  - from: build/smtc-dist
-    to: native/smtc/dist
-    filter: ['**/*', '!*.pdb']
-  # Runtime LLM embebido (llama.cpp server): binario win-x64. El MODELO no va
+  # Runtime LLM embebido (llama.cpp server): binario de la plataforma que se
+  # empaqueta (llama-server.exe / llama-server). El MODELO no va
   # aquí (pesa GB): se descarga bajo demanda en userData/models/ la primera
   # vez que el usuario activa la traducción IA local. Si native/llm no existe
   # (dev sin binario), electron-builder omite la entrada sin fallar.
@@ -71,6 +69,15 @@ asarUnpack:
 
 win:
   icon: build/icon.ico
+  # Incluye el sidecar SMTC compilado (native/smtc/dist) en los recursos de la
+  # app empaquetada; smtcPath.ts lo autodetecta bajo process.resourcesPath.
+  # IMPORTANTE: publicar el sidecar AUTOCONTENIDO (npm run build:smtc) antes de
+  # empaquetar para terceros — si no, exige .NET 8 instalado en el equipo destino.
+  # Solo Windows: en Linux el reproductor del SO se lee por MPRIS (D-Bus).
+  extraResources:
+    - from: build/smtc-dist
+      to: native/smtc/dist
+      filter: ['**/*', '!*.pdb']
   # Incrusta nombre, versión e icono aunque no haya certificado. La firma sólo
   # se aplica cuando electron-builder recibe credenciales de firma válidas.
   signAndEditExecutable: true
@@ -90,3 +97,24 @@ nsis:
   deleteAppDataOnUninstall: false
   # Licencia + avisos que el instalador muestra antes de instalar.
   license: build/license.txt
+
+linux:
+  icon: build/icon.png
+  # Binario y .desktop = "singevery": coincide con app.setDesktopName() en
+  # main.ts, que fija el app_id de Wayland (la class en Hyprland). Los atajos
+  # de otros escritorios se configuran como `singevery --sing` (GUIA_DE_USO).
+  executableName: singevery
+  syncDesktopName: true
+  category: AudioVideo
+  synopsis: Letra sincronizada tipo karaoke sobre tu escritorio
+  desktop:
+    entry:
+      Name: Singevery
+      StartupWMClass: singevery
+      Keywords: karaoke;letras;lyrics;teleprompter;
+  target:
+    - target: AppImage
+      arch: [x64]
+    - target: tar.gz
+      arch: [x64]
+  artifactName: ${productName}-${version}-${arch}.${ext}

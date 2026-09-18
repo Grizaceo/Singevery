@@ -6,6 +6,7 @@
   "author": "Gris",
   "license": "Apache-2.0",
   "main": "dist-electron/electron/main.js",
+  "desktopName": "singevery.desktop",
   "scripts": {
     "check:secrets": "node scripts/check-secrets.cjs",
     "check:zombies": "node scripts/check-zombies.cjs",
@@ -15,13 +16,16 @@
     "dev:electron": "node scripts/dev-electron.cjs",
     "dev:electron:win": "concurrently -k \"npm:dev:vite\" \"npm:dev:wait-electron:win\"",
     "dev:electron:nix": "concurrently -k \"npm:dev:vite\" \"npm:dev:wait-electron:nix\"",
+    "dev:electron:linux": "concurrently -k \"npm:dev:vite\" \"npm:dev:wait-electron:linux\"",
     "dev:kill": "node scripts/kill-dev.cjs",
     "dev:reset-window": "node scripts/reset-window.cjs",
     "predev:electron:win": "node scripts/kill-dev.cjs --quiet",
     "predev:electron:nix": "node scripts/kill-dev.cjs --quiet",
+    "predev:electron:linux": "node scripts/kill-dev.cjs --quiet",
     "dev:vite": "vite",
     "dev:wait-electron:nix": "npm run build:electron && wait-on tcp:5173 && cross-env NODE_ENV=development ELECTRON_DISABLE_SECURITY_WARNINGS=1 ELECTRON_DISABLE_GPU=1 electron .",
     "dev:wait-electron:win": "npm run build:electron && wait-on tcp:5173 && cross-env NODE_ENV=development ELECTRON_DISABLE_SECURITY_WARNINGS=1 electron .",
+    "dev:wait-electron:linux": "npm run build:electron && wait-on tcp:5173 && cross-env NODE_ENV=development ELECTRON_DISABLE_SECURITY_WARNINGS=1 electron .",
     "build": "tsc -b && vite build && tsc -p tsconfig.electron.json",
     "start": "npm run build && electron .",
     "build:electron": "tsc -p tsconfig.electron.json",
@@ -36,7 +40,9 @@
     "package": "npm run build && npm run notices && npm run verify:package-inputs && electron-builder --config electron-builder.yml && npm run verify:package-output",
     "package:installer": "node scripts/edit-executable-metadata.cjs && electron-builder --prepackaged release/win-unpacked --config electron-builder.yml && npm run verify:package-output",
     "package:signed": "node scripts/package-signed.cjs",
-    "package:full": "npm run build:smtc && npm run package"
+    "package:full": "npm run build:smtc && npm run package",
+    "package:linux": "npm run build && npm run notices && node scripts/verify-package.cjs --inputs-linux && electron-builder --linux --config electron-builder.yml && node scripts/verify-package.cjs --output-linux",
+    "install:linux": "npm run package:linux && bash scripts/install-linux.sh"
   },
   "dependencies": {
     "cyrillic-to-translit-js": "^3.2.1",

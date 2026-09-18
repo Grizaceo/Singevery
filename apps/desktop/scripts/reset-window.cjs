@@ -7,9 +7,15 @@ const path = require('path');
 const os = require('os');
 
 const SETTINGS = 'espejo-settings.json';
+// Carpeta de datos de Electron (userData): %APPDATA% en Windows, XDG en Linux.
+const base =
+  process.platform === 'win32'
+    ? process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming')
+    : process.env.XDG_CONFIG_HOME || path.join(os.homedir(), '.config');
 const dirs = [
-  path.join(process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming'), 'singevery-desktop'),
-  path.join(process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming'), 'espejo-teleprompter-desktop'),
+  path.join(base, 'singevery-desktop'), // userData = name del package.json (dev y empaquetada)
+  path.join(base, 'Singevery'), // por si un build fija productName como nombre
+  path.join(base, 'espejo-teleprompter-desktop'),
 ];
 
 let changed = false;

@@ -41,11 +41,16 @@ function killPortWin(port) {
 }
 
 function killPortUnix(port) {
-  try {
-    execSync(`npx --yes kill-port ${port}`, { stdio: 'ignore', shell: true });
-    log(`[dev:kill] Puerto ${port} liberado`);
-  } catch {
-    /* noop */
+  // fuser (psmisc) viene en casi toda distro y no descarga nada; npx kill-port
+  // queda como último recurso (baja el paquete de npm en cada ejecución).
+  const attempts = [`fuser -k -n tcp ${port}`, `npx --yes kill-port ${port}`];
+  for (const cmd of attempts) {
+    const r = spawnSync(cmd, { stdio: 'ignore', shell: true });
+    // fuser sale con 1 si nadie usaba el puerto: eso también es "libre".
+    if (r.status === 0 || (cmd.startsWith('fuser') && r.status === 1)) {
+      log(`[dev:kill] Puerto ${port} liberado`);
+      return;
+    }
   }
 }
 
