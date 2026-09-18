@@ -106,6 +106,22 @@ export interface AudioCaptureSession {
 }
 
 /**
+ * Constraints de audio para el loopback del sistema.
+ *
+ * En Linux (PulseAudio/PipeWire) Chromium entrega el loopback CON el
+ * procesamiento de voz encendido por defecto (echoCancellation,
+ * noiseSuppression, autoGainControl). El cancelador de eco usa como
+ * referencia justo lo que suena por los parlantes — que ES el loopback — y lo
+ * borra casi entero: la captura llegaba en silencio (pico ~0.0002 con un tono
+ * de 0.5) y parecía que el loopback "no estaba soportado". Pidiéndolo crudo
+ * llega la señal completa. Windows conserva la petición de siempre.
+ */
+export function systemAudioConstraints(platform: string | undefined): boolean | MediaTrackConstraints {
+  if (platform !== 'linux') return true;
+  return { echoCancellation: false, noiseSuppression: false, autoGainControl: false };
+}
+
+/**
  * Mantiene vivo el stream de captura mientras se usa solo su audio.
  * El handler en main.ts entrega video = frame propio del widget + loopback;
  * este objeto conserva el stream para no re-adquirir en cada ciclo (re-adquirir
@@ -132,7 +148,7 @@ export class SystemAudioSession implements AudioCaptureSession {
     //   4×4 @ 1fps es el workaround documentado: mantiene el loopback vivo sin
     //   capturar contenido visible que dispare la protección de Spotify.
     const displayStream = await navigator.mediaDevices.getDisplayMedia({
-      audio: true,
+      audio: systemAudioConstraints(window.api?.platform),
       video: { width: 4, height: 4, frameRate: 1 },
     });
 

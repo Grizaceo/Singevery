@@ -241,7 +241,7 @@ export function useRecognition(): RecognitionState {
             throw new Error(
               source === 'microphone'
                 ? 'No se capturó audio — revisa el permiso del micrófono.'
-                : 'No se capturó audio del sistema — en Linux/WSL el loopback no está soportado (usa el micrófono o corre en Windows).',
+                : 'No se capturó audio del sistema — revisa que haya una salida de audio activa o usa el micrófono.',
             );
           }
 
