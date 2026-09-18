@@ -64,6 +64,9 @@ export function llmServerPath(repoRoot: string, platform: NodeJS.Platform = proc
  * Resuelve el ejecutable del runtime LLM.
  * - Si `envValue` está definido (LLM_SERVER_BIN), se devuelve tal cual.
  * - Si no, recorre `roots` en orden y devuelve la primera ruta existente.
+ * - Fuera de Windows, después busca `llama-server` en el PATH: en Linux lo
+ *   habitual es el paquete del sistema (llama.cpp de la distro/AUR), no un
+ *   binario empaquetado junto a la app.
  * - Si ninguna existe, devuelve '' (runtime fuera).
  */
 export function resolveLlmServer(
@@ -71,12 +74,20 @@ export function resolveLlmServer(
   roots: string[],
   existsFn: (p: string) => boolean = defaultExists,
   platform: NodeJS.Platform = process.platform,
+  pathEnv: string | undefined = process.env.PATH,
 ): string {
   const env = envValue?.trim();
   if (env) return env;
   for (const root of roots) {
     const p = llmServerPath(root, platform);
     if (existsFn(p)) return p;
+  }
+  if (platform !== 'win32') {
+    for (const dir of (pathEnv ?? '').split(path.delimiter)) {
+      if (!dir) continue;
+      const p = path.join(dir, llmServerExeName(platform));
+      if (existsFn(p)) return p;
+    }
   }
   return '';
 }

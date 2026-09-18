@@ -151,18 +151,20 @@ export class LlmRuntime {
   }
 
   /**
-   * Lanza el runtime. No-op si ya está corriendo, si no hay binario/modelo o
-   * si la plataforma no es Windows (el binario empaquetado es win-x64).
+   * Lanza el runtime. No-op si ya está corriendo o si no hay binario/modelo.
+   * El binario se resuelve con el nombre de la plataforma (llama-server.exe en
+   * Windows, llama-server en Linux; ver llmPath.ts), así que nunca se intenta
+   * ejecutar un binario de otro SO.
    */
   start(): boolean {
-    if (this.proc || this.stopping) return false;
+    // stop() deja `stopping` en true para frenar los reintentos pendientes del
+    // watchdog; un start() explícito posterior SÍ debe arrancar. Antes este
+    // guard también miraba `stopping` y, tras un stop, el runtime no volvía a
+    // arrancar nunca (ni con llm:start ni al terminar la descarga del modelo).
+    if (this.proc) return false;
     if (!this.canStart()) {
       const status = LlmRuntime.initialStatus(this.binPath, this.modelPath);
       this.setState(status.state, status.error);
-      return false;
-    }
-    if (process.platform !== 'win32') {
-      this.setState('disabled', 'El runtime embebido solo se distribuye para Windows');
       return false;
     }
 

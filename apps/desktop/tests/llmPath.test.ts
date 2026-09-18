@@ -42,6 +42,24 @@ describe('llmPath', () => {
     expect(resolveLlmServer(undefined, ['/a', '/b'], () => false)).toBe('');
   });
 
+  it('Linux: si no está junto a la app, usa el llama-server del PATH', () => {
+    const target = path.join('/usr/bin', 'llama-server');
+    const exists = (p: string) => p === target;
+    const pathEnv = ['/home/u/.local/bin', '/usr/bin'].join(path.delimiter);
+    expect(resolveLlmServer(undefined, ['/repo'], exists, 'linux', pathEnv)).toBe(target);
+  });
+
+  it('la raíz de la app gana sobre el PATH', () => {
+    const bundled = llmServerPath('/repo', 'linux');
+    const exists = (p: string) => p === bundled || p === path.join('/usr/bin', 'llama-server');
+    expect(resolveLlmServer(undefined, ['/repo'], exists, 'linux', '/usr/bin')).toBe(bundled);
+  });
+
+  it('Windows no busca en el PATH (conserva el comportamiento de siempre)', () => {
+    const exists = (p: string) => p === path.join('C:/tools', 'llama-server.exe');
+    expect(resolveLlmServer(undefined, ['/repo'], exists, 'win32', 'C:/tools')).toBe('');
+  });
+
   it('llmModelPath une userData + models + nombre canónico', () => {
     expect(llmModelPath('/userData')).toBe(path.join('/userData', LLM_MODELS_DIR, DEFAULT_MODEL_FILENAME));
   });
