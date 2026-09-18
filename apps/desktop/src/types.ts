@@ -324,6 +324,8 @@ export interface SaveReferenceDto {
 }
 
 export interface DesktopApi {
+  /** Plataforma del proceso main ('linux' | 'win32' | 'darwin') — decide mecanismos de drag/click-through. */
+  platform: string;
   onRenderModel: (cb: (model: RenderModel) => void) => () => void;
   onSingCommand: (cb: () => void) => () => void;
   /**

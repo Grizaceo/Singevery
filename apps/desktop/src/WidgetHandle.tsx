@@ -58,6 +58,9 @@ export function WidgetHandle({
 
   const onPointerDown = useCallback(
     async (e: ReactPointerEvent<HTMLDivElement>) => {
+      // Linux/Wayland: el drag lo maneja el compositor vía -webkit-app-region
+      // (ver style); el loop manual con setPosition no tiene efecto.
+      if (api?.platform === 'linux') return;
       if (!api?.getPosition || !api?.setPosition) return;
       e.preventDefault();
       e.stopPropagation();
@@ -111,6 +114,14 @@ export function WidgetHandle({
     onToggleGhost();
   }, [onToggleGhost]);
 
+  // Linux/Wayland: el drag del compositor consume la interacción y un doble
+  // click queda poco fiable (el primer click ya inicia el move interactivo).
+  // Toggle de modo fantasma con un solo click.
+  const onGhostClick = useCallback(() => {
+    if (api?.platform !== 'linux') return;
+    onToggleGhost();
+  }, [api, onToggleGhost]);
+
   const onMouseEnter = useCallback(() => {
     onHoverChange(true);
     if (!ghost) onReveal();
@@ -137,17 +148,24 @@ export function WidgetHandle({
     const height = Math.round(BASE_HEIGHT * scale);
     const half = Math.ceil(width / 2) + 6; // margen para no salirse de la ventana
     const fg = isColorDark(color) ? '#ffffff' : '#111114';
+    // En Linux/Wayland el setPosition por IPC es ignorado por el compositor
+    // (xdg-shell no permite auto-posicionamiento) y e.screenX no da deltas
+    // fiables: el drag manual no funciona. La vía soportada es
+    // -webkit-app-region: drag, que dispara el move interactivo del
+    // compositor. Windows mantiene el loop manual con setPosition.
+    const isLinux = api?.platform === 'linux';
     return {
       width,
       height,
       fontSize: `${0.85 * scale}rem`,
       borderRadius: Math.max(4, Math.round(6 * scale)),
       left: `clamp(${half}px, ${(positionX * 100).toFixed(1)}%, calc(100% - ${half}px))`,
+      WebkitAppRegion: isLinux ? 'drag' : 'no-drag',
       // Variables consumidas por App.css (fondo con alpha vía color-mix).
       ['--handle-bg' as string]: color,
       ['--handle-fg' as string]: fg,
-    };
-  }, [color, scale, positionX]);
+    } as CSSProperties;
+  }, [api, color, scale, positionX]);
 
   return (
     <div
@@ -156,6 +174,7 @@ export function WidgetHandle({
       title="Arrastra para mover · doble click para modo transparente"
       aria-label="Mover widget y mostrar controles"
       onPointerDown={onPointerDown}
+      onClick={onGhostClick}
       onDoubleClick={onDoubleClick}
       onMouseEnter={onMouseEnter}
       onMouseMove={onMouseMove}

@@ -12,6 +12,7 @@ import type { ReferenceMelody, ReferenceMeta } from './services/references/refer
 import type { SaveReferenceInput } from './services/references/referenceStore';
 
 const api = {
+  platform: process.platform,
   onRenderModel: (cb: (model: RenderModel) => void): (() => void) => {
     const listener = (_event: Electron.IpcRendererEvent, model: RenderModel): void => {
       cb(model);
