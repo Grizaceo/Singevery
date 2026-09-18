@@ -252,10 +252,19 @@ function AppContent() {
   const chromeHidden = !tangible && (ghost || (isDisplaying && !chromeVisible));
 
   useEffect(() => {
+    // La píldora nunca deja pasar los clics: no tiene asa sobre la que pasar
+    // el cursor para recuperarla, y con una canción en pantalla el temporizador
+    // de la chrome la volvía intangible a los pocos segundos (sin forma de
+    // pulsar SING con el mouse).
     const clickThrough =
-      !tangible && !settingsOpen && !welcomeOpen && !manualSearchOpen && (ghost ? !handleHovered : chromeHidden);
+      !collapsed &&
+      !tangible &&
+      !settingsOpen &&
+      !welcomeOpen &&
+      !manualSearchOpen &&
+      (ghost ? !handleHovered : chromeHidden);
     window.api?.setClickThrough?.(clickThrough);
-  }, [ghost, handleHovered, chromeHidden, settingsOpen, tangible, welcomeOpen, manualSearchOpen]);
+  }, [collapsed, ghost, handleHovered, chromeHidden, settingsOpen, tangible, welcomeOpen, manualSearchOpen]);
 
   const visibleLines = useMemo(
     () => [...model.previous_lines, model.current_line, ...model.next_lines],
