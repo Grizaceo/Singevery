@@ -480,6 +480,21 @@ export interface DesktopApi {
   getSize: () => Promise<{ ok: boolean; width: number; height: number }>;
   getPosition: () => Promise<{ ok: boolean; x: number; y: number }>;
   setPosition: (x: number, y: number) => Promise<{ ok: boolean }>;
+  /**
+   * `managedDrag`: el main sabe arrastrar la ventana siguiendo al cursor
+   * (Linux + Hyprland). Sin eso, en Wayland el handle usa el arrastre del
+   * compositor (-webkit-app-region) y Windows su loop con setPosition.
+   */
+  getWindowCapabilities?: () => Promise<{ ok: boolean; managedDrag: boolean }>;
+  beginWindowDrag?: () => Promise<{ ok: boolean }>;
+  endWindowDrag?: () => Promise<{ ok: boolean; moved: boolean }>;
+  /**
+   * Linux/Hyprland: posición del asa dentro de la ventana. Mientras el widget
+   * deja pasar los clics no recibe eventos del mouse; el main vigila el cursor
+   * y le devuelve la entrada cuando pasa sobre el asa (en Windows lo resuelve
+   * setIgnoreMouseEvents con forward).
+   */
+  setHandleRect?: (rect: { x: number; y: number; width: number; height: number } | null) => Promise<{ ok: boolean }>;
   setClickThrough: (ignore: boolean) => Promise<{ ok: boolean }>;
   setCollapsed: (collapsed: boolean) => Promise<{ ok: boolean; collapsed: boolean }>;
 }

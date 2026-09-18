@@ -106,6 +106,9 @@ async function sampleWindowRegionLuminance(win: BrowserWindow): Promise<number> 
   return sum / count;
 }
 
+/** Mide la luminancia (0..1) del fondo que hay detrás/alrededor del widget. */
+export type BackgroundSampler = (win: BrowserWindow) => Promise<number>;
+
 export class AutoContrastService {
   private timer: ReturnType<typeof setInterval> | null = null;
   private ticking = false;
@@ -117,6 +120,9 @@ export class AutoContrastService {
     private getWindow: () => BrowserWindow | null,
     private displayStore: DisplayStore,
     private stateStore: StateStore,
+    // Windows: desktopCapturer + setContentProtection. Wayland inyecta el
+    // muestreo con grim alrededor de la ventana (linux/screenSample.ts).
+    private sampleBackground: BackgroundSampler = sampleWindowRegionLuminance,
   ) {}
 
   /** Arranca o detiene según textColorMode en ajustes. */
@@ -197,7 +203,7 @@ export class AutoContrastService {
         return;
       }
 
-      const luminance = await sampleWindowRegionLuminance(win);
+      const luminance = await this.sampleBackground(win);
       this.captureFailures = 0;
 
       let isLightBg: boolean;

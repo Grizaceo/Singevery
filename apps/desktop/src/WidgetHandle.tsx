@@ -1,4 +1,12 @@
-import { useCallback, useMemo, useRef, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type PointerEvent as ReactPointerEvent,
+} from 'react';
 import type { DesktopApi } from './types';
 
 interface WidgetHandleProps {
@@ -44,9 +52,26 @@ export function WidgetHandle({
   scale = 1,
   positionX = 0.5,
 }: WidgetHandleProps) {
+  const handleElRef = useRef<HTMLDivElement>(null);
   const frameRef = useRef<number | null>(null);
   const pendingRef = useRef<{ x: number; y: number } | null>(null);
   const draggedRef = useRef(false);
+  const isLinux = api?.platform === 'linux';
+  // Linux + Hyprland: el main arrastra la ventana siguiendo al cursor, así el
+  // handle conserva hover y doble clic como en Windows. Linux sin eso (otro
+  // compositor Wayland): arrastre del compositor vía -webkit-app-region.
+  const [managedDrag, setManagedDrag] = useState(false);
+  useEffect(() => {
+    if (!isLinux || !api?.getWindowCapabilities) return;
+    let alive = true;
+    void api.getWindowCapabilities().then((caps) => {
+      if (alive) setManagedDrag(caps.ok && caps.managedDrag);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [api, isLinux]);
+  const compositorDrag = isLinux && !managedDrag;
 
   const flush = useCallback(() => {
     frameRef.current = null;
@@ -58,9 +83,36 @@ export function WidgetHandle({
 
   const onPointerDown = useCallback(
     async (e: ReactPointerEvent<HTMLDivElement>) => {
-      // Linux/Wayland: el drag lo maneja el compositor vía -webkit-app-region
-      // (ver style); el loop manual con setPosition no tiene efecto.
-      if (api?.platform === 'linux') return;
+      // Linux/Wayland sin arrastre gestionado: lo hace el compositor vía
+      // -webkit-app-region (ver style); setPosition no tiene efecto.
+      if (compositorDrag) return;
+      if (isLinux && api?.beginWindowDrag && api.endWindowDrag) {
+        if (e.button !== 0) return;
+        e.preventDefault();
+        e.stopPropagation();
+        const target = e.currentTarget;
+        target.setPointerCapture(e.pointerId);
+        draggedRef.current = false;
+        const endWindowDrag = api.endWindowDrag;
+        // Cualquiera de estas señales termina el arrastre (una sola vez). La
+        // de window cubre un pointerup que no llegue al handle si la captura
+        // no se concedió; el main además corta si la ventana pierde el foco.
+        const ends: Array<[EventTarget, string]> = [
+          [target, 'pointerup'],
+          [target, 'pointercancel'],
+          [target, 'lostpointercapture'],
+          [window, 'pointerup'],
+        ];
+        const onUp = (): void => {
+          for (const [t, type] of ends) t.removeEventListener(type, onUp);
+          void endWindowDrag().then((r) => {
+            draggedRef.current = r.moved;
+          });
+        };
+        for (const [t, type] of ends) t.addEventListener(type, onUp);
+        void api.beginWindowDrag();
+        return;
+      }
       if (!api?.getPosition || !api?.setPosition) return;
       e.preventDefault();
       e.stopPropagation();
@@ -106,7 +158,7 @@ export function WidgetHandle({
       window.addEventListener('pointermove', onMove);
       window.addEventListener('pointerup', onUp);
     },
-    [api, flush],
+    [api, flush, compositorDrag, isLinux],
   );
 
   const onDoubleClick = useCallback(() => {
@@ -114,13 +166,13 @@ export function WidgetHandle({
     onToggleGhost();
   }, [onToggleGhost]);
 
-  // Linux/Wayland: el drag del compositor consume la interacción y un doble
-  // click queda poco fiable (el primer click ya inicia el move interactivo).
-  // Toggle de modo fantasma con un solo click.
+  // Arrastre del compositor (Wayland sin Hyprland): el primer click ya inicia
+  // el move interactivo y el doble click queda poco fiable. Toggle de modo
+  // fantasma con un solo click.
   const onGhostClick = useCallback(() => {
-    if (api?.platform !== 'linux') return;
+    if (!compositorDrag) return;
     onToggleGhost();
-  }, [api, onToggleGhost]);
+  }, [compositorDrag, onToggleGhost]);
 
   const onMouseEnter = useCallback(() => {
     onHoverChange(true);
@@ -148,30 +200,56 @@ export function WidgetHandle({
     const height = Math.round(BASE_HEIGHT * scale);
     const half = Math.ceil(width / 2) + 6; // margen para no salirse de la ventana
     const fg = isColorDark(color) ? '#ffffff' : '#111114';
-    // En Linux/Wayland el setPosition por IPC es ignorado por el compositor
+    // En Wayland el setPosition por IPC es ignorado por el compositor
     // (xdg-shell no permite auto-posicionamiento) y e.screenX no da deltas
-    // fiables: el drag manual no funciona. La vía soportada es
-    // -webkit-app-region: drag, que dispara el move interactivo del
-    // compositor. Windows mantiene el loop manual con setPosition.
-    const isLinux = api?.platform === 'linux';
+    // fiables. En Hyprland el main arrastra por IPC (managedDrag); en otro
+    // compositor la vía es -webkit-app-region: drag. Windows mantiene el loop
+    // manual con setPosition.
     return {
       width,
       height,
       fontSize: `${0.85 * scale}rem`,
       borderRadius: Math.max(4, Math.round(6 * scale)),
       left: `clamp(${half}px, ${(positionX * 100).toFixed(1)}%, calc(100% - ${half}px))`,
-      WebkitAppRegion: isLinux ? 'drag' : 'no-drag',
+      WebkitAppRegion: compositorDrag ? 'drag' : 'no-drag',
       // Variables consumidas por App.css (fondo con alpha vía color-mix).
       ['--handle-bg' as string]: color,
       ['--handle-fg' as string]: fg,
     } as CSSProperties;
-  }, [api, color, scale, positionX]);
+  }, [compositorDrag, color, scale, positionX]);
+
+  // Linux: el main necesita saber dónde está el asa para devolverle la
+  // entrada al widget cuando el cursor pasa encima mientras es atravesable
+  // (main.ts → setHyprlandClickThrough). `style` cubre escala y posición X.
+  useEffect(() => {
+    const el = handleElRef.current;
+    if (!isLinux || !el || !api?.setHandleRect) return;
+    const setHandleRect = api.setHandleRect;
+    const report = (): void => {
+      const r = el.getBoundingClientRect();
+      void setHandleRect({ x: r.x, y: r.y, width: r.width, height: r.height });
+    };
+    report();
+    const observer = new ResizeObserver(report);
+    observer.observe(el);
+    window.addEventListener('resize', report);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener('resize', report);
+      void setHandleRect(null);
+    };
+  }, [api, isLinux, style]);
 
   return (
     <div
+      ref={handleElRef}
       className={`widget-handle${ghost ? ' ghost' : ''}`}
       style={style}
-      title="Arrastra para mover · doble click para modo transparente"
+      title={
+        compositorDrag
+          ? 'Arrastra para mover · click para modo transparente'
+          : 'Arrastra para mover · doble click para modo transparente'
+      }
       aria-label="Mover widget y mostrar controles"
       onPointerDown={onPointerDown}
       onClick={onGhostClick}

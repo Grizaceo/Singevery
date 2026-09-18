@@ -37,6 +37,10 @@ import { RecognitionService } from './services/recognition/recognitionService';
 import { FileLyricsCache } from './services/cache/lyricsCache';
 import { LyricsService } from './services/lyrics/lyricsService';
 import { SmtcReader } from './services/smtc/smtcReader';
+import { MprisReader } from './services/mpris/mprisReader';
+import { HyprlandWindow, isHyprlandSession, luaString, shellQuote } from './services/linux/hyprland';
+import { parseCliCommand, type CliCommand } from './services/cliCommands';
+import { sampleSurroundingLuminance } from './services/linux/screenSample';
 import { resolveSmtcSidecar } from './services/smtc/smtcPath';
 import { WakeWordReader } from './services/wakeword/wakeWordReader';
 import { LlmRuntime } from './services/llm/llmRuntime';
@@ -55,7 +59,7 @@ import {
 import type { RecognitionPhase } from './core/stateStore';
 import { setupContentSecurityPolicy } from './csp';
 import { AutoContrastService } from './services/autoContrast';
-import { getLogFilePath, initAppLogger, readRecentLog } from './services/appLogger';
+import { getLogFilePath, initAppLogger, isBrokenPipe, readRecentLog } from './services/appLogger';
 import { parseImportedLyrics } from './services/importLyrics';
 import {
   resolveDiagnosticsPort,
@@ -137,6 +141,7 @@ function isTrustedSender(event: Electron.IpcMainInvokeEvent): boolean {
 
 /** Debe llamarse antes de app.whenReady(). */
 function configureElectronRuntime(): void {
+  if (process.platform === 'linux') app.setDesktopName(`${LINUX_DESKTOP_NAME}.desktop`);
   if (process.env.ELECTRON_DISABLE_GPU === '1') {
     app.disableHardwareAcceleration();
     app.commandLine.appendSwitch('disable-gpu');
@@ -149,6 +154,14 @@ let stateStore: StateStore | null = null;
 let matchLog: MatchLog | null = null;
 let lyricsCache: FileLyricsCache | null = null;
 let smtcReader: SmtcReader | null = null;
+/** Linux: reproductor del SO vía MPRIS (el papel de SMTC en Windows). */
+let mprisReader: MprisReader | null = null;
+/**
+ * Linux/Hyprland: control de la propia ventana por IPC del compositor. En
+ * Wayland Electron no puede posicionarse ni ser "siempre encima" solo; null
+ * fuera de Hyprland (el compositor decide y la app sigue funcionando).
+ */
+let hyprland: HyprlandWindow | null = null;
 let wakeWordReader: WakeWordReader | null = null;
 let llmRuntime: LlmRuntime | null = null;
 let recognitionService: RecognitionService | null = null;
@@ -176,6 +189,12 @@ const SING_ACCELERATOR = 'Ctrl+Alt+S';
 const TANGIBLE_ACCELERATOR = 'Ctrl+Alt+T';
 /** Píxeles que se mueve el widget con cada pulsación de flecha. */
 const MOVE_STEP_PX = 40;
+/**
+ * Nombre del .desktop en Linux = app_id de Wayland (la "class" de Hyprland).
+ * Fijo para que dev y empaquetado se identifiquen igual (electron-builder
+ * instala singevery.desktop; ver electron-builder.yml → linux.executableName).
+ */
+const LINUX_DESKTOP_NAME = 'singevery';
 /** Límite defensivo para documentos de letra abiertos desde disco. */
 const MAX_IMPORTED_LYRICS_BYTES = 2 * 1024 * 1024;
 
@@ -216,6 +235,7 @@ function collectDiagnostics(includeRecentLog = true): Record<string, unknown> {
       reading: appSettings?.readingStore.get() ?? NULL_READING_STORE.get(),
       hasAuddToken: Boolean(process.env.AUDD_API_TOKEN),
       smtcSidecarConfigured: Boolean(process.env.SMTC_SIDECAR),
+      mediaSession: process.platform === 'linux' ? 'mpris' : 'smtc',
     },
     cache,
     logFile: includeRecentLog && getLogFilePath() ? path.basename(getLogFilePath()!) : null,
@@ -263,6 +283,8 @@ function createWindow(): BrowserWindow {
   if (isDev) {
     console.log(`[main] Ventana en x=${initialBounds.x} y=${initialBounds.y} ${initialBounds.width}x${initialBounds.height}`);
   }
+  // Wayland ignora x/y del constructor: Hyprland la coloca al mapearla.
+  if (hyprland) targetBounds = initialBounds;
 
   const win = new BrowserWindow({
     x: initialBounds.x,
@@ -308,6 +330,11 @@ function createWindow(): BrowserWindow {
     win.focus();
   });
   win.once('closed', () => clearTimeout(showFallback));
+  if (hyprland) {
+    win.once('show', () => void onHyprlandWindowMapped(win));
+    // Red de seguridad del arrastre gestionado: perder el foco lo termina.
+    win.on('blur', () => void hyprland?.endDrag());
+  }
 
   // Abrir links externos en el navegador, no dentro del widget. S3: solo
   // https a destinos permitidos; file: y protocolos arbitrarios se bloquean.
@@ -355,18 +382,200 @@ function createWindow(): BrowserWindow {
 
 /** Persiste posición/tamaño expandido (debounced) al mover o redimensionar. */
 function attachWindowBoundsPersistence(win: BrowserWindow): void {
-  const scheduleSave = (): void => {
-    if (boundsSaveTimer) clearTimeout(boundsSaveTimer);
-    boundsSaveTimer = setTimeout(() => {
-      if (!appSettings || win.isDestroyed()) return;
-      const b = win.getBounds();
-      if (b.width === PILL_WIDTH && b.height === PILL_HEIGHT) return;
-      appSettings.windowBoundsStore.set(b);
-    }, 400);
-  };
+  win.on('move', () => scheduleBoundsSave(win));
+  win.on('resize', () => scheduleBoundsSave(win));
+}
 
-  win.on('move', scheduleSave);
-  win.on('resize', scheduleSave);
+function scheduleBoundsSave(win: BrowserWindow): void {
+  if (boundsSaveTimer) clearTimeout(boundsSaveTimer);
+  boundsSaveTimer = setTimeout(() => {
+    void currentBounds().then((b) => saveWindowBounds(win, b));
+  }, 400);
+}
+
+function saveWindowBounds(win: BrowserWindow, b: Rect | null): void {
+  if (!appSettings || win.isDestroyed() || !b) return;
+  if (b.width === PILL_WIDTH && b.height === PILL_HEIGHT) return;
+  appSettings.windowBoundsStore.set(b);
+}
+
+// ----------------------------------------------------------------------------
+// Bounds de la ventana. En Windows (y X11) Electron los conoce y los aplica.
+// En Wayland no: getBounds() da x=y=0 y setBounds() solo cambia el tamaño. En
+// Hyprland la posición real se lee y se aplica por su IPC; en otro compositor
+// Wayland manda el compositor.
+// ----------------------------------------------------------------------------
+
+/** Últimos bounds pedidos (Hyprland coloca la ventana ahí al mapearla). */
+let targetBounds: Rect | null = null;
+/** true cuando Hyprland ya ve la ventana (se puede mover por IPC). */
+let windowMapped = false;
+/** Serializa colapsar/expandir: cada paso lee los bounds que dejó el anterior. */
+let windowOps: Promise<unknown> = Promise.resolve();
+
+function serializeWindowOp<T>(op: () => Promise<T>): Promise<T> {
+  const next = windowOps.then(op, op);
+  windowOps = next.catch(() => {});
+  return next;
+}
+
+/** Posición y tamaño reales de la ventana. */
+async function currentBounds(): Promise<Rect> {
+  if (hyprland) {
+    const real = windowMapped ? await hyprland.getBounds() : null;
+    if (real) return real;
+    if (targetBounds) return targetBounds;
+  }
+  return mainWindow && !mainWindow.isDestroyed() ? mainWindow.getBounds() : { x: 0, y: 0, width: 0, height: 0 };
+}
+
+/** Área útil del monitor que contiene `rect` (sin barras del escritorio). */
+async function workAreaFor(rect: Rect): Promise<Rect> {
+  return (await hyprland?.workAreaFor(rect)) ?? screen.getDisplayMatching(rect).workArea;
+}
+
+/** Aplica bounds completos: tamaño por Electron, posición por Hyprland si hace falta. */
+async function applyBounds(rect: Rect): Promise<void> {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  mainWindow.setBounds(rect);
+  if (!hyprland) return;
+  targetBounds = rect;
+  if (windowMapped) await hyprland.placeAfterResize(rect);
+}
+
+/** Centra la ventana en el monitor donde está (center() es no-op en Wayland). */
+async function centerWindow(): Promise<void> {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  if (!hyprland) {
+    mainWindow.center();
+    return;
+  }
+  const cur = await currentBounds();
+  const wa = await workAreaFor(cur);
+  await hyprland.moveTo(wa.x + (wa.width - cur.width) / 2, wa.y + (wa.height - cur.height) / 2);
+}
+
+/**
+ * Hyprland ya mapeó la ventana: llevarla a su posición (lo que en Windows hace
+ * x/y del constructor), darle foco, registrar los atajos (necesitan la
+ * dirección de la ventana) y vigilar su posición para persistirla: los
+ * arrastres del compositor no emiten 'move' en Electron.
+ */
+async function onHyprlandWindowMapped(win: BrowserWindow): Promise<void> {
+  if (!hyprland || !(await hyprland.waitForWindow()) || win.isDestroyed()) return;
+  windowMapped = true;
+  if (targetBounds) await hyprland.placeAfterResize(targetBounds);
+  await hyprland.focus();
+  await registerHyprlandShortcuts();
+
+  let last = '';
+  const watch = setInterval(() => {
+    if (win.isDestroyed()) {
+      clearInterval(watch);
+      return;
+    }
+    void hyprland?.getBounds().then((b) => {
+      const key = b ? `${b.x},${b.y},${b.width},${b.height}` : '';
+      if (!b || key === last) return;
+      last = key;
+      saveWindowBounds(win, b);
+    });
+  }, 3000);
+  watch.unref?.();
+}
+
+// ----------------------------------------------------------------------------
+// Click-through en Hyprland. En Windows setIgnoreMouseEvents(true, {forward})
+// deja pasar los clics y aun así entrega el movimiento, así pasar sobre el asa
+// devuelve el control. En Hyprland el paso lo da no_focus (ver
+// HyprlandWindow.setPassthrough) y con él no llega ningún evento: el main
+// vigila el cursor y quita el paso mientras está sobre el asa. En cuanto el
+// renderer ve el hover (mouseenter), pide dejar de ser atravesable y la
+// vigilancia se detiene; al salir del asa lo vuelve a pedir.
+// ----------------------------------------------------------------------------
+
+/** Rect del asa relativo a la ventana, en px lógicos (lo informa el renderer). */
+let handleRect: Rect | null = null;
+/** Generación de la vigilancia: cambia al detenerla e invalida ticks en vuelo. */
+let clickThroughGen = 0;
+let clickThroughWatching = false;
+/** Margen alrededor del asa: apuntarle a 56×20 px exactos sería incómodo. */
+const HANDLE_HOVER_MARGIN_PX = 8;
+const CLICK_THROUGH_POLL_MS = 40;
+/** La ventana casi no se mueve mientras es atravesable (solo con los atajos). */
+const CLICK_THROUGH_BOUNDS_REFRESH_MS = 1000;
+
+function setHyprlandClickThrough(requested: boolean): void {
+  if (!hyprland) return;
+  if (!requested) {
+    clickThroughGen += 1;
+    clickThroughWatching = false;
+    void hyprland.setPassthrough(false);
+    return;
+  }
+  if (clickThroughWatching) return;
+  clickThroughWatching = true;
+  const gen = ++clickThroughGen;
+  let bounds: Rect | null = null;
+  let boundsAt = 0;
+  const tick = async (): Promise<void> => {
+    if (!hyprland || gen !== clickThroughGen || !mainWindow || mainWindow.isDestroyed()) return;
+    if (!bounds || Date.now() - boundsAt > CLICK_THROUGH_BOUNDS_REFRESH_MS) {
+      bounds = (await hyprland.getBounds()) ?? bounds;
+      boundsAt = Date.now();
+    }
+    const cursor = await hyprland.cursorPos();
+    if (gen !== clickThroughGen) return;
+    const m = HANDLE_HOVER_MARGIN_PX;
+    const overHandle =
+      bounds != null &&
+      cursor != null &&
+      handleRect != null &&
+      cursor.x >= bounds.x + handleRect.x - m &&
+      cursor.x <= bounds.x + handleRect.x + handleRect.width + m &&
+      cursor.y >= bounds.y + handleRect.y - m &&
+      cursor.y <= bounds.y + handleRect.y + handleRect.height + m;
+    await hyprland.setPassthrough(!overHandle);
+    if (gen === clickThroughGen) setTimeout(() => void tick(), CLICK_THROUGH_POLL_MS);
+  };
+  void tick();
+}
+
+/** Comando de shell que llega a ESTA instancia (segunda instancia + argv). */
+function singeveryCommand(flag: string): string {
+  // AppImage: process.execPath vive en un montaje temporal; APPIMAGE es la ruta estable.
+  const exe = process.env.APPIMAGE || process.execPath;
+  const args = app.isPackaged ? [flag] : [app.getAppPath(), flag];
+  return [exe, ...args].map(shellQuote).join(' ');
+}
+
+/** 'Ctrl+Alt+S' → 'CTRL + ALT + S' (sintaxis de binds de Hyprland). */
+function hyprlandKeys(accelerator: string): string {
+  return accelerator
+    .split('+')
+    .map((part) => part.trim().toUpperCase())
+    .join(' + ');
+}
+
+/**
+ * Atajos globales en Hyprland: los mismos de Windows. SING y tangible pasan
+ * por la instancia única (--sing / --tangible); mover la ventana lo hace el
+ * compositor directo, sin ida y vuelta por la app.
+ */
+async function registerHyprlandShortcuts(): Promise<void> {
+  const win = hyprland?.windowSelector();
+  if (!hyprland || !win) return;
+  const exec = (flag: string): string => `hl.dsp.exec_cmd(${luaString(singeveryCommand(flag))})`;
+  const move = (dx: number, dy: number): string =>
+    `hl.dsp.window.move({ window = ${win}, x = ${dx}, y = ${dy}, relative = true })`;
+  await hyprland.registerBinds([
+    { keys: hyprlandKeys(SING_ACCELERATOR), description: 'SING', dispatcher: exec('--sing') },
+    { keys: hyprlandKeys(TANGIBLE_ACCELERATOR), description: 'modo tangible', dispatcher: exec('--tangible') },
+    { keys: 'CTRL + ALT + LEFT', description: 'mover a la izquierda', dispatcher: move(-MOVE_STEP_PX, 0), repeating: true },
+    { keys: 'CTRL + ALT + RIGHT', description: 'mover a la derecha', dispatcher: move(MOVE_STEP_PX, 0), repeating: true },
+    { keys: 'CTRL + ALT + UP', description: 'mover arriba', dispatcher: move(0, -MOVE_STEP_PX), repeating: true },
+    { keys: 'CTRL + ALT + DOWN', description: 'mover abajo', dispatcher: move(0, MOVE_STEP_PX), repeating: true },
+  ]);
 }
 
 function setupMediaPermissions(): void {
@@ -442,9 +651,9 @@ function registerIpcHandlers(): void {
     return { ok: false, width: 0, height: 0 };
   });
 
-  ipcMain.handle('window:getPosition', (): { ok: boolean; x: number; y: number } => {
+  ipcMain.handle('window:getPosition', async (): Promise<{ ok: boolean; x: number; y: number }> => {
     if (mainWindow) {
-      const [x, y] = mainWindow.getPosition();
+      const { x, y } = await currentBounds();
       return { ok: true, x, y };
     }
     return { ok: false, x: 0, y: 0 };
@@ -454,11 +663,31 @@ function registerIpcHandlers(): void {
     'window:setPosition',
     (_event, x: number, y: number): { ok: boolean } => {
       if (mainWindow) {
-        mainWindow.setPosition(Math.round(x), Math.round(y));
+        if (hyprland) void hyprland.moveTo(x, y);
+        else mainWindow.setPosition(Math.round(x), Math.round(y));
       }
       return { ok: true };
     },
   );
+
+  // Arrastre del handle gestionado por el main (Linux + Hyprland): ver
+  // HyprlandWindow.beginDrag. En Windows el renderer usa su propio loop.
+  ipcMain.handle('window:capabilities', (): { ok: boolean; managedDrag: boolean } => ({
+    ok: true,
+    managedDrag: hyprland != null,
+  }));
+
+  ipcMain.handle('window:beginDrag', async (event): Promise<{ ok: boolean }> => {
+    if (!isTrustedSender(event) || !hyprland) return { ok: false };
+    return { ok: await hyprland.beginDrag() };
+  });
+
+  ipcMain.handle('window:endDrag', async (event): Promise<{ ok: boolean; moved: boolean }> => {
+    if (!isTrustedSender(event) || !hyprland) return { ok: false, moved: false };
+    const moved = await hyprland.endDrag();
+    if (moved && mainWindow) scheduleBoundsSave(mainWindow);
+    return { ok: true, moved };
+  });
 
   // Click-through: mientras se muestra la letra, el widget puede volverse
   // "intangible" para que los clics pasen a la app de detrás (un juego, etc.).
@@ -478,7 +707,22 @@ function registerIpcHandlers(): void {
         } else {
           mainWindow.setIgnoreMouseEvents(false);
         }
+        // Wayland: lo anterior es no-op; en Hyprland el paso lo da no_focus.
+        setHyprlandClickThrough(!tangibleLock && ignore);
       }
+      return { ok: true };
+    },
+  );
+
+  // Dónde está el asa dentro de la ventana: en Hyprland, mientras el widget
+  // deja pasar los clics, pasar el cursor sobre ella le devuelve la entrada.
+  ipcMain.handle(
+    'window:setHandleRect',
+    (event, rect: { x: number; y: number; width: number; height: number } | null): { ok: boolean } => {
+      if (!isTrustedSender(event)) return { ok: false };
+      const valid =
+        rect != null && [rect.x, rect.y, rect.width, rect.height].every((n) => typeof n === 'number' && Number.isFinite(n));
+      handleRect = valid ? { x: rect.x, y: rect.y, width: rect.width, height: rect.height } : null;
       return { ok: true };
     },
   );
@@ -488,31 +732,32 @@ function registerIpcHandlers(): void {
   // verdad del estado `collapsed` y lo comunica por IPC.
   ipcMain.handle(
     'window:setCollapsed',
-    (_event, collapsed: boolean): { ok: boolean; collapsed: boolean } => {
-      if (!mainWindow) return { ok: false, collapsed };
-      if (collapsed) {
-        const cur = mainWindow.getBounds();
-        // Solo guardamos si no es ya la pill (evita pisar con bounds pill).
-        if (cur.width !== PILL_WIDTH || cur.height !== PILL_HEIGHT) {
-          savedBounds = cur;
-        }
-        const workArea = screen.getDisplayMatching(cur).workArea;
-        mainWindow.setMinimumSize(PILL_WIDTH, PILL_HEIGHT);
-        mainWindow.setBounds(pillBounds(workArea));
-        mainWindow.setAlwaysOnTop(true, 'screen-saver');
-      } else {
-        mainWindow.setMinimumSize(320, 200);
-        if (savedBounds) {
-          mainWindow.setBounds(savedBounds);
-          savedBounds = null;
+    (_event, collapsed: boolean): Promise<{ ok: boolean; collapsed: boolean }> =>
+      serializeWindowOp(async () => {
+        if (!mainWindow || mainWindow.isDestroyed()) return { ok: false, collapsed };
+        if (collapsed) {
+          const cur = await currentBounds();
+          // Solo guardamos si no es ya la pill (evita pisar con bounds pill).
+          if (cur.width !== PILL_WIDTH || cur.height !== PILL_HEIGHT) {
+            savedBounds = cur;
+          }
+          const workArea = await workAreaFor(cur);
+          mainWindow.setMinimumSize(PILL_WIDTH, PILL_HEIGHT);
+          await applyBounds(pillBounds(workArea));
+          mainWindow.setAlwaysOnTop(true, 'screen-saver');
         } else {
-          const cur = mainWindow.getBounds();
-          const wa = screen.getDisplayMatching(cur).workArea;
-          mainWindow.setBounds(expandedBounds(wa, EXPANDED_WIDTH, EXPANDED_HEIGHT));
+          mainWindow.setMinimumSize(320, 200);
+          if (savedBounds) {
+            const restore = savedBounds;
+            savedBounds = null;
+            await applyBounds(restore);
+          } else {
+            const wa = await workAreaFor(await currentBounds());
+            await applyBounds(expandedBounds(wa, EXPANDED_WIDTH, EXPANDED_HEIGHT));
+          }
         }
-      }
-      return { ok: true, collapsed };
-    },
+        return { ok: true, collapsed };
+      }),
   );
 
   ipcMain.handle(
@@ -1258,7 +1503,7 @@ function registerIpcHandlers(): void {
 
 }
 
-function bootstrap(): void {
+async function bootstrap(): Promise<void> {
   initAppLogger(path.join(app.getPath('userData'), 'logs'), app.getVersion());
   loadDotEnv();
   setupContentSecurityPolicy(session.defaultSession);
@@ -1289,6 +1534,15 @@ function bootstrap(): void {
     recognitionService = new RecognitionService({
       getProviderMode: () => NULL_RECOGNITION_PROVIDER_STORE.get(),
     });
+  }
+
+  // Hyprland: la regla del overlay (flotante, fijada, sin borde) tiene que
+  // existir ANTES de crear la ventana para que nazca así. Es el único await
+  // antes de createWindow: el resto del arranque sigue siendo síncrono, así
+  // que los handlers IPC quedan registrados antes de que el renderer hable.
+  if (isHyprlandSession()) {
+    const candidate = new HyprlandWindow(LINUX_DESKTOP_NAME);
+    hyprland = (await candidate.init()) ? candidate : null;
   }
 
   mainWindow = createWindow();
@@ -1363,10 +1617,20 @@ function bootstrap(): void {
   }
 
   if (appSettings) {
+    // Wayland: desktopCapturer abriría el selector de pantalla del portal en
+    // cada muestra; se mide con grim alrededor de la ventana (screenSample.ts).
+    const waylandSampler =
+      process.platform === 'linux' && process.env.XDG_SESSION_TYPE === 'wayland'
+        ? async (): Promise<number> => {
+            const bounds = await currentBounds();
+            return sampleSurroundingLuminance(bounds, screen.getDisplayMatching(bounds).bounds);
+          }
+        : undefined;
     autoContrast = new AutoContrastService(
       () => mainWindow,
       appSettings.displayStore,
       stateStore,
+      waylandSampler,
     );
     autoContrast.sync();
   }
@@ -1374,12 +1638,17 @@ function bootstrap(): void {
   registerIpcHandlers();
   registerGlobalShortcuts();
 
-  // Capa b: reproductor del SO (SMTC) como reloj maestro. No-op si no hay
-  // sidecar ni Windows; AudD sigue como fallback. Ruta del sidecar:
-  //   1. SMTC_SIDECAR (env) explícita; 2. autodetección native/smtc/dist.
-  const smtcExe = resolveSmtcSidecar(process.env.SMTC_SIDECAR, smtcSidecarRoots());
-  smtcReader = new SmtcReader(stateStore, smtcExe);
-  smtcReader.start();
+  // Capa b: reproductor del SO como reloj maestro. AudD/Shazam siguen como
+  // fallback. Windows: sidecar SMTC (ruta: 1. SMTC_SIDECAR explícita;
+  // 2. autodetección native/smtc/dist). Linux: MPRIS por D-Bus, mismos eventos.
+  if (process.platform === 'linux') {
+    mprisReader = new MprisReader(stateStore);
+    mprisReader.start();
+  } else {
+    const smtcExe = resolveSmtcSidecar(process.env.SMTC_SIDECAR, smtcSidecarRoots());
+    smtcReader = new SmtcReader(stateStore, smtcExe);
+    smtcReader.start();
+  }
 
   // Runtime LLM embebido (llama.cpp server): traducción IA local sin que el
   // usuario configure Ollama/LM Studio. No-op si no hay binario o modelo;
@@ -1417,6 +1686,7 @@ function triggerSing(): void {
   if (!mainWindow.isVisible()) mainWindow.show();
   mainWindow.webContents.send('command:sing');
   mainWindow.focus();
+  void hyprland?.focus();
 }
 
 /**
@@ -1430,12 +1700,15 @@ function setTangibleLock(next: boolean): void {
 
   if (next) {
     mainWindow.setIgnoreMouseEvents(false);
+    setHyprlandClickThrough(false);
     // 'screen-saver' es el nivel más alto: gana a las ventanas en pantalla
     // completa sin bordes (el modo por defecto de casi todos los juegos).
     mainWindow.setAlwaysOnTop(true, 'screen-saver');
     if (!mainWindow.isVisible()) mainWindow.show();
     // Sin foco, el clic se lo queda el juego que está debajo.
     mainWindow.focus();
+    // Hyprland no enfoca ventanas no_focus: primero quitar el paso de clics.
+    void hyprland?.setPassthrough(false).then(() => hyprland?.focus());
   }
   mainWindow.webContents.send('command:tangible', next);
 }
@@ -1443,8 +1716,38 @@ function setTangibleLock(next: boolean): void {
 /** Mueve el widget con el teclado (no depende del mouse ni del hover). */
 function nudgeWindow(dx: number, dy: number): void {
   if (!mainWindow || mainWindow.isDestroyed()) return;
+  if (hyprland) {
+    void hyprland.moveBy(dx, dy);
+    return;
+  }
   const [x, y] = mainWindow.getPosition();
   mainWindow.setPosition(x + dx, y + dy);
+}
+
+/** Ejecuta un comando recibido por línea de comandos (ver cliCommands.ts). */
+function runCliCommand(command: CliCommand): void {
+  switch (command.type) {
+    case 'sing':
+      triggerSing();
+      break;
+    case 'tangible':
+      setTangibleLock(!tangibleLock);
+      break;
+    case 'move':
+      nudgeWindow(command.dx, command.dy);
+      break;
+  }
+}
+
+/** Relanzar la app sin comando: traer el widget a la vista. */
+function revealWindow(): void {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  if (!mainWindow.isVisible()) mainWindow.show();
+  void centerWindow();
+  mainWindow.setAlwaysOnTop(true, 'screen-saver');
+  mainWindow.focus();
+  void hyprland?.focus();
 }
 
 /**
@@ -1502,8 +1805,12 @@ function llmServerRoots(): string[] {
   ].filter((r): r is string => typeof r === 'string' && r.length > 0);
 }
 
-// Solo una instancia en producción. En dev omitimos el lock (reinicios tras Ctrl+C).
-const gotLock = isDev ? true : app.requestSingleInstanceLock();
+// Solo una instancia en producción. En dev omitimos el lock (reinicios tras
+// Ctrl+C) salvo en Linux: ahí los atajos globales llegan como una segunda
+// instancia con --sing/--tangible (cliCommands.ts) y necesitan el lock para
+// encontrar a la que corre. Chromium libera solo el lock de un proceso muerto.
+const useInstanceLock = !isDev || process.platform === 'linux';
+const gotLock = useInstanceLock ? app.requestSingleInstanceLock() : true;
 if (!gotLock) {
   console.error(
     '[main] Singevery ya está en ejecución. Cierra la otra ventana o ejecuta: npm run dev:kill',
@@ -1512,19 +1819,18 @@ if (!gotLock) {
 } else {
   configureElectronRuntime();
 
-  if (!isDev) {
-    app.on('second-instance', () => {
-      if (mainWindow && !mainWindow.isDestroyed()) {
-        if (mainWindow.isMinimized()) mainWindow.restore();
-        if (!mainWindow.isVisible()) mainWindow.show();
-        mainWindow.center();
-        mainWindow.setAlwaysOnTop(true, 'screen-saver');
-        mainWindow.focus();
-      }
+  if (useInstanceLock) {
+    app.on('second-instance', (_event, argv) => {
+      const command = parseCliCommand(argv, MOVE_STEP_PX);
+      if (command) runCliCommand(command);
+      else revealWindow();
     });
   }
 
   process.on('uncaughtException', (err) => {
+    // Pipe de consola cerrado: el logger ya dejó de escribir en consola;
+    // registrarlo aquí solo alimentaría el bucle EPIPE (ver appLogger).
+    if (isBrokenPipe(err)) return;
     console.error('[main ERROR] uncaughtException:', err);
   });
 
@@ -1545,7 +1851,9 @@ if (!gotLock) {
   });
 
   app.on('window-all-closed', () => {
+    hyprland?.dispose();
     smtcReader?.stop();
+    mprisReader?.stop();
     wakeWordReader?.stop();
     llmRuntime?.stop();
     autoContrast?.dispose();
@@ -1561,7 +1869,9 @@ if (!gotLock) {
   });
 
   app.on('before-quit', () => {
+    hyprland?.dispose();
     smtcReader?.stop();
+    mprisReader?.stop();
     wakeWordReader?.stop();
     llmRuntime?.stop();
     void diagnosticsServer?.close();

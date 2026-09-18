@@ -53,6 +53,12 @@ const api = {
   getSize: (): Promise<{ ok: boolean; width: number; height: number }> => ipcRenderer.invoke('window:getSize'),
   getPosition: (): Promise<{ ok: boolean; x: number; y: number }> => ipcRenderer.invoke('window:getPosition'),
   setPosition: (x: number, y: number): Promise<{ ok: boolean }> => ipcRenderer.invoke('window:setPosition', x, y),
+  getWindowCapabilities: (): Promise<{ ok: boolean; managedDrag: boolean }> =>
+    ipcRenderer.invoke('window:capabilities'),
+  beginWindowDrag: (): Promise<{ ok: boolean }> => ipcRenderer.invoke('window:beginDrag'),
+  endWindowDrag: (): Promise<{ ok: boolean; moved: boolean }> => ipcRenderer.invoke('window:endDrag'),
+  setHandleRect: (rect: { x: number; y: number; width: number; height: number } | null): Promise<{ ok: boolean }> =>
+    ipcRenderer.invoke('window:setHandleRect', rect),
   setClickThrough: (ignore: boolean): Promise<{ ok: boolean }> => ipcRenderer.invoke('window:setClickThrough', ignore),
   setCollapsed: (collapsed: boolean): Promise<{ ok: boolean; collapsed: boolean }> => ipcRenderer.invoke('window:setCollapsed', collapsed),
 
