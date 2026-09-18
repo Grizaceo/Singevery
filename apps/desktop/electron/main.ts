@@ -236,7 +236,7 @@ async function openBundledDocument(filename: string): Promise<{ ok: boolean; err
 }
 
 function createWindow(): BrowserWindow {
-  const windowed = process.platform === 'linux' || process.env.ESPEJO_WINDOWED === '1';
+  const windowed = process.env.ESPEJO_WINDOWED === '1'; // EXPERIMENTO 17-sep: overlay también en Linux (antes: forzado windowed)
   const overlay = !windowed;
 
   const saved = appSettings?.windowBoundsStore.get() ?? null;
