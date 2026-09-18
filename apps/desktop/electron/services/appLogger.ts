@@ -61,11 +61,38 @@ function append(level: string, values: unknown[]): void {
   }
 }
 
+/** true si el error es la terminal/pipe de salida cerrada (nadie lee stdout). */
+export function isBrokenPipe(err: unknown): boolean {
+  const code = (err as NodeJS.ErrnoException | null)?.code;
+  return code === 'EPIPE' || code === 'ERR_STREAM_DESTROYED';
+}
+
 export function initAppLogger(logDirectory: string, appVersion: string): string {
   if (initialized && logFilePath) return logFilePath;
   fs.mkdirSync(logDirectory, { recursive: true });
   logFilePath = path.join(logDirectory, 'main.log');
   rotateIfNeeded(logFilePath);
+
+  // Terminal cerrada (Linux: la app se lanzó desde una terminal que ya no
+  // existe, o su salida iba a un pipe que terminó). Escribir en stdout emite
+  // EPIPE de forma ASÍNCRONA como 'error' del stream; sin listener se vuelve
+  // uncaughtException, cuyo handler hace console.error → otro EPIPE → bucle
+  // de ~1000 líneas/s que llenaba main.log. Al primer error de stdout/stderr
+  // se deja de escribir en consola; el archivo de log sigue recibiendo todo.
+  let consoleAlive = true;
+  const onStreamError = (): void => {
+    consoleAlive = false;
+  };
+  process.stdout?.on?.('error', onStreamError);
+  process.stderr?.on?.('error', onStreamError);
+  const toConsole = (write: (...values: unknown[]) => void, values: unknown[]): void => {
+    if (!consoleAlive) return;
+    try {
+      write(...values);
+    } catch {
+      consoleAlive = false;
+    }
+  };
 
   const original = {
     log: console.log.bind(console),
@@ -73,15 +100,15 @@ export function initAppLogger(logDirectory: string, appVersion: string): string 
     error: console.error.bind(console),
   };
   console.log = (...values: unknown[]): void => {
-    original.log(...values);
+    toConsole(original.log, values);
     append('INFO ', values);
   };
   console.warn = (...values: unknown[]): void => {
-    original.warn(...values);
+    toConsole(original.warn, values);
     append('WARN ', values);
   };
   console.error = (...values: unknown[]): void => {
-    original.error(...values);
+    toConsole(original.error, values);
     append('ERROR', values);
   };
   initialized = true;
