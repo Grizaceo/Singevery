@@ -102,7 +102,9 @@ export function AudioTab({
         if (cancelled) return;
         setMicError(
           err instanceof DOMException && err.name === 'NotAllowedError'
-            ? 'Permiso de micrófono denegado. Concede acceso en Ajustes de Windows.'
+            ? window.api?.platform === 'linux'
+              ? 'Permiso de micrófono denegado. Revisa que la entrada no esté bloqueada en la configuración de audio del sistema.'
+              : 'Permiso de micrófono denegado. Concede acceso en Ajustes de Windows.'
             : 'No se pudo abrir el micrófono. Revisa que no esté en uso por otra app.',
         );
       }

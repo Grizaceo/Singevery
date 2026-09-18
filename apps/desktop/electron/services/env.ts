@@ -12,6 +12,10 @@ export function loadDotEnv(): void {
     // ya no empaqueta ningún .env: hacerlo repartía el token del desarrollador
     // en texto plano a todo el que instalara la app.
     path.join(process.resourcesPath, '.env'),
+    // Linux empaquetado: la instalación es de solo lectura (AppImage montado,
+    // /opt de root), así que el .env del usuario va en su carpeta de datos
+    // (~/.config/<app>/.env). En Windows no suele existir y no cambia nada.
+    path.join(app.getPath('userData'), '.env'),
     path.join(process.cwd(), '.env'),
     path.join(app.getAppPath(), '.env'),
     // Desde dist-electron/electron/services → repo root
