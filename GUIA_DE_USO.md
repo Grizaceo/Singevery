@@ -6,7 +6,7 @@ No necesitas saber nada de programación. Esta guía cubre todo, desde instalar 
 
 ## 1. Requisitos
 
-* Windows 10 (versión 1809 o más nueva) o Windows 11, de 64 bits.
+* Windows 10 (versión 1809 o más nueva) o Windows 11, de 64 bits, **o** Linux de 64 bits (Wayland o X11, con PipeWire o PulseAudio).
 * Conexión a internet (para identificar canciones y buscar letras).
 * Parlantes o micrófono, según cómo escuches música (ver sección 3).
 
@@ -18,11 +18,13 @@ No necesitas saber nada de programación. Esta guía cubre todo, desde instalar 
 
 Para desinstalar: Configuración de Windows → Aplicaciones → Singevery → Desinstalar.
 
+**Linux:** descarga `Singevery-x.y.z-x86_64.AppImage`, dale permiso de ejecución (`chmod +x`) y ábrelo. Detalles, atajos y diferencias con Windows en `apps/desktop/LINUX.md`.
+
 ## 3. Primer uso: reconocer una canción
 
 Abre Singevery. Verás el widget transparente con su barra de controles. Pon música y elige **cómo escuchará la app**:
 
-* **Audio del sistema** (botón "Capturar audio del sistema"): para cuando la música suena **en el mismo PC** (Spotify, YouTube, etc.). Es el modo más preciso: además del reconocimiento, usa la información de reproducción de Windows para saber la canción y la posición exacta.
+* **Audio del sistema** (botón "Capturar audio del sistema"): para cuando la música suena **en el mismo PC** (Spotify, YouTube, etc.). Es el modo más preciso: además del reconocimiento, usa la información de reproducción del sistema (Windows, o MPRIS en Linux) para saber la canción y la posición exacta.
 * **Micrófono** (botón "Capturar micrófono"): para cuando la música suena **fuera del PC** (un parlante, un equipo, otra habitación). El PC escucha por el micrófono e identifica la canción, como hace Shazam.
 
 Tras unos segundos de escucha aparece la canción identificada y se carga la letra sincronizada. La línea actual se muestra grande al centro, con las líneas anterior y siguiente como contexto. Para detener, usa el botón de **detener reconocimiento**.
@@ -55,6 +57,7 @@ Sin configurar nada, Singevery reconoce con su motor principal. Si quieres un se
 
 1. Crea una cuenta en https://audd.io y copia tu **API token**.
 2. En la carpeta donde instalaste Singevery, crea un archivo de texto llamado exactamente `.env` con esta línea: `AUDD_API_TOKEN=tu_token_aqui`
+   - **Linux:** la carpeta de instalación es de solo lectura; pon el `.env` en `~/.config/singevery-desktop/.env`.
 3. Reinicia Singevery.
 
 Si esto te suena complicado, puedes ignorarlo: la app funciona sin AudD.
@@ -75,6 +78,12 @@ mouse**:
 
 Mientras el modo tangible está activo aparece un aviso abajo recordando cómo
 salir.
+
+**En Linux:** en Hyprland los atajos se activan solos al abrir la app; en otros
+escritorios asígnalos a los comandos `singevery --sing`, `singevery --tangible`
+y `singevery --move=left|right|up|down`. En Hyprland el widget deja pasar los
+clics igual que en Windows; en otros escritorios Wayland no (límite de
+Electron): muévelo o colápsalo a la píldora si estorba.
 
 ### Limitación conocida: pantalla completa exclusiva
 

@@ -1,10 +1,8 @@
 # Correr en Windows (captura de audio del sistema)
 
-La captura de **audio del sistema** (loopback) de Electron es **solo Windows/macOS**
-(lo dice la doc oficial: `audio: 'loopback'` *Windows only for loopback*). En
-**WSL/Linux el loopback no existe** y, además, WSLg no puede "oír" el audio de
-apps de Windows. Por eso, para capturar lo que suena en Spotify/navegador de
-Windows, hay que correr la app **nativa en Windows**.
+Para capturar lo que suena en Spotify/navegador **de Windows** hay que correr la
+app **nativa en Windows**: desde WSL, WSLg no puede "oír" el audio de las apps
+de Windows. (En Linux nativo el loopback sí funciona: ver `LINUX.md`.)
 
 > El micrófono sí funciona en WSL (ver el botón "Micrófono"); esta guía es para
 > el audio de sistema con loopback.

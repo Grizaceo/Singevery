@@ -18,6 +18,8 @@ Descarga el instalador de Windows desde **[GitHub Releases](https://github.com/G
 
 > **SmartScreen:** el instalador no está firmado con certificado de código. Windows puede mostrar *"Windows protegió tu PC"*. Pulsa **Más información → Ejecutar de todos modos** para continuar.
 
+**Linux:** `Singevery-x.y.z-x86_64.AppImage` (Wayland o X11). Integración con Hyprland, MPRIS y diferencias con Windows en [`apps/desktop/LINUX.md`](apps/desktop/LINUX.md).
+
 ## Demo
 
 <p align="center">
@@ -38,6 +40,7 @@ En la grabación:
 - **Sincroniza la letra** en tiempo real con resaltado karaoke y corrección de deriva.
 - **Overlay transparente** sobre el escritorio: modo pill (SING), click-through mientras cantas, arrastrable.
 - **Windows:** integración con el reproductor del SO vía SMTC (Spotify, navegador, etc.) como reloj maestro cuando está disponible.
+- **Linux:** lo mismo vía MPRIS (D-Bus): Spotify, Firefox/Zen, Chromium, VLC, mpv…
 
 ## Ayudas de lectura (cantar en idiomas que no lees)
 
