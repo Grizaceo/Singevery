@@ -14,6 +14,7 @@ import { SyncEngine } from './syncEngine';
 import { SyncClock } from './syncClock';
 import { AutoRetry } from './autoRetry';
 import { DisplayAppearance } from './displayAppearance';
+import { IdentityArbiter, type WrongSongStrikes, type AudioBoundaryKind } from './identityArbiter';
 import {
   adjustMatchPosition,
   projectAnchoredPosition,
@@ -39,31 +40,9 @@ import type { OffsetStore, CalibrationStore, DisplayStore, TranslationStore, Rea
 import { translateLines } from '../services/translate';
 import type { RenderModel, Status, TimedLyrics, TrackMatch } from '../../src/types';
 
-export type { RecognitionPhase };
+export type { RecognitionPhase, WrongSongStrikes, AudioBoundaryKind };
 
 const IDLE_MESSAGE = 'Esperando música...';
-
-/**
- * Insistencia del reconocimiento por audio en una canción distinta a la que se
- * muestra. `titleStillSays` guarda qué seguía diciendo el título del SO cuando
- * empezó la racha: si el SO nunca cambió, el audio está solo y necesita muchas
- * más confirmaciones para romper el lock.
- */
-export interface WrongSongStrikes {
-  songIdentified: string;
-  consecutiveHits: number;
-  titleStillSays: string;
-}
-
-/**
- * Corte de pista visto por el monitor local de audio (renderer):
- *   - 'gap'     → hueco de silencio entre canciones. Señal FUERTE: el
- *                 reproductor terminó una pista y empezó otra.
- *   - 'novelty' → el timbre cambió de golpe sin hueco (crossfade, mezcla).
- *                 Señal DÉBIL: sirve para re-identificar antes, no para
- *                 saltarse la histéresis.
- */
-export type AudioBoundaryKind = 'gap' | 'novelty';
 
 /** Estado interno expuesto al endpoint de diagnóstico (solo lectura). */
 export interface StateDiagnostics {
@@ -134,37 +113,6 @@ export class StateStore {
   private lastMatchKey: string | null = null;
   private currentTrackKey: string | null = null;
 
-  // Histéresis de cambio de canción. El loop de corrección re-identifica con el
-  // micrófono cada ~18s; una mis-identificación puntual (ruido, versión/remaster
-  // con título que normaliza distinto) NO debe arrancar la letra que ya se está
-  // mostrando. Sólo cambiamos cuando la MISMA pista nueva se confirma en varios
-  // ciclos consecutivos.
-  private readonly CHANGE_CONFIRM_COUNT = 2;
-
-  // Cuántas veces seguidas debe insistir el audio para romper el lock cuando el
-  // SISTEMA OPERATIVO lo contradice (su sesión sigue diciendo la canción
-  // actual). Ahí solo hay UNA señal de cambio y las señales están en conflicto:
-  // se le da mucho más margen antes de hacerle caso. Si además el título del SO
-  // cambia, son dos señales independientes y basta CHANGE_CONFIRM_COUNT.
-  private readonly WRONG_SONG_STRIKE_LIMIT = 5;
-
-  /** Insistencia del reconocedor en una pista distinta a la que se muestra. */
-  private wrongSong: WrongSongStrikes | null = null;
-
-  /** Última pista que reportó el SO (haya coincidido o no con la actual). */
-  private lastExternalTitle: { title: string; artist: string; at: number } | null = null;
-  /** Último evento del SO de cualquier tipo: prueba de que la sesión vive. */
-  private lastExternalActivityAt = 0;
-  /** Sin señal del SO en este lapso, su último título ya no dice nada. */
-  private static readonly EXTERNAL_LIVENESS_MS = 30_000;
-
-  // Pista PROVISIONAL: entró por un título del SO poco identificable ("Awake",
-  // "Alone", "Lucky Star" — ver titleDistinctiveness). Sirve para mostrar algo
-  // ya, pero no es un lock: cuando el reconocimiento por audio (que sí sabe qué
-  // suena) diga otra cosa, se le hace caso al instante en vez de gastar los dos
-  // ciclos de histéresis. Un título genérico es un hint, nunca una certeza.
-  private currentTrackProvisional = false;
-
   // Claves alias de la pista ACTUAL. La misma canción llega con metadata
   // distinta según la fuente (AudD: "Houdini"/"Dua Lipa"; SMTC de YouTube:
   // "Dua Lipa - Houdini (Official Video)"/"DuaLipaVEVO"). Cuando la identidad
@@ -173,66 +121,14 @@ export class StateStore {
   // comparación exacta (barata) y sin recargar la letra.
   private trackAliasKeys = new Set<string>();
 
-  // Fuente externa suprimida. Cuando el micrófono maneja audio EXTERNO al PC
-  // (parlante de la pieza, teléfono), las sesiones de medios de Windows (SMTC)
-  // son irrelevantes y no deben cambiar la pista, la posición ni el play/pausa:
-  // pisarían la letra que identificó el micrófono. El renderer lo activa al
-  // iniciar reconocimiento por micrófono y lo apaga al parar / cambiar a system.
-  private externalInputSuppressed = false;
+  /** Arbitraje "¿en quién confiar: MPRIS/SMTC o el audio?" (ver identityArbiter.ts). */
+  private readonly identity: IdentityArbiter;
 
-  // Fuente de reconocimiento activa en el renderer (SING). Con 'system', el
-  // fingerprint del audio (AudD/Shazam) es la VERDAD de lo que suena; la
-  // sesión SMTC (p. ej. YouTube en un navegador) solo colabora si su metadata
-  // coincide con la pista en curso. Sin este arbitraje, una sesión con
-  // metadata irreconocible recargaba la letra y entraba en loop con AudD.
-  private recognitionSource: 'microphone' | 'system' | null = null;
-
-  /** true si la sesión SMTC actual corresponde a la pista mostrada; en false
-   *  sus eventos de posición/pausa se ignoran (son de OTRA cosa). */
-  private externalTrusted = true;
   private pendingAnchor: { key: string | null; position: number; at: number; sampleAt: number } | null = null;
-
-  private refreshExternalTrust(): void {
-    const external = this.lastExternalTitle;
-    this.externalTrusted = !this.externalInputSuppressed && (this.recognitionSource == null ||
-      (external != null && this.trackTitle != null && this.trackArtist != null &&
-        looksLikeSameTrack(external, {title: this.trackTitle, artist: this.trackArtist})));
-    if (!this.externalTrusted && this.clock.getDiagnostics().pauseSource === 'external') {
-      // Keep the frozen position, but return pause ownership to the audio fallback.
-      this.clock.releaseExternalPause();
-    }
-  }
-
-
-  /** Última pista SMTC ignorada por el bloqueo de identidad: sirve para
-   *  corroborar el próximo match de AudD y saltarse la histéresis. */
-  private lastUnmatchedExternal: { title: string; artist: string; at: number } | null = null;
-  private static readonly EXTERNAL_CORROBORATION_TTL_MS = 90_000;
-
-  /**
-   * Último corte de pista visto por el monitor local de audio (renderer).
-   *
-   * Es la tercera señal del arbitraje, y la única que funciona SIN reproductor
-   * del SO (parlante externo, micrófono, vinilo): un hueco de silencio entre
-   * canciones es evidencia física de que la pista terminó. Cuando el
-   * fingerprint identifica otra canción justo después de un hueco, hay dos
-   * señales independientes y el cambio se aplica sin gastar el segundo ciclo
-   * de histéresis (~20 s de letra vieja en pantalla).
-   */
-  private lastAudioBoundary: { kind: AudioBoundaryKind; at: number } | null = null;
-  /** Pasado este lapso, el corte ya no explica el match que llega. Cubre con
-   *  holgura grabar (6 s) + identificar, incluso con un reintento por medio. */
-  private static readonly BOUNDARY_CORROBORATION_TTL_MS = 30_000;
 
   /** Holgura al comparar una posición externa con la duración de la pista: las
    *  duraciones de SMTC y del reconocedor no coinciden al segundo. */
   private static readonly EXTERNAL_POSITION_SLACK_MS = 5_000;
-
-  /** Re-identificaciones ya pedidas por "la letra no explica el audio", para la
-   *  pista en curso. Se reinicia al cargar otra. */
-  private mismatchResyncs = 0;
-  /** Tope: pasadas estas, insistir no aporta (ver maybeRequestResyncOnMiss). */
-  private static readonly MISMATCH_RESYNC_LIMIT = 2;
 
   /** Pide al renderer re-identificar YA (cambio de pista no confirmable). */
   private resyncRequester: (() => void) | null = null;
@@ -300,22 +196,22 @@ export class StateStore {
           }
         : null,
       // "Lockeada" = hay letra en pantalla y su identidad NO es provisional.
-      locked: lyrics != null && !this.currentTrackProvisional,
-      provisional: this.currentTrackProvisional,
+      locked: lyrics != null && !this.identity.currentTrackProvisional,
+      provisional: this.identity.currentTrackProvisional,
       titleDistinctiveness: title ? scoreTitleDistinctiveness(title) : null,
       identity: {
-        wrongSong: this.wrongSong ? { ...this.wrongSong } : null,
-        requiredHits: this.osStillConfirmsCurrentTrack(at)
-          ? this.WRONG_SONG_STRIKE_LIMIT
-          : this.CHANGE_CONFIRM_COUNT,
-        osStillConfirmsCurrent: this.osStillConfirmsCurrentTrack(at),
-        recognitionSource: this.recognitionSource,
-        externalTrusted: this.externalTrusted,
-        externalInputSuppressed: this.externalInputSuppressed,
-        lastExternalTitle: this.lastExternalTitle,
-        lastUnmatchedExternal: this.lastUnmatchedExternal,
+        wrongSong: this.identity.wrongSong ? { ...this.identity.wrongSong } : null,
+        requiredHits: this.identity.osStillConfirmsCurrentTrack(this.trackTitle, this.trackArtist, at)
+          ? this.identity.wrongSongStrikeLimit
+          : this.identity.changeConfirmCount,
+        osStillConfirmsCurrent: this.identity.osStillConfirmsCurrentTrack(this.trackTitle, this.trackArtist, at),
+        recognitionSource: this.identity.recognitionSource,
+        externalTrusted: this.identity.externalTrusted,
+        externalInputSuppressed: this.identity.externalInputSuppressed,
+        lastExternalTitle: this.identity.lastExternalTitle,
+        lastUnmatchedExternal: this.identity.lastUnmatchedExternal,
         autoRetryPending: this.autoRetry.isPending,
-        lastAudioBoundary: this.lastAudioBoundary ? { ...this.lastAudioBoundary } : null,
+        lastAudioBoundary: this.identity.lastAudioBoundary ? { ...this.identity.lastAudioBoundary } : null,
       },
       sync: {
         displayedPositionMs: Math.round(this.clock.getDisplayedPosition(at)),
@@ -344,6 +240,10 @@ export class StateStore {
     this.translationStore = translationStore;
     this.appearance = new DisplayAppearance(displayStore, readingStore);
     this.clock = new SyncClock(offsetStore, calibrationStore);
+    this.identity = new IdentityArbiter({
+      isPausedByExternal: () => this.clock.getDiagnostics().pauseSource === 'external',
+      releaseExternalPause: () => this.clock.releaseExternalPause(),
+    });
     this.applyDisplaySettings();
     this.applyReadingSettings();
   }
@@ -395,56 +295,6 @@ export class StateStore {
     if (at - this.lastResyncRequestAt < StateStore.RESYNC_THROTTLE_MS) return;
     this.lastResyncRequestAt = at;
     this.resyncRequester();
-  }
-
-  /**
-   * Decide si una ventana de energía que NO coincide con la letra mostrada
-   * amerita re-identificar de inmediato. Es el disparador de cambio de tema
-   * por energía: el patrón vocal del audio ya no explica lo que se muestra.
-   *
-   * Solo cuando la no-coincidencia es estructural, no una mera ventana pobre:
-   *   - `confidence < ENERGY_SYNC_MIN_CONFIDENCE` (la letra no responde al
-   *     audio en ningún desplazamiento) PERO el pico de correlación es bajo
-   *     en términos absolutos. Si el pico estuviera bien pero ambigüo (chorus
-   *     trap), AudD confirmaría la misma pista: re-identificar es inocuo pero
-   *     gasta una llamada; preferimos no disparar en ese caso.
-   *   - O el desfase "mejor" rompe gravemente el tope: ni desplazando se alinea.
-   *
-   * No dispara cuando no hay letra protegida (no hay nada que re-sincronizar
-   * de forma útil) ni cuando la pista es provisional (el audio ya manda).
-   */
-  private maybeRequestResyncOnMiss(
-    correlation: EnergyCorrelation,
-    at: number,
-  ): void {
-    if (!this.resyncRequester) return;
-    // Sin letra mostrándose o sin pista lockeada no hay nada que salvar.
-    if (!this.engine.getLyrics() || this.currentTrackProvisional) return;
-    // Ya se re-identificó por esta razón y el fingerprint sigue diciendo que es
-    // la misma canción: la letra no se alinea por otro motivo (es de otra
-    // VERSIÓN de la pista, o la correlación no la explica). Volver a preguntar
-    // lo mismo no lo va a arreglar — solo gasta llamadas en bucle. Se corta
-    // hasta que cambie la pista, que es lo único que cambia la respuesta.
-    if (this.mismatchResyncs >= StateStore.MISMATCH_RESYNC_LIMIT) return;
-    const structurallyApart =
-      (correlation.confidence < ENERGY_SYNC_MIN_CONFIDENCE &&
-        correlation.peak < ENERGY_SYNC_MIN_CONFIDENCE) ||
-      Math.abs(correlation.offsetMs) > ENERGY_SYNC_MAX_CORRECTION_MS;
-    if (!structurallyApart) return;
-    this.mismatchResyncs += 1;
-    console.warn(
-      `[energía] el audio no se alinea con la letra mostrada (confianza ` +
-        `${correlation.confidence.toFixed(2)}, pico ${correlation.peak.toFixed(2)}, ` +
-        `offset ${correlation.offsetMs}ms) → re-identificando ` +
-        `(${this.mismatchResyncs}/${StateStore.MISMATCH_RESYNC_LIMIT})`,
-    );
-    if (this.mismatchResyncs >= StateStore.MISMATCH_RESYNC_LIMIT) {
-      console.warn(
-        '[energía] si el reconocedor reconfirma esta canción, la letra es de otra ' +
-          'versión de la pista: no se pedirán más re-identificaciones hasta que cambie',
-      );
-    }
-    this.requestResync(at);
   }
 
   start(intervalMs = 100): void {
@@ -501,9 +351,9 @@ export class StateStore {
     const trackKey = normalizeTrackKey(artist, title);
     this.autoRetry.cancel();
     this.trackAliasKeys.clear();
-    this.wrongSong = null;
+    this.identity.wrongSong = null;
     // La eligió el usuario: es la verdad, no un hint.
-    this.currentTrackProvisional = false;
+    this.identity.currentTrackProvisional = false;
     this.currentTrackKey = trackKey;
     this.lastMatchKey = trackKey;
     // Letra elegida a mano: no sabemos a qué grabación corresponde, así que no
@@ -586,7 +436,7 @@ export class StateStore {
       this.trackAliasKeys.clear();
       this.autoRetry.reset();
       // Pista distinta = la desalineación anterior ya no aplica.
-      this.mismatchResyncs = 0;
+      this.identity.mismatchResyncs = 0;
     }
     this.autoRetry.cancel();
     this.currentTrackKey = trackKey;
@@ -675,7 +525,7 @@ export class StateStore {
    * lo detectó, ya corta su pausa y re-identifica de inmediato.
    */
   noteAudioBoundary(kind: AudioBoundaryKind, at: number = Date.now()): void {
-    this.lastAudioBoundary = { kind, at };
+    this.identity.noteAudioBoundary(kind, at);
   }
 
   /**
@@ -685,25 +535,7 @@ export class StateStore {
    * pantalla todo ese rato.
    */
   isChangeSuspected(): boolean {
-    return this.wrongSong != null;
-  }
-
-  /**
-   * ¿Un corte de audio reciente respalda que la canción cambió DE VERDAD?
-   *
-   * Solo el hueco de silencio ('gap') cuenta: es evidencia física de que una
-   * pista terminó. La novedad espectral es demasiado fácil de disparar con un
-   * cambio de sección para saltarse la histéresis con ella.
-   *
-   * Y no vale si la sesión del SO sigue afirmando la canción que se muestra:
-   * ahí el hueco es casi seguro otra cosa (el usuario pausó, un bache de
-   * volumen) y el SO —que sí sabe qué está reproduciendo— manda.
-   */
-  private boundaryCorroborates(at: number): boolean {
-    const boundary = this.lastAudioBoundary;
-    if (!boundary || boundary.kind !== 'gap') return false;
-    if (at - boundary.at > StateStore.BOUNDARY_CORROBORATION_TTL_MS) return false;
-    return !this.osStillConfirmsCurrentTrack(at);
+    return this.identity.isChangeSuspected();
   }
 
   setRecognitionPhase(phase: RecognitionPhase): void {
@@ -739,14 +571,14 @@ export class StateStore {
     // reconciliar deriva sin recargar ni tapar la letra. Confirmar la pista
     // actual descarta cualquier cambio pendiente.
     if (this.engine.getLyrics() && this.matchesCurrentTrack(matchKey, title, artist)) {
-      this.wrongSong = null;
+      this.identity.wrongSong = null;
       // El fingerprint dice que sigue sonando lo mismo: si había un corte
       // anotado, no era un cambio de canción (una pausa, un bache de volumen).
       // Descartarlo evita que corrobore una mis-identificación posterior.
-      this.lastAudioBoundary = null;
+      this.identity.lastAudioBoundary = null;
       // Dos señales independientes (título del SO + huella del audio) dicen lo
       // mismo: la identidad deja de ser provisional y pasa a estar lockeada.
-      this.currentTrackProvisional = false;
+      this.identity.currentTrackProvisional = false;
       // Un match sin timecode (position_ms=0, p.ej. AudD omitiéndolo en una
       // mezcla con voz) no puede re-anclar: su posición cae al inicio del
       // chunk (~6s) aunque la canción lleve minutos, y un snap así rompe la
@@ -765,28 +597,32 @@ export class StateStore {
     // la misma canción, el cambio es real → confirmar sin esperar la
     // histéresis (ahorra un ciclo de corrección de ~18s).
     const now = Date.now();
-    const ext = this.lastUnmatchedExternal;
+    const ext = this.identity.lastUnmatchedExternal;
     const corroboratedByOs =
       ext != null &&
-      now - ext.at < StateStore.EXTERNAL_CORROBORATION_TTL_MS &&
+      now - ext.at < this.identity.externalCorroborationTtlMs &&
       looksLikeSameTrack({ title, artist }, ext);
 
     // Misma idea, pero con la señal que SÍ existe cuando no hay reproductor
     // accesible (parlante externo, micrófono): el monitor local oyó el hueco
     // de silencio entre pistas justo antes de este match. Dos señales
     // independientes → cambio confirmado a la primera.
-    const corroboratedByAudio = !corroboratedByOs && this.boundaryCorroborates(now);
+    const corroboratedByAudio =
+      !corroboratedByOs && this.identity.boundaryCorroborates(now, this.trackTitle, this.trackArtist);
     const corroborated = corroboratedByOs || corroboratedByAudio;
 
     // Histéresis compartida (mic + SMTC): un cambio de pista no se aplica al
     // primer indicio; una mis-identificación puntual no debe arrancar la letra.
-    if (!corroborated && !this.confirmTrackChange(matchKey)) {
+    if (
+      !corroborated &&
+      !this.identity.confirmTrackChange(matchKey, Boolean(this.engine.getLyrics()), this.trackTitle, this.trackArtist)
+    ) {
       // Aún no confirmado: mantener la letra actual intacta (no tocar la
       // posición: el anchor es de otra pista y desincronizaría la de ahora).
       return false;
     }
     if (corroborated) {
-      this.wrongSong = null;
+      this.identity.wrongSong = null;
     }
     if (corroboratedByAudio) {
       console.log(
@@ -797,11 +633,11 @@ export class StateStore {
     // El corte ya cumplió su función: consumirlo para que no corrobore también
     // el próximo match (una mis-identificación posterior no debe heredar la
     // evidencia de un hueco que ya se explicó).
-    this.lastAudioBoundary = null;
+    this.identity.lastAudioBoundary = null;
 
     // El reconocimiento por audio identifica lo que SUENA: la pista deja de ser
     // provisional aunque haya entrado por un título genérico del SO.
-    this.currentTrackProvisional = false;
+    this.identity.currentTrackProvisional = false;
     await this.loadLyricsByMetadata(
       title,
       artist,
@@ -816,81 +652,11 @@ export class StateStore {
       // alias (los próximos eventos 'track' resuelven por comparación exacta)
       // y volver a confiar en sus posiciones.
       this.trackAliasKeys.add(normalizeTrackKey(ext.artist, ext.title));
-      this.externalTrusted = true;
-      this.lastUnmatchedExternal = null;
+      this.identity.externalTrusted = true;
+      this.identity.lastUnmatchedExternal = null;
     }
-    this.refreshExternalTrust();
+    this.identity.refreshExternalTrust(this.trackTitle, this.trackArtist);
     return true;
-  }
-
-  /**
-   * Histéresis de cambio de pista para el micrófono/AudD (applyMatch): el loop
-   * de corrección re-identifica cada ~18s, así que exigir varios ciclos filtra
-   * una mis-identificación puntual. (SMTC NO la usa: sus eventos 'track' son
-   * únicos por cambio real, exigir 2 lo dejaría clavado en una canción.)
-   * Devuelve true si el cambio a `matchKey` está CONFIRMADO (recargar la letra);
-   * false si todavía no (mantener la actual).
-   * Si no hay letra mostrándose cambia de inmediato (identificación inicial o
-   * pista sin letra: no hay nada que proteger). Requiere ver la MISMA pista
-   * nueva CHANGE_CONFIRM_COUNT ciclos seguidos antes de confirmar.
-   */
-  private confirmTrackChange(matchKey: string): boolean {
-    if (!this.engine.getLyrics()) {
-      this.wrongSong = null;
-      return true;
-    }
-    // La pista en pantalla entró por un título genérico del SO: es un hint, no
-    // un lock. El audio sabe qué suena de verdad; no hay nada que proteger.
-    if (this.currentTrackProvisional) {
-      this.wrongSong = null;
-      return true;
-    }
-
-    const osConfirms = this.osStillConfirmsCurrentTrack();
-    const required = osConfirms ? this.WRONG_SONG_STRIKE_LIMIT : this.CHANGE_CONFIRM_COUNT;
-
-    if (this.wrongSong?.songIdentified === matchKey) {
-      this.wrongSong.consecutiveHits += 1;
-    } else {
-      this.wrongSong = {
-        songIdentified: matchKey,
-        consecutiveHits: 1,
-        titleStillSays: osConfirms ? (this.lastExternalTitle?.title ?? '') : '',
-      };
-    }
-
-    if (this.wrongSong.consecutiveHits >= required) {
-      if (osConfirms) {
-        console.warn(
-          `[identidad] el audio insistió ${this.wrongSong.consecutiveHits} veces en "${matchKey}" ` +
-            `mientras el SO seguía diciendo "${this.wrongSong.titleStillSays}": se rompe el lock`,
-        );
-      }
-      this.wrongSong = null;
-      return true;
-    }
-    return false;
-  }
-
-  /**
-   * ¿La sesión de medios del SO sigue afirmando la canción que se muestra?
-   *
-   * Es la SEGUNDA señal, independiente del audio. Si el SO sigue en la misma
-   * canción y el reconocedor dice otra cosa, las señales están en conflicto:
-   * una sola no basta para soltar el lock (una mis-identificación puntual
-   * arrancaría la letra correcta). Solo cuenta si la sesión está VIVA: un
-   * título viejo de una sesión muerta no confirma nada.
-   */
-  private osStillConfirmsCurrentTrack(at: number = Date.now()): boolean {
-    if (this.externalInputSuppressed) return false;
-    const external = this.lastExternalTitle;
-    if (!external) return false;
-    if (at - this.lastExternalActivityAt >= StateStore.EXTERNAL_LIVENESS_MS) return false;
-    if (this.trackTitle == null) return false;
-    return looksLikeSameTrack(
-      { title: external.title, artist: external.artist },
-      { title: this.trackTitle, artist: this.trackArtist ?? '' },
-    );
   }
 
   /** Enciende o apaga la corrección automática por energía vocal. */
@@ -956,7 +722,12 @@ export class StateStore {
     // unos pocos. El throttle de RESYNC_THROTTLE_MS evita que encadene
     // resyncs; AudD resuelve la ambigüedad (estribillo repetido) confirmando
     // la misma pista, con lo que el resync se vuelve una corrección inofensiva.
-    this.maybeRequestResyncOnMiss(correlation, at);
+    this.identity.maybeRequestResyncOnMiss(
+      correlation,
+      at,
+      Boolean(this.engine.getLyrics()),
+      this.resyncRequester ? (t: number) => this.requestResync(t) : null,
+    );
 
     if (correlation.confidence < ENERGY_SYNC_MIN_CONFIDENCE) {
       measurement.skipped = `confianza ${correlation.confidence.toFixed(2)} < ${ENERGY_SYNC_MIN_CONFIDENCE}`;
@@ -1036,7 +807,7 @@ export class StateStore {
       const pending = this.pendingAnchor;
       if (pending && sampleAt <= pending.sampleAt) return;
       const corroborated = pending != null && pending.key === this.currentTrackKey &&
-        now - pending.at <= StateStore.EXTERNAL_CORROBORATION_TTL_MS &&
+        now - pending.at <= this.identity.externalCorroborationTtlMs &&
         computeDrift(estimatedNow, pending.position + Math.max(0, now - pending.at)).action !== 'snap';
       if (!corroborated) {
         this.pendingAnchor = { key: this.currentTrackKey, position: estimatedNow, at: now, sampleAt };
@@ -1166,8 +937,7 @@ export class StateStore {
    * sean no-op para que el reproductor del PC no pise la letra del micrófono.
    */
   setExternalInputSuppressed(suppressed: boolean): void {
-    this.externalInputSuppressed = suppressed;
-    this.refreshExternalTrust();
+    this.identity.setExternalInputSuppressed(suppressed, this.trackTitle, this.trackArtist);
   }
 
   /**
@@ -1177,19 +947,16 @@ export class StateStore {
    * pista actual; null (reconocimiento parado) devuelve el mando a SMTC.
    */
   setRecognitionSource(source: 'microphone' | 'system' | null): void {
-    this.recognitionSource = source;
-    this.externalInputSuppressed = source === 'microphone';
     // A mode change is not evidence that the OS session belongs to the audio.
-    this.refreshExternalTrust();
+    this.identity.setRecognitionSource(source, this.trackTitle, this.trackArtist);
     this.pendingAnchor = null;
-    this.lastUnmatchedExternal = null;
   }
 
   /** Pausa/reanuda el reloj según el estado de reproducción del SO. */
   setPlaybackState(playing: boolean, at: number = Date.now()): void {
-    if (this.externalInputSuppressed) return;
+    if (this.identity.externalInputSuppressed) return;
     // Sesión no confiable (es de OTRA pista): su play/pausa no aplica.
-    if (!this.externalTrusted) return;
+    if (!this.identity.externalTrusted) return;
     if (playing) this.clock.resumeClock(at);
     else this.clock.pauseClock(at);
   }
@@ -1204,16 +971,16 @@ export class StateStore {
    *     reanchor duro, para que la letra no tiemble.
    */
   applyExternalPosition(positionMs: number, playing: boolean, at: number = Date.now()): void {
-    if (this.externalInputSuppressed) return;
+    if (this.identity.externalInputSuppressed) return;
     // Prueba de vida de la sesión del SO: el sidecar manda posición cada ~1s
     // pero el título solo cuando cambia. Sin esta marca no se podría distinguir
     // "el SO sigue diciendo lo mismo" de "el SO se murió hace media hora".
-    this.lastExternalActivityAt = at;
+    this.identity.lastExternalActivityAt = at;
     // Sesión no confiable: sus posiciones son de OTRA pista (p. ej. un video
     // de YouTube cuya metadata no coincide con lo que AudD identificó) y
     // tirarían la letra hacia cualquier parte. El reloj de pared + las
     // correcciones de AudD gobiernan hasta que la sesión vuelva a coincidir.
-    if (!this.externalTrusted) return;
+    if (!this.identity.externalTrusted) return;
     if (!playing) {
       this.clock.pauseClock(at);
       return;
@@ -1264,13 +1031,13 @@ export class StateStore {
     } = {},
   ): Promise<boolean> {
     // Micrófono manejando audio externo: el reproductor del PC no manda.
-    if (this.externalInputSuppressed) return false;
+    if (this.identity.externalInputSuppressed) return false;
     const { album = null, durationMs = null, positionMs = 0, at = Date.now(), playing = true } = options;
     const key = normalizeTrackKey(artist, title);
     // Se registra SIEMPRE, coincida o no: es la segunda señal del arbitraje.
     // Que el SO siga diciendo la misma canción es información, no ruido.
-    this.lastExternalTitle = { title, artist, at };
-    this.lastExternalActivityAt = at;
+    this.identity.lastExternalTitle = { title, artist, at };
+    this.identity.lastExternalActivityAt = at;
     // Comparación tolerante: el título de video de YouTube ("Artista - Canción
     // (Official Video)" con canal como artista) y la metadata canónica de AudD
     // son la MISMA pista; sin esto, cada fuente "cambiaba" la canción de la
@@ -1278,8 +1045,8 @@ export class StateStore {
     if (this.matchesCurrentTrack(key, title, artist)) {
       // La sesión SMTC coincide con la pista en curso: vuelve a ser confiable
       // (sus posiciones y play/pausa aplican).
-      this.externalTrusted = true;
-      this.lastUnmatchedExternal = null;
+      this.identity.externalTrusted = true;
+      this.identity.lastUnmatchedExternal = null;
       // La duración puede llegar en un evento posterior al que cargó la pista
       // (el sidecar la omite mientras su timeline sigue siendo el de la canción
       // anterior). Recogerla aquí habilita la cota de applyExternalPosition.
@@ -1300,10 +1067,10 @@ export class StateStore {
         return false;
       }
     } else if (
-      (this.recognitionSource === 'system' && (this.trackTitle != null || !playing)) ||
+      (this.identity.recognitionSource === 'system' && (this.trackTitle != null || !playing)) ||
       // A paused unrelated session cannot acquire ownership during cold start.
       // A playing session may still bootstrap the existing provisional workflow.
-      (this.engine.getLyrics() && this.recognitionSource != null && !isDistinctiveTitle(title))
+      (this.engine.getLyrics() && this.identity.recognitionSource != null && !isDistinctiveTitle(title))
     ) {
       // BLOQUEO DE IDENTIDAD (bug YouTube): con reconocimiento por sistema
       // activo y letra en pantalla, el fingerprint del audio es la verdad de
@@ -1313,12 +1080,12 @@ export class StateStore {
       // Se guarda para corroborar el próximo match de AudD (cambio real de
       // canción confirma rápido) y la sesión queda como NO confiable: sus
       // posiciones dejan de tirar la letra hacia otra pista.
-      this.externalTrusted = false;
+      this.identity.externalTrusted = false;
       this.clock.releaseExternalPause();
       const isNewSignal =
-        this.lastUnmatchedExternal == null ||
-        normalizeTrackKey(this.lastUnmatchedExternal.artist, this.lastUnmatchedExternal.title) !== key;
-      this.lastUnmatchedExternal = { title, artist, at };
+        this.identity.lastUnmatchedExternal == null ||
+        normalizeTrackKey(this.identity.lastUnmatchedExternal.artist, this.identity.lastUnmatchedExternal.title) !== key;
+      this.identity.lastUnmatchedExternal = { title, artist, at };
       // El evento del SO es señal fiable de que ALGO cambió aunque su metadata
       // no permita saber qué: pedir una identificación por audio de inmediato
       // en vez de esperar el próximo ciclo de corrección (~18s).
@@ -1338,16 +1105,16 @@ export class StateStore {
     // Un título poco identificable ("Awake", "Alone") se muestra igual —mejor
     // eso que una pantalla vacía— pero queda marcado como PROVISIONAL: el
     // próximo match por audio lo reemplaza sin pasar por la histéresis.
-    this.currentTrackProvisional = this.recognitionSource != null && !isDistinctiveTitle(title);
-    if (this.currentTrackProvisional) {
+    this.identity.currentTrackProvisional = this.identity.recognitionSource != null && !isDistinctiveTitle(title);
+    if (this.identity.currentTrackProvisional) {
       console.log(
         `[identidad] título genérico del SO "${title}" ` +
           `(distintividad ${scoreTitleDistinctiveness(title).toFixed(2)}) → hint, no lock`,
       );
     }
     await this.loadLyricsByMetadata(title, artist, positionMs, at, album, durationMs);
-    this.externalTrusted = true;
-    this.lastUnmatchedExternal = null;
+    this.identity.externalTrusted = true;
+    this.identity.lastUnmatchedExternal = null;
     if (!playing) this.clock.pauseClock(at);
     return true;
   }
