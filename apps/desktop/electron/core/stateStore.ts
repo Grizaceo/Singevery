@@ -13,7 +13,7 @@ import { BrowserWindow } from 'electron';
 import { SyncEngine } from './syncEngine';
 import { SyncClock } from './syncClock';
 import { AutoRetry } from './autoRetry';
-import { isColorDark } from './colorUtils';
+import { DisplayAppearance } from './displayAppearance';
 import {
   adjustMatchPosition,
   projectAnchoredPosition,
@@ -36,7 +36,6 @@ import { decodeWav } from './wavDecode';
 import { LyricsService, defaultLyricsService } from '../services/lyrics/lyricsService';
 import { NULL_OFFSET_STORE, NULL_CALIBRATION_STORE, NULL_DISPLAY_STORE, NULL_TRANSLATION_STORE, NULL_READING_STORE } from '../services/settings';
 import type { OffsetStore, CalibrationStore, DisplayStore, TranslationStore, ReadingStore } from '../services/settings';
-import { setPinyinToneType, setSpanishVariant } from '../services/romanize';
 import { translateLines } from '../services/translate';
 import type { RenderModel, Status, TimedLyrics, TrackMatch } from '../../src/types';
 
@@ -244,12 +243,8 @@ export class StateStore {
 
   private readonly displayStore: DisplayStore;
   private readonly translationStore: TranslationStore;
-  private readonly readingStore: ReadingStore;
   private readonly lyricsService: LyricsService;
-
-  /** Color resuelto por auto-contraste (null = usar manual). */
-  private autoContrastColor: string | null = null;
-  private autoLightBackground = false;
+  private readonly appearance: DisplayAppearance;
 
   /** Último modelo emitido (para feedback de precisión / diagnósticos). */
   private lastModel: RenderModel | null = null;
@@ -347,7 +342,7 @@ export class StateStore {
     this.lyricsService = lyricsService;
     this.displayStore = displayStore;
     this.translationStore = translationStore;
-    this.readingStore = readingStore;
+    this.appearance = new DisplayAppearance(displayStore, readingStore);
     this.clock = new SyncClock(offsetStore, calibrationStore);
     this.applyDisplaySettings();
     this.applyReadingSettings();
@@ -355,9 +350,7 @@ export class StateStore {
 
   /** Sincroniza ajustes de lectura (pinyin, norma del español) con romanize.ts. */
   applyReadingSettings(): void {
-    const reading = this.readingStore.get();
-    setPinyinToneType(reading.pinyinToneType);
-    setSpanishVariant(reading.spanishVariant);
+    this.appearance.applyReadingSettings();
   }
 
   /** Sincroniza ajustes visuales persistidos con el SyncEngine. */
@@ -368,35 +361,19 @@ export class StateStore {
     this.engine.renderConfig.alignment = d.alignment;
     this.engine.renderConfig.mirrorMode = d.mirrorMode;
     this.engine.renderConfig.windowSize = d.lyricsWindowSize;
-    if (d.textColorMode !== 'auto') {
+    if (this.appearance.isManualTextColor()) {
       this.clearAutoContrast();
     }
   }
 
   /** Actualiza el color efectivo desde el servicio de auto-contraste. */
   setAutoContrast(color: string, lightBackground: boolean): void {
-    this.autoContrastColor = color;
-    this.autoLightBackground = lightBackground;
+    this.appearance.setAutoContrast(color, lightBackground);
   }
 
   /** Limpia el override de auto-contraste (vuelve al color manual). */
   clearAutoContrast(): void {
-    this.autoContrastColor = null;
-    this.autoLightBackground = false;
-  }
-
-  private resolveTextAppearance(): Pick<RenderModel, 'text_color' | 'text_vignette_light'> {
-    const d = this.displayStore.get();
-    if (d.textColorMode === 'auto') {
-      return {
-        text_color: this.autoContrastColor ?? '#ffffff',
-        text_vignette_light: this.autoContrastColor ? this.autoLightBackground : false,
-      };
-    }
-    return {
-      text_color: d.textColor,
-      text_vignette_light: isColorDark(d.textColor),
-    };
+    this.appearance.clearAutoContrast();
   }
 
   attachWindow(window: BrowserWindow): void {
@@ -1392,19 +1369,6 @@ export class StateStore {
     }
   }
 
-  /** Apariencia del handle configurada por el usuario (color/tamaño/posición). */
-  private resolveHandleAppearance(): Pick<
-    RenderModel,
-    'handle_color' | 'handle_scale' | 'handle_position_x'
-  > {
-    const d = this.displayStore.get();
-    return {
-      handle_color: d.handleColor,
-      handle_scale: d.handleScale,
-      handle_position_x: d.handlePositionX,
-    };
-  }
-
   private buildBaseModel(status: Status, currentLine: string): RenderModel {
     const d = this.displayStore.get();
     return {
@@ -1415,8 +1379,8 @@ export class StateStore {
       opacity: d.opacity,
       alignment: d.alignment,
       mirror_mode: d.mirrorMode,
-      ...this.resolveTextAppearance(),
-      ...this.resolveHandleAppearance(),
+      ...this.appearance.resolveTextAppearance(),
+      ...this.appearance.resolveHandleAppearance(),
       track_title: this.trackTitle,
       track_artist: this.trackArtist,
       status,
@@ -1438,8 +1402,8 @@ export class StateStore {
     const model = this.engine.getRenderModel(this.clock.getDisplayedPosition(), 'DISPLAYING');
     const full: RenderModel = {
       ...model,
-      ...this.resolveTextAppearance(),
-      ...this.resolveHandleAppearance(),
+      ...this.appearance.resolveTextAppearance(),
+      ...this.appearance.resolveHandleAppearance(),
       track_title: this.trackTitle,
       track_artist: this.trackArtist,
       position_ms: Math.round(this.clock.getDisplayedPosition()),
