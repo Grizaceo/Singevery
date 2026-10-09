@@ -172,7 +172,11 @@ export class LlmRuntime {
     this.setState('starting');
 
     try {
-      this.proc = spawn(this.binPath, ['-m', this.modelPath, '--host', this.host, '--port', String(this.port), '--no-webui'], {
+      // Acotar KV cache; builds CPU ejecutan en CPU aunque se solicite offload.
+      this.proc = spawn(this.binPath, [
+        '-m', this.modelPath, '--host', this.host, '--port', String(this.port),
+        '--no-webui', '-c', '4096', '--gpu-layers', '99',
+      ], {
         stdio: ['ignore', 'pipe', 'pipe'],
       });
     } catch (err) {

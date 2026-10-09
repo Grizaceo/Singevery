@@ -95,6 +95,8 @@ export interface TimedLyrics {
   annotationsVersion?: number;
   /** Idioma destino de las traducciones cacheadas en `lines[].translation`. */
   translationLang?: string;
+  /** Procedencia del motor local y versión del prompt; evita reutilizar otra traducción. */
+  translationEngineKey?: string;
 }
 
 /** Una línea lista para mostrar: original + ayudas de lectura. */

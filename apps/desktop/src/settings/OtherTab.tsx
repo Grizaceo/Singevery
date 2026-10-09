@@ -147,10 +147,10 @@ export function OtherTab({
           <>
             <p className="settings-hint">
               Traduce con un modelo en tu propio equipo: sin límite diario, sin internet y sin
-              mandar las letras a nadie. Necesitas un runtime local corriendo — el más simple es{' '}
-              <strong>Ollama</strong>: instálalo y ejecuta{' '}
-              <code>ollama pull translategemma:4b</code> (unos 3 GB, especializado en traducir,
-              55 idiomas). También sirven LM Studio, llama.cpp o Jan.
+              mandar las letras a nadie. El modelo principal es <strong>Hy-MT2 1.8B Q4_K_M</strong>
+              {' '}(descarga inicial de unos 1,13 GB). El runtime integrado lo usa cuando está
+              preparado. También puedes configurar llama.cpp, LM Studio, Jan u Ollama con otro
+              modelo; se respetan tus ajustes manuales.
             </p>
             <label className="settings-label" htmlFor="local-model">
               Modelo
@@ -160,7 +160,7 @@ export function OtherTab({
               className="settings-text-input"
               type="text"
               value={translation.localModel}
-              placeholder="translategemma:4b"
+              placeholder="hymt2-singevery"
               onChange={(e) => patchTranslation({ localModel: e.target.value })}
             />
             <label className="settings-label" htmlFor="local-endpoint">
@@ -175,8 +175,8 @@ export function OtherTab({
               onChange={(e) => patchTranslation({ localEndpoint: e.target.value })}
             />
             <p className="settings-hint">
-              Por defecto apunta a Ollama. Con un modelo de 4B la canción tarda unos segundos en
-              CPU y es casi instantánea con GPU.
+              Sin runtime integrado disponible, configura la dirección y el alias de tu servidor
+              local. La velocidad depende de tu CPU/GPU y de la longitud de la letra.
             </p>
           </>
         ) : isKeyless ? (

@@ -1,7 +1,7 @@
 // ============================================================================
 // ModelDownloader — descarga del modelo GGUF bajo demanda.
 //
-// El modelo (2.5 GB) NO viaja en el instalador: se descarga la primera vez
+// El modelo Hy-MT2 (~1,13 GB) NO viaja en el instalador: se descarga la primera vez
 // que el usuario activa la traducción IA local. La descarga:
 //   - es reanudable (HTTP Range: si se corta, continúa desde donde iba);
 //   - escribe a un archivo temporal (.part) y lo renombra al terminar, así un

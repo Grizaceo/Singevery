@@ -22,7 +22,7 @@ import type { TranslationSettings } from '../../../src/types';
 import type { LlmRuntime } from './llmRuntime';
 
 /** Nombre de modelo que se reporta al endpoint embebido (cosmético). */
-export const EMBEDDED_MODEL_NAME = 'translategemma-singevery';
+export const EMBEDDED_MODEL_NAME = 'hymt2-singevery';
 
 export class EmbeddedTranslationStore implements TranslationStore {
   constructor(

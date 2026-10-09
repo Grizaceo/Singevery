@@ -40,15 +40,14 @@ export const LLM_DIST_SUBPATH = path.join('native', 'llm');
 export const LLM_MODELS_DIR = 'models';
 
 /** Nombre canónico del modelo en disco (el fine-tune futuro lo reemplaza). */
-export const DEFAULT_MODEL_FILENAME = 'translategemma-singevery.gguf';
+export const DEFAULT_MODEL_FILENAME = 'hymt2-1.8b-q4_k_m.gguf';
 
 /**
- * URL por defecto del modelo. Apunta al GGUF Q4_K_M de translategemma-4b-it
- * (mradermacher). Se puede sobreescribir con LLM_MODEL_URL (env) — útil para
+ * URL por defecto: Hy-MT2-1.8B Q4_K_M oficial de Tencent (~1,13 GB). Se puede sobreescribir con LLM_MODEL_URL (env) — útil para
  * servir el fine-tune propio desde otro origen.
  */
 export const DEFAULT_MODEL_URL =
-  'https://huggingface.co/mradermacher/translategemma-4b-it-GGUF/resolve/main/translategemma-4b-it.Q4_K_M.gguf';
+  'https://huggingface.co/tencent/Hy-MT2-1.8B-GGUF/resolve/main/Hy-MT2-1.8B-Q4_K_M.gguf';
 
 /** Puerto del runtime embebido. 8033 es el llama.cpp del sistema (manual). */
 export const LLM_PORT = 8034;

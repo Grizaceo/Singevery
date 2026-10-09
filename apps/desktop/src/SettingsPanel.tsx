@@ -64,7 +64,7 @@ export function SettingsPanel({
     apiKey: '',
     targetLang: 'es',
     localEndpoint: 'http://localhost:11434/v1/chat/completions',
-    localModel: 'translategemma:4b',
+    localModel: 'hymt2-singevery',
   });
   const [reading, setReading] = useState<ReadingSettings>({
     pinyinToneType: 'none',

@@ -9,9 +9,15 @@ import {
   llmModelPath,
   LLM_MODELS_DIR,
   DEFAULT_MODEL_FILENAME,
+  DEFAULT_MODEL_URL,
 } from '../electron/services/llm/llmPath';
 
 describe('llmPath', () => {
+  it('descarga el Hy-MT2 Q4 oficial sin reutilizar un archivo de TranslateGemma', () => {
+    expect(DEFAULT_MODEL_FILENAME).toBe('hymt2-1.8b-q4_k_m.gguf');
+    expect(DEFAULT_MODEL_URL).toBe('https://huggingface.co/tencent/Hy-MT2-1.8B-GGUF/resolve/main/Hy-MT2-1.8B-Q4_K_M.gguf');
+    expect(resolveLlmModel(undefined, '/userData')).not.toContain('translategemma');
+  });
   it('llmServerPath une raíz + native/llm/llama-server(.exe)', () => {
     expect(llmServerPath('/repo', 'win32')).toBe(path.join('/repo', LLM_DIST_SUBPATH, 'llama-server.exe'));
     expect(llmServerPath('/repo', 'linux')).toBe(path.join('/repo', LLM_DIST_SUBPATH, 'llama-server'));

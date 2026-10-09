@@ -193,6 +193,14 @@ describe('translateLines', () => {
 });
 
 describe('traducción con modelo local', () => {
+  it('rechaza omisiones y contenido inventado en líneas vacías', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => localOk('1.')));
+    expect((await translateLines(['hello'], LOCAL_CONFIG)).ok).toBe(false);
+    vi.stubGlobal('fetch', vi.fn(async () => localOk('1. hola\n2. inventado')));
+    // El reintento recibe también una respuesta inválida, no se publica.
+    expect((await translateLines(['hello', ''], LOCAL_CONFIG)).ok).toBe(false);
+  });
+
   afterEach(() => {
     vi.restoreAllMocks();
   });
@@ -281,9 +289,9 @@ describe('traducción con modelo local', () => {
 });
 
 describe('parseNumberedTranslations', () => {
-  it('recupera las líneas ignorando el preámbulo del modelo', () => {
+  it('rechaza preámbulos y texto adicional', () => {
     const raw = 'Claro, aquí tienes:\n\n1. hola\n2. mundo\n\n¿Necesitas algo más?';
-    expect(parseNumberedTranslations(raw, 2)).toEqual(['hola', 'mundo']);
+    expect(parseNumberedTranslations(raw, 2)).toBeNull();
   });
 
   it('acepta las variantes de numeración que usan los modelos', () => {
@@ -292,8 +300,8 @@ describe('parseNumberedTranslations', () => {
     expect(parseNumberedTranslations('1 - uno\n2 - dos', 2)).toEqual(['uno', 'dos']);
   });
 
-  it('reordena por número, no por posición', () => {
-    expect(parseNumberedTranslations('2. dos\n1. uno', 2)).toEqual(['uno', 'dos']);
+  it('rechaza números desordenados', () => {
+    expect(parseNumberedTranslations('2. dos\n1. uno', 2)).toBeNull();
   });
 
   it('devuelve null si falta o sobra alguna línea', () => {
@@ -303,8 +311,8 @@ describe('parseNumberedTranslations', () => {
     expect(parseNumberedTranslations('1. uno\n9. nueve', 2)).toBeNull();
   });
 
-  it('se queda con la primera aparición si el modelo repite un número', () => {
-    expect(parseNumberedTranslations('1. bueno\n1. malo\n2. dos', 2)).toEqual(['bueno', 'dos']);
+  it('rechaza números duplicados', () => {
+    expect(parseNumberedTranslations('1. bueno\n1. malo\n2. dos', 2)).toBeNull();
   });
 });
 

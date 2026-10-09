@@ -1663,7 +1663,7 @@ async function bootstrap(): Promise<void> {
     }
   });
   // Arranque automático solo si ya hay modelo en disco (la descarga es
-  // explícita vía IPC; no se descargan 2.5 GB sin que el usuario lo pida).
+  // explícita vía IPC; no se descargan 1,13 GB sin que el usuario lo pida).
   if (llmRuntime.canStart()) {
     llmRuntime.start();
   }

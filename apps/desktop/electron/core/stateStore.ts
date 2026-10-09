@@ -37,7 +37,7 @@ import { decodeWav } from './wavDecode';
 import { LyricsService, defaultLyricsService } from '../services/lyrics/lyricsService';
 import { NULL_OFFSET_STORE, NULL_CALIBRATION_STORE, NULL_DISPLAY_STORE, NULL_TRANSLATION_STORE, NULL_READING_STORE } from '../services/settings';
 import type { OffsetStore, CalibrationStore, DisplayStore, TranslationStore, ReadingStore } from '../services/settings';
-import { translateLines } from '../services/translate';
+import { translateLines, localTranslationEngineKey } from '../services/translate';
 import type { RenderModel, Status, TimedLyrics, TrackMatch } from '../../src/types';
 
 export type { RecognitionPhase, WrongSongStrikes, AudioBoundaryKind };
@@ -385,8 +385,11 @@ export class StateStore {
 
     const config = this.translationStore.get();
     const targetLang = config.targetLang;
+    const translationEngineKey = localTranslationEngineKey(config);
     const alreadyDone =
-      lyrics.translationLang === targetLang && lyrics.lines.every((l) => l.translation != null);
+      lyrics.translationLang === targetLang &&
+      lyrics.translationEngineKey === translationEngineKey &&
+      lyrics.lines.every((l) => l.translation != null);
     if (alreadyDone) return { ok: true };
 
     const result = await translateLines(
@@ -405,6 +408,7 @@ export class StateStore {
     const updated: TimedLyrics = {
       ...lyrics,
       translationLang: targetLang,
+      translationEngineKey,
       lines: lyrics.lines.map((line, i) => ({
         ...line,
         translation: result.translations![i],

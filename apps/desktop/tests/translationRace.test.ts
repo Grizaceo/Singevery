@@ -18,7 +18,8 @@ vi.mock('../electron/services/translate', async (importOriginal) => {
 
 import { StateStore } from '../electron/core/stateStore';
 import type { LyricsService } from '../electron/services/lyrics/lyricsService';
-import type { TimedLyrics, TrackMatch } from '../src/types';
+import type { TimedLyrics, TrackMatch, TranslationSettings } from '../src/types';
+import type { TranslationStore } from '../electron/services/settings';
 
 const LYRICS: TimedLyrics = {
   lines: [{ start_ms: 0, text: 'linea' }],
@@ -26,8 +27,8 @@ const LYRICS: TimedLyrics = {
   synced: true,
 };
 
-function makeState() {
-  const getLyrics = vi.fn(async () => LYRICS);
+function makeState(translationStore?: TranslationStore, lyrics = LYRICS) {
+  const getLyrics = vi.fn(async () => lyrics);
   const updateCachedLyrics = vi.fn(async () => {});
   const lyricsService = {
     getLyrics,
@@ -35,7 +36,7 @@ function makeState() {
     describeCachedTrack: () => null,
     getProviderNames: () => ['lrclib'],
   } as unknown as LyricsService;
-  const state = new StateStore(null, undefined, lyricsService);
+  const state = new StateStore(null, undefined, lyricsService, undefined, undefined, translationStore);
   return { state, updateCachedLyrics };
 }
 
@@ -49,6 +50,28 @@ function match(title: string, artist: string): TrackMatch {
 }
 
 describe('StateStore — requestTranslation con cambio de canción en vuelo', () => {
+  it('no reutiliza caché sin procedencia local ni de otro modelo', async () => {
+    translateLines.mockClear();
+    let config: TranslationSettings = {
+      provider: 'local', apiKey: '', targetLang: 'es',
+      localEndpoint: 'http://localhost:11434/v1/chat/completions', localModel: 'hymt2-singevery',
+    };
+    const store: TranslationStore = { get: () => config, set: (p) => { config = { ...config, ...p }; } };
+    const legacy: TimedLyrics = { ...LYRICS, translationLang: 'es', lines: [{ ...LYRICS.lines[0], translation: 'vieja' }] };
+    const { state, updateCachedLyrics } = makeState(store, legacy);
+    state.setRecognitionSource('system');
+    await state.applyMatch(match('Cancion A', 'Artista A'));
+    translateLines.mockResolvedValue({ ok: true, translations: ['nueva'] });
+    expect((await state.requestTranslation()).ok).toBe(true);
+    expect(translateLines).toHaveBeenCalledTimes(1);
+    const saved = updateCachedLyrics.mock.calls[0] as unknown as [string, TimedLyrics];
+    expect(saved[1].translationEngineKey).toContain('hymt2-singevery');
+    expect((await state.requestTranslation()).ok).toBe(true);
+    expect(translateLines).toHaveBeenCalledTimes(1);
+    store.set({ localModel: 'translategemma:4b' });
+    expect((await state.requestTranslation()).ok).toBe(true);
+    expect(translateLines).toHaveBeenCalledTimes(2);
+  });
   it('descarta la traducción de A si la canción cambió durante el fetch', async () => {
     const { state, updateCachedLyrics } = makeState();
     state.setRecognitionSource('system');

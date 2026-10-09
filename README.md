@@ -128,20 +128,35 @@ Configura en **Ajustes (⚙) → Traducción**:
 
 ### Modelo local (sin límites y sin internet)
 
-Traduce con un modelo en tu propio equipo: **sin cuota diaria, sin conexión y
-sin mandar las letras a un tercero**. Necesitas un runtime con API compatible
-con OpenAI; el más simple es [Ollama](https://ollama.com):
+Traduce con un modelo en tu propio equipo: **sin cuota diaria y sin mandar
+las letras a un tercero**. El modelo principal del runtime integrado es
+**Hy-MT2-1.8B Q4_K_M**, GGUF oficial de Tencent (~1,13 GB, Apache-2.0).
+La descarga inicial requiere internet; la inferencia posterior es local.
 
-```bash
-ollama pull translategemma:4b   # ~3 GB, Gemma 3 afinado para traducir, 55 idiomas
-```
+El runtime carga `userData/models/hymt2-1.8b-q4_k_m.gguf`. No reutiliza ni
+borra el archivo anterior de TranslateGemma. Para desarrollo también se puede
+usar `LLM_SERVER_BIN=/ruta/llama-server` y `LLM_MODEL_PATH=/ruta/Hy-MT2-1.8B-Q4_K_M.gguf`.
+El modelo se obtiene desde:
+https://huggingface.co/tencent/Hy-MT2-1.8B-GGUF/resolve/main/Hy-MT2-1.8B-Q4_K_M.gguf
 
-Luego en **Ajustes → Traducción → Modelo local**. Por defecto apunta a
-`http://localhost:11434/v1/chat/completions` con `translategemma:4b`; ambos
-campos son configurables, así que también sirven LM Studio, llama.cpp server o
-Jan, y cualquier otro modelo (`translategemma:12b`, `gemma3`, etc.).
+En **Ajustes → Traducción → Modelo local**, el runtime integrado preparado
+redirige automáticamente el endpoint predeterminado. Su alias es
+`hymt2-singevery`; ese alias NO es un nombre descargable de Ollama.
+Sin runtime integrado preparado, configura el endpoint y el alias que sirva
+tu llama.cpp, LM Studio, Jan u Ollama. Se conservan las configuraciones
+persistidas y endpoints personalizados; TranslateGemma sigue siendo una
+alternativa manual (`ollama pull translategemma:4b`).
 
-Con un 4B la canción tarda unos segundos en CPU y es casi instantánea con GPU.
+La caché local distingue modelo, endpoint y versión del prompt: las traducciones
+anteriores sin procedencia se recalculan al solicitar traducción local, sin borrar letras.
+
+El prompt usa contexto entre líneas, conserva negaciones/tiempos y traduce
+líneas bilingües. La validación rechaza numeración duplicada/desordenada,
+texto extra y omisiones de líneas con contenido. No garantiza fidelidad
+semántica. Por ahora se espera la respuesta de la canción completa: esta
+migración no implementa publicación progresiva. El rendimiento depende del
+equipo y la longitud de la letra; no requiere GPU, pero CPU puede ser lento.
+El proveedor gratuito predeterminado se conserva para equipos sin runtime local.
 
 DeepL y Google dan buena calidad sin instalar nada, pero requieren que consigas
 una credencial.
