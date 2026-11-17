@@ -113,7 +113,7 @@ ${electronLicense ?? '(texto de licencia de Electron no encontrado en node_modul
 Sidecar SMTC (espejo-smtc.exe) — .NET 8 y C#/WinRT (Microsoft)
 --------------------------------------------------------------------------------
 El componente que lee la sesión de medios de Windows (System Media Transport
-Controls) es un ejecutable .NET 8 propio de Singevery (licencia MIT del
+Controls) es un ejecutable .NET 8 propio de Singevery (licencia Apache-2.0 del
 proyecto). Se distribuye junto con bibliotecas de Microsoft:
 
 * WinRT.Runtime.dll — C#/WinRT (https://github.com/microsoft/CsWinRT),
@@ -136,6 +136,22 @@ paquete kuromoji (node_modules/kuromoji). IPADIC permite uso, copia,
 modificación y redistribución conservando su aviso de copyright.
 
 --------------------------------------------------------------------------------
+Runtime de traducción local (llama.cpp / llama-server)
+--------------------------------------------------------------------------------
+La traducción local embebida usa llama.cpp server (llama-server), empaquetado
+desde native/llm cuando existe en el paquete de distribución. Licencia MIT,
+Copyright (c) The ggml authors (ver el archivo LICENSE de llama.cpp).
+(https://github.com/ggml-org/llama.cpp)
+
+--------------------------------------------------------------------------------
+Modelo de traducción Hy-MT2-1.8B-GGUF (Tencent)
+--------------------------------------------------------------------------------
+El modelo Hy-MT2-1.8B-GGUF de Tencent NO se distribuye en el instalador: se
+descarga bajo demanda desde Hugging Face la primera vez que se usa la
+traducción local. Su ficha en Hugging Face declara licencia Apache-2.0.
+(https://huggingface.co/tencent/Hy-MT2-1.8B-GGUF)
+
+--------------------------------------------------------------------------------
 Servicios de terceros usados en tiempo de ejecución
 --------------------------------------------------------------------------------
 Singevery consulta en tiempo de ejecución servicios externos (LRCLIB,
@@ -151,7 +167,7 @@ const header = `AVISOS DE SOFTWARE DE TERCEROS — Singevery ${rootPkg.version}
 Este archivo enumera las bibliotecas de terceros incluidas en la aplicación
 y reproduce sus licencias. Generado con scripts/generate-third-party-notices.cjs
 (${entries.length} paquetes npm de producción).
-La licencia de Singevery está en el archivo LICENSE (MIT).
+La licencia de Singevery está en el archivo LICENSE (Apache-2.0).
 ================================================================================
 `;
 

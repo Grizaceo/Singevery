@@ -26,6 +26,13 @@ export interface RawLyrics {
   lrc?: string;
   /** Texto plano sin timestamps (fallback). */
   plain?: string;
+  /** Metadatos de la entrada elegida, cuando el proveedor los expone
+   *  (diagnóstico: id, álbum y duración de la entrada, no de la consulta). */
+  meta?: {
+    id?: number | string;
+    album?: string | null;
+    durationS?: number | null;
+  };
 }
 
 /** Un proveedor de letras (LRCLIB y, a futuro, otros). */
@@ -129,6 +136,13 @@ export interface LyricsCache {
   describeEntry?(key: string): CachedLyricsInfo | null;
   /** Invalida selectivamente todo lo que vino de una fuente. Devuelve cuántas. */
   invalidateBySource?(kind: LyricsSourceKind): number;
+  /**
+   * Epoch ms de la última re-verificación de una letra PLANA cacheada.
+   * null/ausente = nunca re-verificada (cuenta como vencida).
+   */
+  plainRecheckedAt?(key: string): number | null;
+  /** Registra que se re-verificó una plana cacheada (epoch ms). */
+  markPlainRechecked?(key: string, at?: number): void;
 }
 
 /** Caché nula (sin persistencia): default cuando aún no se inyecta la real. */

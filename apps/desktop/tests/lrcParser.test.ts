@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseLrc, plainTextToLyrics } from '../electron/services/lrcParser';
+import { parseLrc, plainTextToLyrics, spreadPlainLyrics } from '../electron/services/lrcParser';
 
 describe('parseLrc', () => {
   it('parsea timestamps estándar [mm:ss.xx]', () => {
@@ -128,5 +128,27 @@ describe('plainTextToLyrics', () => {
       { start_ms: 5_000, text: 'Line two' },
       { start_ms: 10_000, text: 'Line three' },
     ]);
+  });
+});
+
+describe('spreadPlainLyrics', () => {
+  it('reparte las líneas de forma uniforme sobre la duración', () => {
+    const lines = spreadPlainLyrics('uno\ndos\ntres\ncuatro', 200_000);
+    expect(lines).toEqual([
+      { start_ms: 0, text: 'uno' },
+      { start_ms: 50_000, text: 'dos' },
+      { start_ms: 100_000, text: 'tres' },
+      { start_ms: 150_000, text: 'cuatro' },
+    ]);
+  });
+
+  it('redondea start_ms a milisegundos enteros', () => {
+    const lines = spreadPlainLyrics('a\nb\nc', 100_000);
+    expect(lines.map((l) => l.start_ms)).toEqual([0, 33_333, 66_667]);
+  });
+
+  it('texto vacío o solo espacios → []', () => {
+    expect(spreadPlainLyrics('', 100_000)).toEqual([]);
+    expect(spreadPlainLyrics('  \n\n ', 100_000)).toEqual([]);
   });
 });

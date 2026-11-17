@@ -227,6 +227,25 @@ export function isInExpectedScript(
   return null;
 }
 
+/**
+ * Escritura dominante de un texto, para diagnóstico (logs de letras).
+ *
+ * Heurística deliberadamente simple: hangul ⇒ coreano; kana ⇒ japonés; han sin
+ * kana ⇒ chino (el japonés casi siempre trae kana en la letra, así que un han
+ * puro se atribuye a chino). Todo lo demás —incluido el latino— se reporta
+ * como 'latin'.
+ */
+export type DominantScript = 'latin' | 'ja' | 'ko' | 'zh';
+
+export function dominantScript(text: string | null | undefined): DominantScript {
+  const profile = profileScript(text ?? '');
+  if (profile.total === 0) return 'latin';
+  if (profile.hangulRatio >= SCRIPT_PRESENCE_RATIO) return 'ko';
+  if (profile.kanaRatio >= SCRIPT_PRESENCE_RATIO) return 'ja';
+  if (profile.hanRatio >= SCRIPT_PRESENCE_RATIO) return 'zh';
+  return 'latin';
+}
+
 /** Cantidad de artistas en la tabla (para diagnóstico y tests). */
 export function knownArtistCount(): number {
   return REGISTRY.size;

@@ -144,3 +144,23 @@ export function plainTextToLyrics(text: string): LyricLine[] {
       text: line,
     }));
 }
+
+/**
+ * Igual que plainTextToLyrics pero reparte las líneas de forma UNIFORME sobre
+ * la duración conocida de la pista (start_ms = round(i * durationMs / n)).
+ *
+ * Sirve cuando la consulta trae duración real (>= 30 s): un verso cada 5 s
+ * fijos desalinea toda la letra en canciones cortas o con muchos versos, y el
+ * repaso/teleprompter muestran la línea equivocada gran parte del tema.
+ */
+export function spreadPlainLyrics(text: string, durationMs: number): LyricLine[] {
+  const texts = text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+  if (texts.length === 0) return [];
+  return texts.map((line, index) => ({
+    start_ms: Math.round((index * durationMs) / texts.length),
+    text: line,
+  }));
+}

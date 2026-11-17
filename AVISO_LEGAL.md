@@ -10,17 +10,19 @@ Las bibliotecas de terceros incluidas en la aplicación y sus licencias están l
 
 ## 2. Letras de canciones
 
-Las letras que Singevery muestra **no se distribuyen con la aplicación**: se obtienen en tiempo de ejecución desde servicios de terceros (LRCLIB, Musixmatch, Letras.mus.br) y se guardan únicamente en una caché local en tu equipo para no repetir consultas.
+Las letras que Singevery muestra **no se distribuyen con la aplicación**: se obtienen en tiempo de ejecución desde servicios de terceros (LRCLIB y Letras.mus.br por defecto; Musixmatch solo con una variable de entorno experimental, ver abajo) y se guardan únicamente en una caché local en tu equipo para no repetir consultas. Para completar álbum y duración, la app también consulta iTunes Search API (itunes.apple.com) y Deezer API (api.deezer.com) con el título y el artista de la canción.
 
 Las letras son **obras protegidas por derecho de autor** y pertenecen a sus autores, compositores y editoriales. Singevery está diseñada para **uso personal y privado** (leer y cantar la letra mientras suena la música que tú ya estás reproduciendo), un uso análogo al de cualquier sitio o app de letras. No uses la aplicación para extraer, almacenar masivamente, republicar o explotar comercialmente letras de canciones.
 
 El acceso a cada servicio de letras queda sujeto a sus propios términos y condiciones. Si un titular de derechos o un servicio solicita el cese del acceso, la funcionalidad puede dejar de estar disponible sin previo aviso.
 
+Musixmatch está **desactivado por defecto**: solo se usa si defines la variable de entorno experimental `SINGEVERY_EXPERIMENTAL_MUSIXMATCH=1`. El proveedor emplea un endpoint interno no oficial y no autorizado de la app de escritorio de Musixmatch, y los términos del servicio prohíben el uso de letras con fines de karaoke. No lo actives en una instalación que vayas a distribuir o compartir.
+
 ## 3. Reconocimiento de música
 
 * El reconocimiento principal usa **shazamio-core**, un cliente **no oficial** del servicio Shazam. Singevery **no está afiliada, patrocinada ni respaldada por Shazam ni por Apple Inc.** El uso de este cliente puede no estar contemplado por los términos de servicio de Shazam; se ofrece únicamente para identificación personal de la música que ya estás escuchando.
 * Como alternativa opcional puede usarse **AudD** (api.audd.io), que requiere una cuenta y token propios del usuario y se rige por los términos de AudD.
-* La detección de la canción reproducida en el propio PC usa la API pública **System Media Transport Controls (SMTC)** de Windows.
+* La detección de la canción reproducida en el propio PC usa la API pública **System Media Transport Controls (SMTC)** de Windows; en Linux se usa **MPRIS** (D-Bus) de forma local equivalente.
 
 ## 4. Marcas
 

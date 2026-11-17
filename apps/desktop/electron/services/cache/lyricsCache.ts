@@ -60,6 +60,13 @@ export interface CacheEntry {
   playCount: number;
   /** Caché negativa: se sabe que no hay letra hasta `at + ttlMs`. */
   notFound?: { at: number; ttlMs: number; sourceHash?: string };
+  /**
+   * Última re-verificación de una letra PLANA de proveedor (epoch ms).
+   * Las planas pueden ser solo la versión sin LRC de una canción que sí tiene
+   * sincronizada en otro endpoint/álbum; sin marca (o vencida) el servicio
+   * reintenta la búsqueda una vez cada PLAIN_RECHECK_MS.
+   */
+  plainRecheckedAt?: number;
 }
 
 interface CacheIndexShape {
@@ -393,6 +400,19 @@ export class FileLyricsCache implements LyricsCache {
       }
     }
     delete this.index.entries[key];
+    this.persist();
+  }
+
+  /** Epoch ms de la última re-verificación de una plana cacheada (null = nunca). */
+  plainRecheckedAt(key: string): number | null {
+    return this.index.entries[key]?.plainRecheckedAt ?? null;
+  }
+
+  /** Registra la re-verificación de una plana cacheada. */
+  markPlainRechecked(key: string, at: number = Date.now()): void {
+    const entry = this.index.entries[key];
+    if (!entry) return;
+    entry.plainRecheckedAt = at;
     this.persist();
   }
 

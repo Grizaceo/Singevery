@@ -31,16 +31,25 @@ canción:
 - AudD recibe el fragmento de audio si ese proveedor está seleccionado o actúa
   como fallback con un token configurado;
 - SMTC de Windows aporta localmente título, artista, posición y pausa cuando el
-  reproductor lo permite.
+  reproductor lo permite; en Linux se usa MPRIS (D-Bus) de forma local
+  equivalente.
 
 El proyecto no guarda el audio después del intento. Los servicios externos
 pueden tratar la solicitud conforme a sus propias políticas.
 
 ### Búsqueda de letras
 
-La app envía metadatos como título, artista, álbum o duración a la cadena de
-proveedores configurada actualmente: LRCLIB, Musixmatch y Letras.mus.br. La
-respuesta puede guardarse en la caché local.
+Para completar álbum y duración antes de buscar la letra, la app envía el
+título y el artista a iTunes Search API (itunes.apple.com) y a Deezer API
+(api.deezer.com). Solo viajan esos metadatos.
+
+La búsqueda de letras envía título, artista, álbum y duración a la cadena de
+proveedores: LRCLIB y Letras.mus.br por defecto. Musixmatch está desactivado
+por defecto: solo se activa con la variable de entorno experimental
+SINGEVERY_EXPERIMENTAL_MUSIXMATCH=1, porque usa un endpoint interno no oficial
+y no autorizado de la app de escritorio de Musixmatch, y los términos del
+servicio prohíben el uso de letras con fines de karaoke. La respuesta puede
+guardarse en la caché local.
 
 La opción Importar LRC/TXT no envía el archivo ni conserva su ruta. El archivo
 se lee sólo después de que la persona lo elige y tiene un límite de 2 MB.
