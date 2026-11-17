@@ -107,6 +107,7 @@ export function PracticeControls({
                 </button>
                 <p className="practice-line">{line.text}</p>
                 {line.reading && <p className="practice-reading">{line.reading}</p>}
+                {line.ipa && <p className="practice-ipa">{line.ipa}</p>}
                 {line.translation && <p className="practice-translation">{line.translation}</p>}
                 <small>
                   {line.trackArtist} · {line.trackTitle} · {formatPosition(line.positionMs)}

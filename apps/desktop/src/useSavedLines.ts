@@ -11,6 +11,8 @@ export interface SavedLine {
   positionMs: number;
   text: string;
   reading?: string;
+  /** Transcripción IPA de la línea (si la canción la tiene anotada). */
+  ipa?: string;
   translation?: string;
   savedAt: string;
 }
@@ -34,6 +36,7 @@ export function savedLineFromModel(model: RenderModel, now = new Date()): SavedL
     positionMs,
     text,
     reading: lineReading(model.current_line),
+    ipa: model.current_line.ipa?.trim() || undefined,
     translation: model.current_line.translation?.trim() || undefined,
     savedAt: now.toISOString(),
   };
@@ -53,7 +56,7 @@ function csvCell(value: string | number | undefined): string {
 }
 
 export function savedLinesToCsv(lines: SavedLine[]): string {
-  const header = ['Artista', 'Canción', 'Posición (ms)', 'Letra', 'Lectura', 'Traducción', 'Guardada'];
+  const header = ['Artista', 'Canción', 'Posición (ms)', 'Letra', 'Lectura', 'IPA', 'Traducción', 'Guardada'];
   const rows = lines.map((line) =>
     [
       line.trackArtist,
@@ -61,6 +64,7 @@ export function savedLinesToCsv(lines: SavedLine[]): string {
       line.positionMs,
       line.text,
       line.reading,
+      line.ipa,
       line.translation,
       line.savedAt,
     ]

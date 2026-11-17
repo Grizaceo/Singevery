@@ -12,17 +12,17 @@
 // de aprendizaje. Por eso `detectLatinLanguage` exige puntaje mínimo Y ventaja
 // sobre el segundo, y devuelve null si no se cumple.
 //
-// Inglés y portugués se modelan aunque NO tengan motor IPA: existen justamente
-// para ganar la votación y provocar ese null.
+// Inglés y portugués se modelan aunque solo el inglés tiene motor IPA hoy:
+// el portugués existe justamente para ganar la votación y provocar ese null.
 // ============================================================================
 
 /** Idiomas que el detector sabe distinguir. */
 export type DetectedLang = 'es' | 'it' | 'fr' | 'de' | 'en' | 'pt';
 
 /** Idiomas con motor IPA implementado. */
-export type IpaLang = 'es' | 'it' | 'fr' | 'de';
+export type IpaLang = 'es' | 'it' | 'fr' | 'de' | 'en';
 
-export const IPA_LANGS: readonly IpaLang[] = ['es', 'it', 'fr', 'de'] as const;
+export const IPA_LANGS: readonly IpaLang[] = ['es', 'it', 'fr', 'de', 'en'] as const;
 
 /** ¿Este idioma detectado tiene motor IPA? */
 export function hasIpaEngine(lang: DetectedLang | null): lang is IpaLang {
@@ -165,7 +165,7 @@ export function scoreLanguages(text: string): Record<DetectedLang, number> {
  *
  * Devuelve null cuando no hay evidencia suficiente, cuando el ganador no saca
  * ventaja clara al segundo, o cuando el ganador es un idioma sin motor IPA
- * (inglés, portugués). null significa "no anotes IPA", no "es inglés".
+ * (portugués). null significa "no anotes IPA", no "es inglés".
  */
 export function detectLatinLanguage(lines: readonly string[]): IpaLang | null {
   const text = lines.join('\n').trim();

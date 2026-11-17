@@ -1,5 +1,5 @@
 import React, { useMemo, useRef, useState } from 'react';
-import type { ReadingMode, TranslationView } from './types';
+import type { IpaInfo, ReadingMode, TranslationView } from './types';
 import type { ScriptHint } from './scriptDetect';
 import './ReadingControls.css';
 
@@ -20,6 +20,11 @@ interface Props {
   showTranslate?: boolean;
   /** La letra trae transcripción IPA (japonés o idioma latino reconocido). */
   hasIpa?: boolean;
+  /** Idioma/exactitud/salvedad del IPA de la canción (viene del main). */
+  ipaInfo?: IpaInfo | null;
+  /** Estado y toggle de la guía de símbolos IPA (botón "?"). */
+  ipaGuideOpen?: boolean;
+  onIpaGuideToggle?: () => void;
 }
 
 /** Ciclo del botón de traducción: sin → debajo → lado a lado → sin. */
@@ -198,6 +203,9 @@ export function ReadingControls({
   showReadingModes = true,
   showTranslate = true,
   hasIpa = false,
+  ipaInfo = null,
+  ipaGuideOpen = false,
+  onIpaGuideToggle,
 }: Props) {
   const [helpOpen, setHelpOpen] = useState(false);
   const helpRef = useRef<HTMLDivElement>(null);
@@ -213,6 +221,12 @@ export function ReadingControls({
   }, [scriptHint, hasIpa]);
 
   const help = HELP_EXAMPLES[scriptHint] ?? HELP_EXAMPLES.other;
+
+  // El chip y el botón "?" de la guía solo tienen sentido con un modo IPA
+  // activo y con ipa_info (idioma/exactitud) calculado por el main.
+  const showIpaInfo =
+    (mode === 'ipa' || mode === 'furigana_ipa') && ipaInfo != null;
+  const ipaMetaSuffix = ipaInfo ? ` — ${ipaInfo.label} · ${ipaInfo.accuracy}` : '';
 
   return (
     <div className="reading-controls-wrap">
@@ -232,7 +246,13 @@ export function ReadingControls({
                 .filter(Boolean)
                 .join(' ')}
               onClick={() => onChange(opt.key)}
-              title={unavailable ? `${opt.title} — no disponible para esta canción` : opt.title}
+              title={
+                unavailable
+                  ? `${opt.title} — no disponible para esta canción`
+                  : (opt.key === 'ipa' || opt.key === 'furigana_ipa') && ipaInfo
+                    ? `${opt.title}${ipaMetaSuffix}`
+                    : opt.title
+              }
               aria-label={opt.title}
               aria-pressed={mode === opt.key}
             >
@@ -240,6 +260,26 @@ export function ReadingControls({
             </button>
           );
         })}
+
+        {showIpaInfo && ipaInfo && (
+          <>
+            <span className="ipa-info-chip" title={ipaInfo.caveat}>
+              IPA · {ipaInfo.label} · {ipaInfo.accuracy}
+            </span>
+            {onIpaGuideToggle && (
+              <button
+                type="button"
+                className={`chrome-button reading-btn reading-btn-ipa-guide${ipaGuideOpen ? ' active' : ''}`}
+                onClick={onIpaGuideToggle}
+                title="Guía de símbolos IPA"
+                aria-label="Guía de símbolos IPA"
+                aria-pressed={ipaGuideOpen}
+              >
+                ?
+              </button>
+            )}
+          </>
+        )}
 
         {showTranslate && onTranslationViewChange && (
           <button

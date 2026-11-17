@@ -5,7 +5,14 @@
 // devuelve un RenderModel con una ventana de `windowSize` líneas antes/después.
 // ============================================================================
 
-import type { LyricLine, RenderLine, RenderModel, Status, TimedLyrics } from '../../src/types';
+import type { IpaInfo, LyricLine, RenderLine, RenderModel, Status, TimedLyrics } from '../../src/types';
+import {
+  IPA_LANGS,
+  LANG_ACCURACY,
+  LANG_CAVEAT,
+  LANG_LABEL,
+  type IpaLang,
+} from '../services/phonetics';
 import { computeLineProgress } from './syncTiming';
 
 export interface RenderConfig {
@@ -109,6 +116,35 @@ export function targetLeadMs(gapMs: number | null): number {
   return Math.min(FAST_MAX_LEAD_MS * norm, FAST_LEAD_GAP_FRACTION * gapMs);
 }
 
+/** Metadatos del IPA japonés (kana → IPA): aproximado por naturaleza. */
+const JA_IPA_INFO: IpaInfo = {
+  lang: 'ja',
+  label: 'japonés',
+  accuracy: 'aproximada',
+  caveat:
+    'Convención fonológica estándar a partir del kana: no refleja la realización de cada cantante, y la lectura de los kanji depende del analizador morfológico (puede equivocarse).',
+};
+
+/**
+ * Traduce `TimedLyrics.ipaLang` al bloque `ipa_info` del RenderModel: las
+ * lenguas latinas toman etiqueta/exactitud/salvedad de phonetics; el
+ * japonés tiene las suyas fijas (su motor no vive en phonetics).
+ */
+function ipaInfoFor(lang: TimedLyrics['ipaLang']): IpaInfo | null {
+  if (!lang) return null;
+  if (lang === 'ja') return { ...JA_IPA_INFO };
+  if ((IPA_LANGS as readonly string[]).includes(lang)) {
+    const ipaLang = lang as IpaLang;
+    return {
+      lang: ipaLang,
+      label: LANG_LABEL[ipaLang],
+      accuracy: LANG_ACCURACY[ipaLang],
+      caveat: LANG_CAVEAT[ipaLang],
+    };
+  }
+  return null;
+}
+
 const NO_LYRICS_MODEL: RenderModel = {
   previous_lines: [],
   current_line: { text: '' },
@@ -120,6 +156,7 @@ const NO_LYRICS_MODEL: RenderModel = {
   mirror_mode: false,
   text_color: '#ffffff',
   text_vignette_light: false,
+  ipa_info: null,
 };
 
 export class SyncEngine {
@@ -149,6 +186,7 @@ export class SyncEngine {
 
   getRenderModel(positionMs: number, status: Status = 'DISPLAYING'): RenderModel {
     const lyrics = this.currentLyrics;
+    const ipaInfo = ipaInfoFor(lyrics?.ipaLang);
     if (!lyrics || !lyrics.lines || lyrics.lines.length === 0) {
       return {
         ...NO_LYRICS_MODEL,
@@ -201,6 +239,7 @@ export class SyncEngine {
           text_color: '#ffffff',
           text_vignette_light: false,
           status: 'IDLE',
+          ipa_info: ipaInfo,
         };
       }
       // Pasamos del final: anclar a la última línea.
@@ -265,6 +304,7 @@ export class SyncEngine {
       current_word_index: wordIndex >= 0 ? wordIndex : undefined,
       current_word_progress: wordProgress > 0 ? wordProgress : undefined,
       fast_pace: fastPace || undefined,
+      ipa_info: ipaInfo,
     };
   }
 }

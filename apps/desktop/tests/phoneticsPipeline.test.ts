@@ -42,6 +42,7 @@ describe('romanizeTimedLyrics — IPA de lenguas latinas', () => {
   it('anota IPA en una canción española detectada automáticamente', async () => {
     const result = await romanizeTimedLyrics(lyrics(CANCION_ES));
     expect(result.lines[1].ipa).toBe('i en el silensjo de mi koɾason te espeɾo');
+    expect(result.ipaLang).toBe('es');
   });
 
   it('anota todas las líneas, no solo la primera', async () => {
@@ -51,15 +52,20 @@ describe('romanizeTimedLyrics — IPA de lenguas latinas', () => {
     );
   });
 
-  it('NO anota una canción inglesa: no hay motor y no se inventa', async () => {
+  it('anota IPA en una canción inglesa vía CMUdict y marca ipaLang=en', async () => {
     const result = await romanizeTimedLyrics(lyrics(CANCION_EN));
-    expect(result.lines.every((line) => line.ipa === undefined)).toBe(true);
+    expect(result.ipaLang).toBe('en');
+    expect(
+      result.lines.every((line) => typeof line.ipa === 'string' && line.ipa.length > 0),
+    ).toBe(true);
+    // El inglés sale del diccionario: "night" → /naɪt/ con diptongo.
+    expect(result.lines[0].ipa).toContain('naɪt');
   });
 
   it('sella la versión de anotaciones para invalidar la caché vieja', async () => {
     const result = await romanizeTimedLyrics(lyrics(CANCION_ES));
     expect(result.annotationsVersion).toBe(ANNOTATIONS_VERSION);
-    expect(ANNOTATIONS_VERSION).toBeGreaterThanOrEqual(4);
+    expect(ANNOTATIONS_VERSION).toBe(5);
   });
 
   it('detecta italiano y usa su motor, no el español', async () => {
@@ -72,6 +78,7 @@ describe('romanizeTimedLyrics — IPA de lenguas latinas', () => {
     );
     // Geminación italiana: "notte" → /notːe/. El motor español no la produce.
     expect(result.lines[0].ipa).toContain('notːe');
+    expect(result.ipaLang).toBe('it');
   });
 });
 
