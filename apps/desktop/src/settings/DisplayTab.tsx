@@ -4,6 +4,7 @@
 // ============================================================================
 import type { DisplaySettings, ReadingSettings } from '../types';
 import type { WidgetControls } from '../widgetPrefs';
+import { AUTO_GHOST_OPTIONS_S, type AutoGhostPrefs } from '../autoGhost';
 
 export interface DisplayTabProps {
   display: DisplaySettings;
@@ -12,6 +13,8 @@ export interface DisplayTabProps {
   patchReading: (partial: Partial<ReadingSettings>) => void;
   widgetControls: WidgetControls;
   patchWidgetControls: (partial: Partial<WidgetControls>) => void;
+  autoGhost: AutoGhostPrefs;
+  patchAutoGhost: (partial: Partial<AutoGhostPrefs>) => void;
 }
 
 const TEXT_COLOR_PRESETS: { value: string; label: string }[] = [
@@ -45,6 +48,8 @@ export function DisplayTab({
   patchReading,
   widgetControls,
   patchWidgetControls,
+  autoGhost,
+  patchAutoGhost,
 }: DisplayTabProps) {
   return (
     <>
@@ -233,6 +238,34 @@ export function DisplayTab({
           />
           Ajustes (⚙)
         </label>
+
+        <label className="settings-check">
+          <input
+            type="checkbox"
+            checked={autoGhost.enabled}
+            onChange={(e) => patchAutoGhost({ enabled: e.target.checked })}
+          />
+          Volverse intangible tras un rato sin usarlo
+        </label>
+        <label className="settings-label" htmlFor="auto-ghost-delay">
+          Después de
+        </label>
+        <select
+          id="auto-ghost-delay"
+          disabled={!autoGhost.enabled}
+          value={autoGhost.idleSeconds}
+          onChange={(e) => patchAutoGhost({ idleSeconds: Number(e.target.value) })}
+        >
+          {AUTO_GHOST_OPTIONS_S.map((seconds) => (
+            <option key={seconds} value={seconds}>
+              {seconds < 60 ? `${seconds} s` : seconds === 60 ? '1 min' : `${seconds / 60} min`}
+            </option>
+          ))}
+        </select>
+        <p className="settings-hint">
+          Si no tocas el widget durante ese tiempo, deja pasar los clics a la app de atrás (modo
+          fantasma). Para recuperarlo: doble clic en la pestañita, o Ctrl+Alt+T.
+        </p>
       </section>
 
       {/* ---------------- Extras de lectura ---------------- */}

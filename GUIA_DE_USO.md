@@ -51,6 +51,8 @@ Esto es útil sobre todo con videos musicales (la versión del video puede traer
 
 En el panel **Ajustes** puedes cambiar: tamaño de letra, opacidad, **alineación**, **color de letra** (con contraste automático opcional), modo espejo (para teleprompter físico/reflejo) y el modo fantasma para que el widget no estorbe. Arrastra el widget desde su asa para moverlo y usa el borde para redimensionarlo.
 
+En **Ajustes → Display**, sección de la pestañita, está el **intangible automático** (activado por defecto, 1 min): si no tocas el widget durante un rato (15 s a 5 min, configurable), pasa solo a modo fantasma para no estorbar; para recuperarlo, doble clic en la pestañita o Ctrl+Alt+T. Se desactiva desmarcando la casilla "Volverse intangible tras un rato sin usarlo".
+
 ## 7. Reconocimiento alternativo con AudD (opcional, avanzado)
 
 Sin configurar nada, Singevery reconoce con su motor principal. Si quieres un segundo motor de respaldo (AudD, servicio externo con cuenta propia):
