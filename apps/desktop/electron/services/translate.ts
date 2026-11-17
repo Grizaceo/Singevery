@@ -159,6 +159,24 @@ export function untranslatedRatio(originals: string[], translations: string[]): 
   return considered === 0 ? 0 : identical / considered;
 }
 
+/**
+ * Vacía las líneas que el proveedor devolvió idénticas al original.
+ *
+ * Por debajo del umbral global (UNTRANSLATED_FAIL_RATIO) una traducción
+ * parcial se acepta, pero mostrar debajo de cada verso el MISMO verso como si
+ * fuera su traducción confunde ("parte traducida, parte sin traducir"): caso
+ * real con una letra japonesa en romaji, que MyMemory devuelve tal cual en la
+ * mitad de las líneas. Una línea vacía no se muestra. Las cortas (nombres,
+ * "Oh yeah") se respetan: pueden traducirse legítimamente a sí mismas. Pura.
+ */
+export function blankEchoedLines(originals: string[], translations: string[]): string[] {
+  return translations.map((translated, i) => {
+    const source = originals[i] ?? '';
+    if (source.trim().length < SUBSTANTIAL_MIN_CHARS) return translated;
+    return normalizeForCompare(source) === normalizeForCompare(translated ?? '') ? '' : translated;
+  });
+}
+
 function byteLength(text: string): number {
   return new TextEncoder().encode(text).length;
 }
@@ -767,7 +785,12 @@ export async function translateLines(
           'o que el proveedor no soporte ese par de idiomas.',
       };
     }
-    return { ok: true, translations };
+    const cleaned = blankEchoedLines(lines, translations);
+    const blanked = cleaned.filter((t, i) => t === '' && translations[i] !== '').length;
+    if (blanked > 0) {
+      console.log(`[translate] ${blanked} línea(s) volvieron idénticas al original: se omiten`);
+    }
+    return { ok: true, translations: cleaned };
   } catch (err) {
     if (budget.timedOut) {
       return {

@@ -27,7 +27,7 @@ import { romanizeTimedLyrics, needsReannotation, stripReadings } from '../romani
 import { normalizeTrackKey } from '../../core/syncTiming';
 import { buildQueryVariants } from './normalizeQuery';
 import { resolveMetadataHints } from './metadataHints';
-import { vetoLyricsByLanguage, dominantScript } from './artistLanguage';
+import { vetoLyricsByLanguage, dominantScript, isInExpectedScript } from './artistLanguage';
 
 /** Texto crudo de una letra, sea LRC o plana, para analizar su escritura. */
 function rawLyricsText(raw: RawLyrics): string {
@@ -173,8 +173,14 @@ export class LyricsService {
       // entrada. Se re-verifica cada PLAIN_RECHECK_MS; lo importado a mano no
       // se re-busca. Las caches sin soporte de marcas (NULL, dobles de test
       // antiguos) se comportan como antes: hit y devolver.
+      // Igual con una letra que NO está en la escritura de un artista conocido
+      // (caso real: YOASOBI "Idol" cacheada en inglés y Mrs. GREEN APPLE
+      // "Inferno" en romaji, aunque LRCLIB tiene la versión japonesa): la
+      // búsqueda de hoy ya prefiere la nativa, pero la caché la tapaba.
+      const scriptMismatch =
+        isInExpectedScript(query.artist, cached.lines.map((l) => l.text).join('\n')) === false;
       if (
-        !cached.synced &&
+        (!cached.synced || scriptMismatch) &&
         classifyLyricsSource(cached.source) !== 'import' &&
         this.cache.plainRecheckedAt != null &&
         this.cache.markPlainRechecked != null
@@ -183,7 +189,7 @@ export class LyricsService {
         if (recheckedAt == null || Date.now() - recheckedAt >= PLAIN_RECHECK_MS) {
           const existingRecheck = this.inflight.get(key);
           if (existingRecheck) return existingRecheck;
-          const promise = this.recheckPlain(key, query, cached).finally(() =>
+          const promise = this.recheckPlain(key, query, cached, scriptMismatch).finally(() =>
             this.inflight.delete(key),
           );
           this.inflight.set(key, promise);
@@ -212,12 +218,32 @@ export class LyricsService {
     key: string,
     query: LyricsQuery,
     cached: TimedLyrics,
+    scriptMismatch = false,
   ): Promise<TimedLyrics> {
     let fresh: TimedLyrics | null = null;
     try {
       fresh = await this.fetchAndStore(key, query, Math.min(this.opts.totalBudgetMs, PLAIN_RECHECK_BUDGET_MS));
     } catch {
       fresh = null; // error de red: la cacheada sigue siendo lo mejor
+    }
+    if (scriptMismatch) {
+      // Solo se cambia si ahora sí está en la escritura del artista y no se
+      // pierde sincronía; si no, se restaura la cacheada (fetchAndStore ya la
+      // había pisado) para no empeorar lo que había.
+      const nativeNow =
+        fresh != null &&
+        isInExpectedScript(query.artist, fresh.lines.map((l) => l.text).join('\n')) === true &&
+        (fresh.synced || !cached.synced);
+      if (!nativeNow) {
+        await this.cache.put(key, cached, {
+          title: query.title,
+          artist: query.artist,
+          album: query.album ?? null,
+          durationMs: query.durationMs ?? null,
+        });
+      }
+      this.cache.markPlainRechecked?.(key);
+      return nativeNow && fresh ? fresh : cached;
     }
     if (fresh?.synced) return fresh;
     if (!fresh) {
