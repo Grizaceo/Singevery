@@ -166,7 +166,12 @@ export type TextColorMode = 'manual' | 'auto';
 export type RecognitionProviderMode = 'auto' | 'shazam' | 'audd';
 
 export interface DisplaySettings {
+  /** Opacidad de la letra (0.2–1). */
   opacity: number;
+  /** Opacidad de la viñeta/fondo detrás de la letra (0–1; 1 = aspecto actual). */
+  backgroundOpacity: number;
+  /** Reforzar el contorno del texto cuando el fondo queda muy transparente. */
+  legibilityBoost: boolean;
   fontScale: number;
   alignment: TextAlignment;
   mirrorMode: boolean;
@@ -190,6 +195,10 @@ export interface RenderModel {
 
   font_scale: number;
   opacity: number;
+  /** Opacidad de la viñeta/fondo (0–1). Ausente en modelos antiguos = 1. */
+  background_opacity?: number;
+  /** true = halo de contorno extra cuando el fondo es casi invisible. */
+  legibility_boost?: boolean;
   alignment: "left" | "center" | "right";
   mirror_mode: boolean;
   /** Color efectivo de la letra (manual o resuelto por auto-contraste). */

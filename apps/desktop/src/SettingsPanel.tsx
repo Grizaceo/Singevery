@@ -34,6 +34,8 @@ interface SettingsPanelProps {
 
 const DEFAULT_DISPLAY: DisplaySettings = {
   opacity: 1,
+  backgroundOpacity: 1,
+  legibilityBoost: true,
   fontScale: 1,
   alignment: 'center',
   mirrorMode: false,
