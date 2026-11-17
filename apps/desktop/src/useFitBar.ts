@@ -16,9 +16,27 @@ export function barZoom(needed: number, available: number): number {
   return Math.max(BAR_MIN_ZOOM, Math.floor((available / needed) * 100) / 100);
 }
 
+/**
+ * Decide cómo acomodar la barra (pura): una sola fila con zoom si cabe con el
+ * zoom mínimo; si ni así, se permite envolver en varias filas con el zoom
+ * mínimo (mejor dos filas legibles que una fila ilegible).
+ */
+export function barLayout(neededSingleRow: number, available: number): { singleRow: boolean; zoom: number } {
+  if (!(available > 0) || !(neededSingleRow > available)) return { singleRow: true, zoom: 1 };
+  if (neededSingleRow * BAR_MIN_ZOOM <= available) {
+    return { singleRow: true, zoom: barZoom(neededSingleRow, available) };
+  }
+  return { singleRow: false, zoom: BAR_MIN_ZOOM };
+}
+
 function fit(el: HTMLElement): void {
+  // Medir como UNA fila sin zoom: con flex-wrap la barra envolvía en vez de
+  // desbordar y nunca se compactaba (caso real a 330 px: los botones de
+  // reconocimiento quedaban apilados en columna).
+  el.classList.add('fit-single-row');
   el.style.zoom = '1';
-  const zoom = barZoom(el.scrollWidth, el.clientWidth);
+  const { singleRow, zoom } = barLayout(el.scrollWidth, el.clientWidth);
+  el.classList.toggle('fit-single-row', singleRow);
   el.style.zoom = zoom === 1 ? '' : String(zoom);
 }
 

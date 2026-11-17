@@ -162,3 +162,11 @@
   letter-spacing: 0.22em;
   opacity: 0.55;
 }
+
+/* useFitBar: mientras la barra cabe en una fila (con zoom), no se envuelve;
+   así el desborde se mide y se compacta en vez de apilar botones. */
+.chrome-bar.fit-single-row,
+.chrome-bar.fit-single-row .chrome-bar-group,
+.chrome-bar.fit-single-row .recognition-controls {
+  flex-wrap: nowrap;
+}

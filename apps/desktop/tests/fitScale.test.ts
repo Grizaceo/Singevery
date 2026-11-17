@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { FIT_MIN, overflowCorrection, viewportFitScale } from '../src/teleprompter/fitScale';
-import { BAR_MIN_ZOOM, barZoom } from '../src/useFitBar';
+import { BAR_MIN_ZOOM, barLayout, barZoom } from '../src/useFitBar';
 
 describe('viewportFitScale', () => {
   it('1 en el tamaño de referencia o mayor (no agranda: eso es fontScale)', () => {
@@ -35,5 +35,17 @@ describe('barZoom', () => {
   it('1 si cabe y nunca baja de BAR_MIN_ZOOM', () => {
     expect(barZoom(300, 322)).toBe(1);
     expect(barZoom(2000, 322)).toBe(BAR_MIN_ZOOM);
+  });
+});
+
+describe('barLayout', () => {
+  it('cabe: una fila sin zoom', () => {
+    expect(barLayout(300, 322)).toEqual({ singleRow: true, zoom: 1 });
+  });
+  it('cabe compactada: una fila con zoom', () => {
+    expect(barLayout(417, 322)).toEqual({ singleRow: true, zoom: 0.77 });
+  });
+  it('ni con el zoom mínimo cabe: varias filas con zoom mínimo', () => {
+    expect(barLayout(700, 322)).toEqual({ singleRow: false, zoom: BAR_MIN_ZOOM });
   });
 });

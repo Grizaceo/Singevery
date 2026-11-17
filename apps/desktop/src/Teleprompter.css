@@ -486,3 +486,13 @@ ruby.line-spoken > rt {
         0 0 10px rgba(255, 255, 255, 0.8),
         0 1px 4px rgba(255, 255, 255, 0.45);
 }
+
+/* Mensajes de estado ("Escuchando...", "Buscando letra..."): a diferencia de
+   la letra, NO se parten a mitad de palabra (caso real 17-11: "Escuchand / o"
+   en una ventana angosta). Sin `anywhere`, una palabra que no cabe desborda
+   y el auto-ajuste (fitScale.ts, que mide scrollWidth) la achica entera. */
+.lyrics-display.is-status,
+.lyrics-display.is-status * {
+    overflow-wrap: normal;
+    word-break: normal;
+}

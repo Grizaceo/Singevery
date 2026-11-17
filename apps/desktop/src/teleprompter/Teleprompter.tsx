@@ -109,7 +109,11 @@ export const Teleprompter = React.memo(function Teleprompter({
           solaparse con los controles. */}
       {!isIdle && (
         <div className="lyrics-panel" ref={panelRef}>
-          <div className={`lyrics-display${sideBySide ? ' lyrics-side' : ''}`}>
+          <div
+            className={`lyrics-display${sideBySide ? ' lyrics-side' : ''}${
+              model.status !== 'DISPLAYING' ? ' is-status' : ''
+            }`}
+          >
             {sideBySide && (
               <div className="lyrics-side-header" aria-hidden="true">
                 <span>Letra</span>
