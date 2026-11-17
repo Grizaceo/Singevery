@@ -3,7 +3,7 @@ AVISOS DE SOFTWARE DE TERCEROS — Singevery 0.2.1-beta.2
 Este archivo enumera las bibliotecas de terceros incluidas en la aplicación
 y reproduce sus licencias. Generado con scripts/generate-third-party-notices.cjs
 (17 paquetes npm de producción).
-La licencia de Singevery está en el archivo LICENSE (MIT).
+La licencia de Singevery está en el archivo LICENSE (Apache-2.0).
 ================================================================================
 
 --------------------------------------------------------------------------------
@@ -603,7 +603,7 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 Sidecar SMTC (espejo-smtc.exe) — .NET 8 y C#/WinRT (Microsoft)
 --------------------------------------------------------------------------------
 El componente que lee la sesión de medios de Windows (System Media Transport
-Controls) es un ejecutable .NET 8 propio de Singevery (licencia MIT del
+Controls) es un ejecutable .NET 8 propio de Singevery (licencia Apache-2.0 del
 proyecto). Se distribuye junto con bibliotecas de Microsoft:
 
 * WinRT.Runtime.dll — C#/WinRT (https://github.com/microsoft/CsWinRT),

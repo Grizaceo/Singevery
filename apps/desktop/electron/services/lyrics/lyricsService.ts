@@ -20,14 +20,14 @@ import type {
   RawLyrics,
   CacheMeta,
 } from './types';
-import { NULL_LYRICS_CACHE } from './types';
+import { NULL_LYRICS_CACHE, classifyLyricsSource } from './types';
 import { providerChain } from './providers';
-import { parseLrc, plainTextToLyrics } from '../lrcParser';
+import { parseLrc, plainTextToLyrics, spreadPlainLyrics } from '../lrcParser';
 import { romanizeTimedLyrics, needsReannotation, stripReadings } from '../romanize';
 import { normalizeTrackKey } from '../../core/syncTiming';
 import { buildQueryVariants } from './normalizeQuery';
 import { resolveMetadataHints } from './metadataHints';
-import { vetoLyricsByLanguage } from './artistLanguage';
+import { vetoLyricsByLanguage, dominantScript } from './artistLanguage';
 
 /** Texto crudo de una letra, sea LRC o plana, para analizar su escritura. */
 function rawLyricsText(raw: RawLyrics): string {
@@ -38,14 +38,22 @@ function rawLyricsText(raw: RawLyrics): string {
   return raw.plain ?? '';
 }
 
-function normalizeRaw(raw: RawLyrics): TimedLyrics | null {
+/** Duración mínima de la pista para repartir una plana sobre su duración real. */
+const PLAIN_SPREAD_MIN_DURATION_MS = 30_000;
+
+function normalizeRaw(raw: RawLyrics, durationMs?: number | null): TimedLyrics | null {
   if (raw.synced && raw.lrc) {
     const lines = parseLrc(raw.lrc);
     if (lines.length === 0) return null;
     return { lines, source: raw.source, synced: true };
   }
   if (raw.plain) {
-    const lines = plainTextToLyrics(raw.plain);
+    // Con duración conocida la plana se reparte uniforme sobre la pista; sin
+    // ella se mantiene el espaciado fijo de 5 s (no hay con qué calibrar).
+    const lines =
+      durationMs != null && durationMs >= PLAIN_SPREAD_MIN_DURATION_MS
+        ? spreadPlainLyrics(raw.plain, durationMs)
+        : plainTextToLyrics(raw.plain);
     if (lines.length === 0) return null;
     return { lines, source: raw.source, synced: false };
   }
@@ -93,6 +101,21 @@ const DEFAULT_OPTIONS: LyricsServiceOptions = {
 
 /** Máximo de variantes de query a probar por proveedor. */
 const MAX_VARIANTS = 4;
+
+/**
+ * Cada cuánto se re-verifica en la red una letra PLANA cacheada que vino de un
+ * proveedor. Una plana puede ser solo la versión sin LRC de una canción que
+ * sí tiene sincronizada en otra entrada/endpoint (caso real en LRCLIB); sin
+ * re-verificación la cacheada quedaría plana para siempre.
+ */
+export const PLAIN_RECHECK_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Presupuesto de la re-verificación de una plana cacheada. Es menor que el de
+ * una búsqueda normal: aquí YA hay una letra que mostrar, así que no se hace
+ * esperar al usuario más de unos segundos por una posible mejora.
+ */
+export const PLAIN_RECHECK_BUDGET_MS = 6_000;
 
 /**
  * Versión del pipeline de búsqueda. Se mezcla en el hash de la caché negativa:
@@ -145,6 +168,28 @@ export class LyricsService {
         });
         return reannotated;
       }
+      // Una PLANA cacheada de proveedor no queda fija para siempre: puede ser
+      // la versión sin LRC de una canción que sí tiene sincronizada en otra
+      // entrada. Se re-verifica cada PLAIN_RECHECK_MS; lo importado a mano no
+      // se re-busca. Las caches sin soporte de marcas (NULL, dobles de test
+      // antiguos) se comportan como antes: hit y devolver.
+      if (
+        !cached.synced &&
+        classifyLyricsSource(cached.source) !== 'import' &&
+        this.cache.plainRecheckedAt != null &&
+        this.cache.markPlainRechecked != null
+      ) {
+        const recheckedAt = this.cache.plainRecheckedAt(key);
+        if (recheckedAt == null || Date.now() - recheckedAt >= PLAIN_RECHECK_MS) {
+          const existingRecheck = this.inflight.get(key);
+          if (existingRecheck) return existingRecheck;
+          const promise = this.recheckPlain(key, query, cached).finally(() =>
+            this.inflight.delete(key),
+          );
+          this.inflight.set(key, promise);
+          return promise;
+        }
+      }
       return cached;
     }
     if (this.cache.isNegative(key, this.providerScopeHash)) return null;
@@ -155,6 +200,40 @@ export class LyricsService {
     const promise = this.fetchAndStore(key, query).finally(() => this.inflight.delete(key));
     this.inflight.set(key, promise);
     return promise;
+  }
+
+  /**
+   * Re-verificación de una plana cacheada: repite el barrido normal y, solo si
+   * ahora devuelve una SINCRONIZADA, la usa (fetchAndStore ya la guardó). En
+   * cualquier otro caso —plana nueva, "no existe" o error de red— se conserva
+   * la cacheada y se estampa la marca para no reintentar en cada escucha.
+   */
+  private async recheckPlain(
+    key: string,
+    query: LyricsQuery,
+    cached: TimedLyrics,
+  ): Promise<TimedLyrics> {
+    let fresh: TimedLyrics | null = null;
+    try {
+      fresh = await this.fetchAndStore(key, query, Math.min(this.opts.totalBudgetMs, PLAIN_RECHECK_BUDGET_MS));
+    } catch {
+      fresh = null; // error de red: la cacheada sigue siendo lo mejor
+    }
+    if (fresh?.synced) return fresh;
+    if (!fresh) {
+      // El barrido pudo marcar "no encontrada" y pisar la entrada positiva:
+      // se restaura la plana que sí teníamos para no perderla.
+      await this.cache.put(key, cached, {
+        title: query.title,
+        artist: query.artist,
+        album: query.album ?? null,
+        durationMs: query.durationMs ?? null,
+      });
+    }
+    this.cache.markPlainRechecked?.(key);
+    // Si el barrido trajo otra plana (p. ej. repartida ya por la duración
+    // real), esa es la que quedó en caché: devolver la misma que se guardó.
+    return fresh ?? cached;
   }
 
   private async lookupWithRetry(
@@ -186,22 +265,31 @@ export class LyricsService {
     throw lastError instanceof Error ? lastError : new Error(String(lastError ?? 'presupuesto agotado'));
   }
 
-  private async fetchAndStore(key: string, query: LyricsQuery): Promise<TimedLyrics | null> {
+  private async fetchAndStore(
+    key: string,
+    query: LyricsQuery,
+    budgetMs: number = this.opts.totalBudgetMs,
+  ): Promise<TimedLyrics | null> {
     const startedAt = Date.now();
-    const deadline = startedAt + this.opts.totalBudgetMs;
+    const deadline = startedAt + budgetMs;
     const hints = this.opts.enableMetadataHints
       ? await resolveMetadataHints(query).catch(() => ({ primary: query, alternates: [] }))
       : { primary: query, alternates: [] };
     const variants = buildQueryVariants(hints.primary, hints.alternates).slice(0, MAX_VARIANTS);
-    let bestSynced: { raw: RawLyrics; query: LyricsQuery } | null = null;
-    let bestPlain: { raw: RawLyrics; query: LyricsQuery } | null = null;
+    let bestSynced: { raw: RawLyrics; query: LyricsQuery; provider: string } | null = null;
+    let bestPlain: { raw: RawLyrics; query: LyricsQuery; provider: string } | null = null;
     let sawNotFound = false;
     let lastError: unknown = null;
     let budgetExhausted = false;
     /** Se descartó alguna letra por idioma: "no encontrada" sería mentira. */
     let sawLanguageVeto = false;
+    /** Resultado por proveedor para la línea resumen del barrido. */
+    const providerStatus = new Map<string, 'sincronizada' | 'plana' | 'error' | '—'>();
 
     outer: for (const provider of this.providers) {
+      let pSynced = false;
+      let pPlain = false;
+      let pError = false;
       for (const variant of variants) {
         if (Date.now() >= deadline) {
           budgetExhausted = true;
@@ -212,6 +300,7 @@ export class LyricsService {
         try {
           raw = await this.lookupWithRetry(provider, variant, deadline);
         } catch (err) {
+          pError = true;
           console.error(
             `[lyrics] ${provider.name} falló para "${variant.artist} - ${variant.title}" (${Date.now() - t0}ms):`,
             err instanceof Error ? err.message : err,
@@ -227,6 +316,8 @@ export class LyricsService {
           sawNotFound = true;
           continue;
         }
+        if (raw.synced) pSynced = true;
+        else pPlain = true;
         // Veto por escritura: un artista japonés conocido no tiene su letra en
         // hangul. Encontrar algo NO es lo mismo que encontrar lo correcto, y
         // una letra de otro idioma es peor que ninguna (se muestra y desincroniza).
@@ -242,23 +333,45 @@ export class LyricsService {
           sawLanguageVeto = true;
           continue;
         }
+        // Detalle de la entrada cuando el proveedor lo expone (LRCLIB): id,
+        // álbum consultado, duración de la entrada y escritura dominante.
+        const metaParts: string[] = [];
+        if (raw.meta?.id != null) metaParts.push(`id=${raw.meta.id}`);
+        if (variant.album) metaParts.push(`álbum="${variant.album}"`);
+        if (raw.meta?.durationS != null) metaParts.push(`dur=${raw.meta.durationS}s`);
+        metaParts.push(`esc=${dominantScript(text)}`);
         console.log(
-          `[lyrics] ${provider.name} → ${raw.synced ? 'sincronizada' : 'plana'} para "${variant.artist} - ${variant.title}" (${Date.now() - t0}ms)`,
+          `[lyrics] ${provider.name} → ${raw.synced ? 'sincronizada' : 'plana'} para "${variant.artist} - ${variant.title}" ` +
+            `(${Date.now() - t0}ms, ${metaParts.join(' ')})`,
         );
         if (raw.synced) {
-          bestSynced = { raw, query: variant };
+          bestSynced = { raw, query: variant, provider: provider.name };
           break;
         }
-        if (!bestPlain) bestPlain = { raw, query: variant };
+        if (!bestPlain) bestPlain = { raw, query: variant, provider: provider.name };
       }
+      providerStatus.set(
+        provider.name,
+        pSynced ? 'sincronizada' : pPlain ? 'plana' : pError ? 'error' : '—',
+      );
       if (bestSynced) break;
     }
 
+    // Resumen del barrido en UNA línea: resultado por proveedor y elegida.
+    // Sin texto de letra (privacidad de logs).
+    const sweep = this.providers
+      .map((p) => `${p.name}=${providerStatus.get(p.name) ?? '—'}`)
+      .join(', ');
+    const logSweep = (elegida: string): void => {
+      console.log(`[lyrics] barrido "${query.artist} - ${query.title}": ${sweep} → elegida=${elegida}`);
+    };
+
     const chosen = bestSynced ?? bestPlain;
     const fallbackChosen = bestSynced && bestPlain ? bestPlain : null;
-    const base = chosen ? normalizeRaw(chosen.raw) : null;
-    const normalized = base ?? (fallbackChosen ? normalizeRaw(fallbackChosen.raw) : null);
+    const base = chosen ? normalizeRaw(chosen.raw, chosen.query.durationMs) : null;
+    const normalized = base ?? (fallbackChosen ? normalizeRaw(fallbackChosen.raw, fallbackChosen.query.durationMs) : null);
     if (!normalized) {
+      logSweep('ninguna');
       // Solo es un ERROR real si TODAS las consultas fallaron. Si al menos una
       // fuente respondió "no existe", el resultado honesto es "sin letra"
       // (null) — antes cualquier proveedor caído (p. ej. Musixmatch con
@@ -290,6 +403,11 @@ export class LyricsService {
     }
 
     const effectiveChosen = base ? chosen : fallbackChosen;
+    logSweep(
+      effectiveChosen
+        ? `${effectiveChosen.provider}/${normalized.synced ? 'sincronizada' : 'plana'}`
+        : 'ninguna',
+    );
     const lyrics = await romanizeTimedLyrics(normalized);
     await this.cache.put(key, lyrics, {
       title: query.title,

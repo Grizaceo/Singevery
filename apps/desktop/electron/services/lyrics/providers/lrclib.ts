@@ -41,8 +41,10 @@ export const VERSION_MISMATCH_S = 15;
 export const NATIVE_SCRIPT_BONUS = 300;
 
 interface LrcLibEntry {
+  id?: number | null;
   trackName?: string | null;
   artistName?: string | null;
+  albumName?: string | null;
   syncedLyrics?: string | null;
   plainLyrics?: string | null;
   instrumental?: boolean;
@@ -73,15 +75,26 @@ export function isOtherVersion(
  */
 function toRaw(entry: LrcLibEntry, otherVersion = false): RawLyrics | null {
   if (entry.instrumental) return null;
+  // Metadatos de la entrada para el log de diagnóstico (id, álbum, duración).
+  const meta = {
+    id: entry.id ?? undefined,
+    album: entry.albumName ?? null,
+    durationS: entry.duration ?? null,
+  };
   if (!otherVersion && entry.syncedLyrics && entry.syncedLyrics.trim()) {
-    return { source: 'lrclib', synced: true, lrc: entry.syncedLyrics };
+    return { source: 'lrclib', synced: true, lrc: entry.syncedLyrics, meta };
   }
   if (entry.plainLyrics && entry.plainLyrics.trim()) {
-    return { source: 'lrclib', synced: false, plain: entry.plainLyrics };
+    return { source: 'lrclib', synced: false, plain: entry.plainLyrics, meta };
   }
   // Otra versión y solo hay LRC: se sirve el texto sin sus timestamps.
   if (entry.syncedLyrics && entry.syncedLyrics.trim()) {
-    return { source: 'lrclib', synced: false, plain: stripLrcTimestamps(entry.syncedLyrics) };
+    return {
+      source: 'lrclib',
+      synced: false,
+      plain: stripLrcTimestamps(entry.syncedLyrics),
+      meta,
+    };
   }
   return null;
 }
@@ -211,6 +224,56 @@ function rawText(raw: RawLyrics): string {
 }
 
 /**
+ * Busca una versión SINCRONIZADA cuando /api/get devolvió una plana.
+ *
+ * Caso real: la firma exacta (artista+título+álbum+duración) puede calzar una
+ * entrada que solo tiene plainLyrics mientras la MISMA canción sin álbum (o en
+ * los resultados de búsqueda) sí tiene LRC. Se prueban en orden y se queda la
+ * primera válida:
+ *   a) /api/get con album_name vacío (solo si la consulta traía álbum);
+ *   b) /api/search por campos;
+ *   c) /api/search?q general.
+ *
+ * Una alternativa es válida si es sincronizada y NO cambia de idioma: cuando
+ * la plana exacta ya está en la escritura esperada del artista conocido
+ * (isInExpectedScript === true), la alternativa no puede estar en otra
+ * escritura (=== false). Ante cualquier error se devuelve null y el caller se
+ * queda con la plana exacta: una plana correcta nunca se pierde por un fallo
+ * en la búsqueda alternativa.
+ */
+async function findSyncedAlternative(
+  query: LyricsQuery,
+  signal?: AbortSignal,
+  exact: RawLyrics | null = null,
+): Promise<RawLyrics | null> {
+  const exactScript =
+    exact != null ? isInExpectedScript(query.artist, rawText(exact)) : null;
+  const isValid = (raw: RawLyrics | null): raw is RawLyrics => {
+    if (raw == null || !raw.synced) return false;
+    if (
+      exactScript === true &&
+      isInExpectedScript(query.artist, rawText(raw)) === false
+    ) {
+      return false;
+    }
+    return true;
+  };
+  try {
+    if (query.album) {
+      const noAlbum = await tryGet({ ...query, album: null }, signal);
+      if (isValid(noAlbum)) return noAlbum;
+    }
+    const searched = await trySearch(query, signal);
+    if (isValid(searched)) return searched;
+    const general = await tryGeneralSearch(query, signal);
+    if (isValid(general)) return general;
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Busca una versión de la letra en la escritura nativa del artista cuando la
  * firma exacta devolvió OTRA versión de idioma (mismo título romanizado y
  * misma duración). Devuelve null ante cualquier fallo: la letra exacta ya
@@ -238,6 +301,13 @@ export const lrclibProvider: LyricsProvider = {
   async lookup(query, signal) {
     const exact = await tryGet(query, signal);
     if (exact) {
+      // La firma exacta puede devolver solo la versión PLANA aunque exista una
+      // sincronizada compatible (LRCLIB a veces no tiene LRC para la entrada
+      // con álbum). Se intenta el upgrade antes de conformarse con la plana.
+      if (!exact.synced) {
+        const synced = await findSyncedAlternative(query, signal, exact);
+        if (synced) return synced;
+      }
       // La firma exacta calza, pero puede ser OTRA versión de idioma de la misma
       // canción (mismo título romanizado y misma duración). Solo para artistas
       // conocidos y solo si la letra exacta NO está en su escritura, se busca una

@@ -6,6 +6,22 @@ import {
   letrasProvider,
   letrasSlug,
 } from '../electron/services/lyrics/providers/letras';
+import { buildProviderChain } from '../electron/services/lyrics/providers';
+
+describe('buildProviderChain', () => {
+  it('sin flag experimental → lrclib + letras (musixmatch fuera por defecto)', () => {
+    expect(buildProviderChain({}).map((p) => p.name)).toEqual(['lrclib', 'letras']);
+    expect(
+      buildProviderChain({ SINGEVERY_EXPERIMENTAL_MUSIXMATCH: '0' }).map((p) => p.name),
+    ).toEqual(['lrclib', 'letras']);
+  });
+
+  it('con SINGEVERY_EXPERIMENTAL_MUSIXMATCH=1 → musixmatch entre lrclib y letras', () => {
+    expect(
+      buildProviderChain({ SINGEVERY_EXPERIMENTAL_MUSIXMATCH: '1' }).map((p) => p.name),
+    ).toEqual(['lrclib', 'musixmatch', 'letras']);
+  });
+});
 
 describe('lyrics providers', () => {
   afterEach(() => vi.unstubAllGlobals());
