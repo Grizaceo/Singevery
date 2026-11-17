@@ -1,0 +1,37 @@
+// ============================================================================
+// useFitBar — compacta una barra de controles cuando no cabe a lo ancho.
+//
+// Caso real (17-11): con la ventana en 340 px la barra superior necesitaba
+// 417 px y los botones de la derecha quedaban cortados. Se mide con zoom 1 y,
+// si no cabe, se aplica `zoom` (reduce el layout, no solo el dibujo) hasta un
+// mínimo legible.
+// ============================================================================
+import { useEffect, useLayoutEffect, type RefObject } from 'react';
+
+export const BAR_MIN_ZOOM = 0.6;
+
+/** Zoom (≤1) para que `needed` px quepan en `available`. Pura. */
+export function barZoom(needed: number, available: number): number {
+  if (!(available > 0) || !(needed > available)) return 1;
+  return Math.max(BAR_MIN_ZOOM, Math.floor((available / needed) * 100) / 100);
+}
+
+function fit(el: HTMLElement): void {
+  el.style.zoom = '1';
+  const zoom = barZoom(el.scrollWidth, el.clientWidth);
+  el.style.zoom = zoom === 1 ? '' : String(zoom);
+}
+
+export function useFitBar(ref: RefObject<HTMLElement | null>): void {
+  // Tras cada render (el contenido de la barra cambia con la canción y el modo).
+  useLayoutEffect(() => {
+    if (ref.current) fit(ref.current);
+  });
+  useEffect(() => {
+    const onResize = (): void => {
+      if (ref.current) fit(ref.current);
+    };
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, [ref]);
+}

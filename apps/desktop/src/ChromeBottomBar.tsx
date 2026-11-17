@@ -1,4 +1,4 @@
-import { useCallback } from 'react';
+import { useCallback, useRef } from 'react';
 import { RecognitionControls } from './RecognitionControls';
 import { SyncControls } from './SyncControls';
 import { ResizeGrip } from './ResizeGrip';
@@ -9,6 +9,7 @@ import type { DesktopApi, RenderModel } from './types';
 import type { usePitchMonitor } from './usePitchMonitor';
 import type { useMelodyReference } from './useMelodyReference';
 import './ChromeBars.css';
+import { useFitBar } from './useFitBar';
 
 /** Paso del ajuste fino por rueda del mouse (ms por muesca). */
 const WHEEL_NUDGE_MS = 1000;
@@ -40,6 +41,8 @@ export function ChromeBottomBar({
   // La rueda del mouse sobre la barra ajusta el desfase de la letra en el
   // acto (misma función que tenía el bloque de sync desplegado, ahora que
   // ese bloque vive colapsado detrás del botón ⇄).
+  const barRef = useRef<HTMLDivElement>(null);
+  useFitBar(barRef);
   const handleWheel = useCallback((e: React.WheelEvent) => {
     if (!window.api) return;
     e.preventDefault?.();
@@ -48,7 +51,7 @@ export function ChromeBottomBar({
   }, []);
 
   return (
-    <div className="chrome-bar chrome-bar-bottom" onWheel={handleWheel}>
+    <div ref={barRef} className="chrome-bar chrome-bar-bottom" onWheel={handleWheel}>
       <div className="chrome-bar-group chrome-bar-grow">
         <RecognitionControls
           recognition={recognition}

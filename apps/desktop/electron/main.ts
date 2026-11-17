@@ -38,7 +38,7 @@ import { FileLyricsCache } from './services/cache/lyricsCache';
 import { LyricsService } from './services/lyrics/lyricsService';
 import { SmtcReader } from './services/smtc/smtcReader';
 import { MprisReader } from './services/mpris/mprisReader';
-import { HyprlandWindow, isHyprlandSession, luaString, shellQuote } from './services/linux/hyprland';
+import { HyprlandWindow, isHyprlandSession, luaString, monitorWorkArea, shellQuote } from './services/linux/hyprland';
 import { parseCliCommand, type CliCommand } from './services/cliCommands';
 import { sampleSurroundingLuminance } from './services/linux/screenSample';
 import { resolveSmtcSidecar } from './services/smtc/smtcPath';
@@ -55,6 +55,8 @@ import {
   PILL_WIDTH,
   PILL_HEIGHT,
   resizeExpandedWindow,
+  defaultHandleRect,
+  handleVisibilityOffset,
   type Rect,
 } from './services/windowLayout';
 import type { RecognitionPhase } from './core/stateStore';
@@ -329,7 +331,16 @@ function createWindow(): BrowserWindow {
     clearTimeout(showFallback);
     win.show();
     win.focus();
+    if (!hyprland) void ensureHandleVisible('inicio');
   });
+  if (!hyprland) {
+    // Windows/X11: 'move' llega durante el arrastre; se verifica al asentarse.
+    let moveSettle: ReturnType<typeof setTimeout> | null = null;
+    win.on('move', () => {
+      if (moveSettle) clearTimeout(moveSettle);
+      moveSettle = setTimeout(() => void ensureHandleVisible('movimiento'), 400);
+    });
+  }
   win.once('closed', () => clearTimeout(showFallback));
   if (hyprland) {
     win.once('show', () => void onHyprlandWindowMapped(win));
@@ -444,6 +455,60 @@ async function applyBounds(rect: Rect): Promise<void> {
   if (windowMapped) await hyprland.placeAfterResize(rect);
 }
 
+/** Áreas útiles de TODOS los monitores (sin barras del escritorio). */
+async function allWorkAreas(): Promise<Rect[]> {
+  if (hyprland) {
+    const monitors = await hyprland.monitors();
+    if (monitors.length > 0) return monitors.map(monitorWorkArea);
+  }
+  return screen.getAllDisplays().map((d) => d.workArea);
+}
+
+let ensuringHandle = false;
+
+/**
+ * Garantiza que la pestañita (handle) quede dentro de la pantalla.
+ *
+ * Es la única vía para agarrar el widget cuando deja pasar los clics: si la
+ * ventana queda con su parte de arriba fuera de la pantalla (caso real 17-11
+ * en Hyprland: y = −100), el widget se vuelve intangible sin forma de
+ * recuperarlo salvo cerrarlo. Se llama tras cambios de tamaño, arrastres,
+ * atajos de mover, cambios de monitor, al arrancar y de forma periódica; mueve
+ * la ventana lo mínimo para que la pestañita se vea entera (con margen).
+ */
+async function ensureHandleVisible(reason: string): Promise<void> {
+  if (!mainWindow || mainWindow.isDestroyed() || ensuringHandle) return;
+  if (hyprland && (!windowMapped || hyprland.isDragging)) return;
+  ensuringHandle = true;
+  try {
+    const bounds = await currentBounds();
+    if (bounds.width <= 0 || bounds.height <= 0) return;
+    const handle = handleRect ?? defaultHandleRect(bounds.width);
+    const { dx, dy } = handleVisibilityOffset(bounds, handle, await allWorkAreas());
+    if (dx === 0 && dy === 0) return;
+    const x = Math.round(bounds.x + dx);
+    const y = Math.round(bounds.y + dy);
+    console.log(`[ventana] pestañita fuera de pantalla (${reason}) → se mueve dx=${dx} dy=${dy} a ${x},${y}`);
+    if (hyprland) await hyprland.moveTo(x, y);
+    else mainWindow.setPosition(x, y);
+    if (!mainWindow.isDestroyed()) scheduleBoundsSave(mainWindow);
+  } catch (err) {
+    console.warn('[ventana] no se pudo verificar la pestañita:', err);
+  } finally {
+    ensuringHandle = false;
+  }
+}
+
+/** Tras una ráfaga de setSize (arrastre del agarre), verificar una sola vez. */
+let resizeSettleTimer: ReturnType<typeof setTimeout> | null = null;
+function scheduleHandleCheckAfterResize(): void {
+  if (resizeSettleTimer) clearTimeout(resizeSettleTimer);
+  resizeSettleTimer = setTimeout(() => {
+    resizeSettleTimer = null;
+    void ensureHandleVisible('cambio de tamaño');
+  }, 300);
+}
+
 /** Centra la ventana en el monitor donde está (center() es no-op en Wayland). */
 async function centerWindow(): Promise<void> {
   if (!mainWindow || mainWindow.isDestroyed()) return;
@@ -468,6 +533,7 @@ async function onHyprlandWindowMapped(win: BrowserWindow): Promise<void> {
   if (targetBounds) await hyprland.placeAfterResize(targetBounds);
   await hyprland.focus();
   await registerHyprlandShortcuts();
+  await ensureHandleVisible('inicio');
 
   let last = '';
   const watch = setInterval(() => {
@@ -480,6 +546,9 @@ async function onHyprlandWindowMapped(win: BrowserWindow): Promise<void> {
       if (!b || key === last) return;
       last = key;
       saveWindowBounds(win, b);
+      // Los arrastres del compositor (Super+arrastre, reglas de ventana) no
+      // pasan por la app: si dejaron la pestañita fuera, se corrige aquí.
+      void ensureHandleVisible('vigilancia');
     });
   }, 3000);
   watch.unref?.();
@@ -635,7 +704,9 @@ function registerIpcHandlers(): void {
     'window:setSize',
     (_event, width: number, height: number): { ok: boolean } => {
       if (!mainWindow || mainWindow.isDestroyed()) return { ok: false };
-      return { ok: resizeExpandedWindow(mainWindow, width, height) };
+      const ok = resizeExpandedWindow(mainWindow, width, height);
+      if (ok) scheduleHandleCheckAfterResize();
+      return { ok };
     },
   );
 
@@ -660,7 +731,18 @@ function registerIpcHandlers(): void {
     (_event, x: number, y: number): { ok: boolean } => {
       if (mainWindow) {
         if (hyprland) void hyprland.moveTo(x, y);
-        else mainWindow.setPosition(Math.round(x), Math.round(y));
+        else {
+          // Límite duro durante el arrastre del renderer (Windows/X11): la
+          // ventana no puede ir a un sitio donde la pestañita deje de verse.
+          const { width: w, height: h } = mainWindow.getBounds();
+          const target = { x: Math.round(x), y: Math.round(y), width: w, height: h };
+          const { dx, dy } = handleVisibilityOffset(
+            target,
+            handleRect ?? defaultHandleRect(w),
+            screen.getAllDisplays().map((d) => d.workArea),
+          );
+          mainWindow.setPosition(target.x + dx, target.y + dy);
+        }
       }
       return { ok: true };
     },
@@ -682,6 +764,7 @@ function registerIpcHandlers(): void {
     if (!isTrustedSender(event) || !hyprland) return { ok: false, moved: false };
     const moved = await hyprland.endDrag();
     if (moved && mainWindow) scheduleBoundsSave(mainWindow);
+    await ensureHandleVisible('arrastre');
     return { ok: true, moved };
   });
 
@@ -1559,6 +1642,10 @@ async function bootstrap(): Promise<void> {
   }
 
   mainWindow = createWindow();
+  // Un monitor que se desconecta o cambia de resolución puede dejar la
+  // pestañita fuera de la pantalla: volver a verificarla.
+  screen.on('display-removed', () => void ensureHandleVisible('monitor desconectado'));
+  screen.on('display-metrics-changed', () => void ensureHandleVisible('monitor cambió'));
 
   // Melodías de referencia del profesor. Si falla, la app funciona igual: la
   // referencia automática (extraída de la propia canción) sigue disponible.
@@ -1730,11 +1817,12 @@ function setTangibleLock(next: boolean): void {
 function nudgeWindow(dx: number, dy: number): void {
   if (!mainWindow || mainWindow.isDestroyed()) return;
   if (hyprland) {
-    void hyprland.moveBy(dx, dy);
+    void hyprland.moveBy(dx, dy).then(() => ensureHandleVisible('atajo de mover'));
     return;
   }
   const [x, y] = mainWindow.getPosition();
   mainWindow.setPosition(x + dx, y + dy);
+  void ensureHandleVisible('atajo de mover');
 }
 
 /** Ejecuta un comando recibido por línea de comandos (ver cliCommands.ts). */

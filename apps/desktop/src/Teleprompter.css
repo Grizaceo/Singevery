@@ -8,8 +8,11 @@
     align-items: center;
     height: 100vh;
     width: 100vw;
-    padding: 2rem;
+    /* Márgenes proporcionales al ajuste (--fit, ver fitScale.ts): en una
+       ventana chica 2rem fijos se comían el espacio de la letra. */
+    padding: calc(2rem * var(--fit, 1));
     box-sizing: border-box;
+    overflow: hidden;
     -webkit-app-region: no-drag !important; /* Captura clics en todo el widget, evita click-through */
     pointer-events: auto; /* Fuerza captura de eventos en áreas transparentes */
 }
@@ -89,7 +92,7 @@
     width: 100%;
     max-width: 100%;
     /* deja aire para las barras fijas de arriba y abajo */
-    padding: 3rem 0.9rem 3.2rem;
+    padding: calc(3rem * max(var(--fit, 1), 0.55)) 0.9rem calc(3.2rem * max(var(--fit, 1), 0.55));
     box-sizing: border-box;
     /* Los alfas de la viñeta se multiplican por --lyrics-bg-alpha (0–1): el
        ajuste "opacidad del fondo" atenúa solo el colchón, no la letra. */

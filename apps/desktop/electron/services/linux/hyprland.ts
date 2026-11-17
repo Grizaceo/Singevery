@@ -250,6 +250,11 @@ export class HyprlandWindow {
   }
 
   /** Posición y tamaño reales (coordenadas globales del layout). */
+  /** ¿Hay un arrastre gestionado en curso? (no corregir la posición a mitad). */
+  get isDragging(): boolean {
+    return this.drag != null;
+  }
+
   async getBounds(): Promise<Rect | null> {
     const c = await this.findClient();
     if (!c) return null;

@@ -218,12 +218,14 @@ export function WidgetHandle({
     } as CSSProperties;
   }, [compositorDrag, color, scale, positionX]);
 
-  // Linux: el main necesita saber dónde está el asa para devolverle la
+  // El main necesita saber dónde está el asa: en Hyprland para devolverle la
   // entrada al widget cuando el cursor pasa encima mientras es atravesable
-  // (main.ts → setHyprlandClickThrough). `style` cubre escala y posición X.
+  // (main.ts → setHyprlandClickThrough), y en todas las plataformas para no
+  // dejarla nunca fuera de la pantalla (ensureHandleVisible). `style` cubre
+  // escala y posición X.
   useEffect(() => {
     const el = handleElRef.current;
-    if (!isLinux || !el || !api?.setHandleRect) return;
+    if (!el || !api?.setHandleRect) return;
     const setHandleRect = api.setHandleRect;
     const report = (): void => {
       const r = el.getBoundingClientRect();
@@ -238,7 +240,7 @@ export function WidgetHandle({
       window.removeEventListener('resize', report);
       void setHandleRect(null);
     };
-  }, [api, isLinux, style]);
+  }, [api, style]);
 
   return (
     <div

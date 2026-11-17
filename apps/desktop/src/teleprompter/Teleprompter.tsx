@@ -3,6 +3,7 @@ import type { ReadingMode, RenderModel, TranslationView } from '../types';
 import { LineView } from './LineView';
 import { splitPreviousTiers, splitNextTiers, tierSizes } from './teleprompterHelpers';
 import { computeLegibility } from './legibility';
+import { useFitScale } from './fitScale';
 import type { MelodyPoint } from '../audio/melody';
 import type { PitchResult } from '../audio/pitch';
 import '../Teleprompter.css';
@@ -73,7 +74,24 @@ export const Teleprompter = React.memo(function Teleprompter({
   // Cuanto más contexto pida el usuario, más chico el texto: si no, con 5
   // líneas por lado la letra se sale de la ventana.
   const contextLines = model.previous_lines.length + model.next_lines.length;
-  const sizes = tierSizes(model.font_scale, fastPace, contextLines);
+  // Auto-ajuste al tamaño real de la ventana (ver fitScale.ts).
+  const containerRef = React.useRef<HTMLDivElement>(null);
+  const panelRef = React.useRef<HTMLDivElement>(null);
+  const fit = useFitScale(
+    containerRef,
+    panelRef,
+    [model.track_title, model.track_artist, readingMode, translationView, contextLines, model.font_scale].join('|'),
+  );
+  const sizes = tierSizes(model.font_scale * fit, fastPace, contextLines);
+  // El ajuste también lo usan elementos fuera del contenedor (la insignia de
+  // "Sincronizar"): se replica en :root como --hud-fit.
+  React.useEffect(() => {
+    const root = document.documentElement;
+    root.style.setProperty('--hud-fit', String(fit));
+    return () => {
+      root.style.removeProperty('--hud-fit');
+    };
+  }, [fit]);
 
   const isIdle = model.status === 'IDLE';
   const prevTiers = splitPreviousTiers(model.previous_lines);
@@ -81,12 +99,16 @@ export const Teleprompter = React.memo(function Teleprompter({
   const sideBySide = translationView === 'side';
 
   return (
-    <div className={`teleprompter-container${vignetteClass}${boostClass}`} style={containerStyle}>
+    <div
+      ref={containerRef}
+      className={`teleprompter-container${vignetteClass}${boostClass}`}
+      style={{ ...containerStyle, ['--fit' as string]: fit }}
+    >
       {/* El título/artista ya no flota aquí: vive en la barra superior
           (ChromeTopBar) como elemento central del flex, para que no pueda
           solaparse con los controles. */}
       {!isIdle && (
-        <div className="lyrics-panel">
+        <div className="lyrics-panel" ref={panelRef}>
           <div className={`lyrics-display${sideBySide ? ' lyrics-side' : ''}`}>
             {sideBySide && (
               <div className="lyrics-side-header" aria-hidden="true">

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { WindowControls } from './WindowControls';
 import { ReadingControls } from './ReadingControls';
 import { TrackHeader } from './teleprompter/TrackHeader';
@@ -7,6 +7,7 @@ import type { DesktopApi } from './types';
 import type { ScriptHint } from './scriptDetect';
 import { readWidgetControls } from './widgetPrefs';
 import './ChromeBars.css';
+import { useFitBar } from './useFitBar';
 
 interface ChromeTopBarProps {
   api: DesktopApi | undefined;
@@ -46,6 +47,8 @@ export function ChromeTopBar({
   onCollapse,
   onOpenSettings,
 }: ChromeTopBarProps) {
+  const barRef = useRef<HTMLDivElement>(null);
+  useFitBar(barRef);
   const [importing, setImporting] = useState(false);
   const [importStatus, setImportStatus] = useState<string | null>(null);
   // F5: qué controles mostrar según preferencias del usuario. Se lee en cada
@@ -75,7 +78,7 @@ export function ChromeTopBar({
   };
 
   return (
-    <div className="chrome-bar chrome-bar-top">
+    <div ref={barRef} className="chrome-bar chrome-bar-top">
       <div className="chrome-bar-group">
         <WindowControls api={api} onCollapse={onCollapse} compact />
       </div>
