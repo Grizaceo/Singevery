@@ -3,8 +3,18 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 // Directorio userData por test; se asigna en beforeEach. El factory de vi.mock
 // solo cierra sobre la variable; getPath se llama al invocar createPersistentSettings.
 let userDataDir = '';
+const protection = vi.hoisted(() => ({ available: true, backend: 'gnome_libsecret', fail: false }));
 vi.mock('electron', () => ({
   app: { getPath: () => userDataDir },
+  safeStorage: {
+    isEncryptionAvailable: () => protection.available,
+    getSelectedStorageBackend: () => protection.backend,
+    encryptString: (text: string) => {
+      if (protection.fail) throw new Error('keyring locked');
+      return Buffer.from(text.split('').reverse().join(''));
+    },
+    decryptString: (text: Buffer) => text.toString().split('').reverse().join(''),
+  },
 }));
 
 import * as fs from 'fs';
@@ -23,6 +33,7 @@ describe('settings persistente (P2.8)', () => {
   beforeEach(() => {
     dir = fs.mkdtempSync(path.join(os.tmpdir(), 'espejo-settings-'));
     userDataDir = dir;
+    protection.available = true; protection.backend = 'gnome_libsecret'; protection.fail = false;
   });
 
   afterEach(() => {
@@ -147,4 +158,44 @@ describe('settings persistente (P2.8)', () => {
     expect(s2.displayStore.get().textColor).toBe('#22d3ee');
     expect((s2 as unknown as Record<string, unknown>).remoteSettingsStore).toBeUndefined();
   });
+  it('migrates a legacy paid key without leaving plaintext in settings or backup', () => {
+    const file = path.join(dir, 'espejo-settings.json');
+    fs.writeFileSync(file, JSON.stringify({ translation: { provider: 'deepl', apiKey: 'paid-secret', targetLang: 'ja' } }));
+    const settings = createPersistentSettings();
+    expect(settings.translationStore.get().apiKey).toBe('paid-secret');
+    for (const candidate of [file, file + '.bak']) {
+      const text = fs.readFileSync(candidate, 'utf8');
+      expect(text).not.toContain('paid-secret');
+      expect(JSON.parse(text).translationSecret).toBeTruthy();
+    }
+    expect(createPersistentSettings().translationStore.get().apiKey).toBe('paid-secret');
+  });
+
+  it.each(['unavailable', 'locked', ...(process.platform === 'linux' ? ['basic_text'] : [])])('uses session-only storage when secure storage is %s', (mode) => {
+    protection.available = mode !== 'unavailable';
+    protection.backend = mode === 'basic_text' ? 'basic_text' : 'gnome_libsecret';
+    protection.fail = mode === 'locked';
+    const settings = createPersistentSettings();
+    settings.translationStore.set({ provider: 'google', apiKey: 'private-key' });
+    expect(settings.translationStore.get()).toMatchObject({ apiKey: 'private-key', credentialStorage: 'session' });
+    expect(fs.readFileSync(path.join(dir, 'espejo-settings.json'), 'utf8')).not.toContain('private-key');
+    expect(createPersistentSettings().translationStore.get().apiKey).toBe('');
+  });
+
+  it('recovers the last valid preferences from backup after a damaged main file', () => {
+    const settings = createPersistentSettings();
+    settings.displayStore.set({ textColor: '#123456' });
+    settings.displayStore.set({ fontScale: 1.5 });
+    fs.writeFileSync(path.join(dir, 'espejo-settings.json'), '{broken');
+    expect(createPersistentSettings().displayStore.get().textColor).toBe('#123456');
+  });
+
+  it('clears a provider credential on switching so a paid key cannot become a MyMemory email', () => {
+    const settings = createPersistentSettings();
+    settings.translationStore.set({ provider: 'deepl', apiKey: 'paid-key' });
+    settings.translationStore.set({ provider: 'mymemory' });
+    expect(settings.translationStore.get().apiKey).toBe('');
+    expect(createPersistentSettings().translationStore.get().apiKey).toBe('');
+  });
+
 });

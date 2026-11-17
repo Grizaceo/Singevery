@@ -1,4 +1,4 @@
-AVISOS DE SOFTWARE DE TERCEROS — Singevery 0.2.1-beta.2
+AVISOS DE SOFTWARE DE TERCEROS — Singevery 0.2.1-beta.3
 ================================================================================
 Este archivo enumera las bibliotecas de terceros incluidas en la aplicación
 y reproduce sus licencias. Generado con scripts/generate-third-party-notices.cjs
@@ -7,7 +7,7 @@ La licencia de Singevery está en el archivo LICENSE (MIT).
 ================================================================================
 
 --------------------------------------------------------------------------------
-@babel/runtime 7.29.7 — MIT — https://babel.dev/docs/en/next/babel-runtime
+@babel/runtime 7.29.10 — MIT — https://babel.dev/docs/en/next/babel-runtime
 --------------------------------------------------------------------------------
 MIT License
 
@@ -258,11 +258,11 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 --------------------------------------------------------------------------------
-kuroshiro 1.2.0 — MIT — https://github.com/hexenq/kuroshiro
+kuroshiro 1.2.1 — MIT — https://github.com/hexenq/kuroshiro
 --------------------------------------------------------------------------------
 The MIT License (MIT)
 
-Copyright (c) 2015-2021 Hexen Qi <hexenq@gmail.com>
+Copyright (c) 2015-2026 Hexen Qi <hexenq@gmail.com>
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -385,7 +385,7 @@ licenses; we recommend you read them, as their terms may differ from the
 terms above.
 
 --------------------------------------------------------------------------------
-pinyin-pro 3.28.2 — MIT — https://pinyin-pro.cn
+pinyin-pro 3.29.5 — MIT — https://pinyin-pro.cn
 --------------------------------------------------------------------------------
 MIT License
 
@@ -410,7 +410,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 --------------------------------------------------------------------------------
-react-dom 19.2.8 — MIT — https://react.dev/
+react-dom 19.3.1 — MIT — https://react.dev/
 --------------------------------------------------------------------------------
 MIT License
 
@@ -435,7 +435,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 --------------------------------------------------------------------------------
-react 19.2.8 — MIT — https://react.dev/
+react 19.3.1 — MIT — https://react.dev/
 --------------------------------------------------------------------------------
 MIT License
 
@@ -460,7 +460,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 --------------------------------------------------------------------------------
-scheduler 0.27.0 — MIT — https://react.dev/
+scheduler 0.28.0 — MIT — https://react.dev/
 --------------------------------------------------------------------------------
 MIT License
 
@@ -510,7 +510,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 --------------------------------------------------------------------------------
-transliteration 2.6.1 — MIT
+transliteration 2.6.2 — MIT
 --------------------------------------------------------------------------------
 Copyright http://github.com/yf-hk/transliteration
 
@@ -570,7 +570,7 @@ COMPONENTES ADICIONALES (fuera del árbol npm de producción)
 ================================================================================
 
 --------------------------------------------------------------------------------
-Electron 43.2.0 — MIT
+Electron 43.8.3 — MIT
 --------------------------------------------------------------------------------
 Esta aplicación se distribuye con el framework Electron, que incluye Chromium
 y Node.js. Los textos completos de las licencias de Electron, Chromium y de

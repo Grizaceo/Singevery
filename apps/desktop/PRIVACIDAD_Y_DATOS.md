@@ -1,6 +1,6 @@
 # Privacidad y datos — Singevery Desktop
 
-Última actualización: 2 de agosto de 2026  
+Última actualización: 21 de octubre de 2026
 Aplica a la versión de escritorio 0.2.x.
 
 Este documento explica el comportamiento real de la aplicación. No sustituye
@@ -100,10 +100,16 @@ enviar ese archivo por el medio que la persona elija.
 Al importar un archivo `.singevery-ref` recibido de terceros, la app valida su
 contenido y descarta cualquier campo que no pertenezca al formato.
 
-Las credenciales de traducción se guardan actualmente en el archivo local de
-ajustes, no en un gestor seguro del sistema operativo. No compartas ese archivo.
-Antes de una venta pública deberá decidirse si se migra a Credential Manager o
-si el producto usa credenciales gestionadas por un backend.
+Las claves de DeepL/Google se guardan cifradas mediante el almacén seguro del
+sistema operativo (Electron safeStorage). En Linux se rechaza el backend
+`basic_text`: si no hay un almacén seguro disponible, la clave sólo dura durante
+la sesión y Ajustes lo indica. Las claves antiguas se migran al leer los ajustes;
+si no hay cifrado, se retiran del archivo y se conservan en memoria hasta cerrar.
+El email opcional de MyMemory sigue siendo una preferencia local en texto plano.
+Cambiar de proveedor limpia el campo para evitar enviar una clave como email.
+Los ajustes se escriben mediante un archivo temporal y reemplazo; una copia
+`.bak` permite recuperar la última configuración válida. No compartas estos
+archivos: contienen preferencias y pueden contener credenciales cifradas.
 
 Los logs tienen un máximo aproximado de 1 MB por archivo. El logger intenta
 redactar tokens, claves, emails y la ruta del perfil. No registra audio ni el

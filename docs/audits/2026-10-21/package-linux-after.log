@@ -1,0 +1,49 @@
+
+> singevery-desktop@0.2.1-beta.3 package:linux
+> npm run build && npm run notices && node scripts/verify-package.cjs --inputs-linux && electron-builder --linux --config electron-builder.yml && node scripts/verify-package.cjs --output-linux
+
+
+> singevery-desktop@0.2.1-beta.3 prebuild
+> npm run check:secrets
+
+
+> singevery-desktop@0.2.1-beta.3 check:secrets
+> node scripts/check-secrets.cjs
+
+[secrets] OK: no se encontraron credenciales con patrones conocidos.
+
+> singevery-desktop@0.2.1-beta.3 build
+> tsc -b && vite build && tsc -p tsconfig.electron.json && node scripts/build-evidence.cjs
+
+vite v7.3.7 building client environment for production...
+transforming...
+✓ 90 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/index.html                  0.72 kB │ gzip:   0.44 kB
+dist/assets/main-DwjKgEFn.css   26.96 kB │ gzip:   5.83 kB
+dist/assets/main-Ne6JjX_7.js   323.69 kB │ gzip: 101.22 kB
+✓ built in 1.20s
+
+> singevery-desktop@0.2.1-beta.3 notices
+> node scripts/generate-third-party-notices.cjs
+
+OK: 17 paquetes → build/THIRD-PARTY-NOTICES.txt
+[package verify] Entradas de release Linux completas.
+  • electron-builder  version=26.15.3 os=7.2.8-9-omarchy
+  • loaded configuration  file=/home/gris96/.hermes/workspace/ACTIVE/singevery/apps/desktop/electron-builder.yml
+  • executing @electron/rebuild  electronVersion=43.8.3 arch=x64 buildFromSource=false workspaceRoot=/home/gris96/.hermes/workspace/ACTIVE/singevery/apps/desktop projectDir=./ appDir=./
+  • installing native dependencies  arch=x64
+  • completed installing native dependencies
+  • packaging       platform=linux arch=x64 electron=43.8.3 appOutDir=release/linux-unpacked
+  • downloaded      label=electron progress=100%
+  • downloaded electron zip extracted successfully  output=/home/gris96/.hermes/workspace/ACTIVE/singevery/apps/desktop/release/linux-unpacked
+  • searching for node modules  pm=npm searchDir=/home/gris96/.hermes/workspace/ACTIVE/singevery/apps/desktop
+  • file source doesn't exist  from=/home/gris96/.hermes/workspace/ACTIVE/singevery/apps/desktop/native/llm
+  • file source doesn't exist  from=/home/gris96/.hermes/workspace/ACTIVE/singevery/apps/desktop/native/llm
+  • building        target=AppImage arch=x64 file=release/Singevery-0.2.1-beta.3-x86_64.AppImage
+  • building        target=tar.gz arch=x64 file=release/Singevery-0.2.1-beta.3-x64.tar.gz
+  • building embedded block map  file=release/Singevery-0.2.1-beta.3-x86_64.AppImage
+[build verify] 0.2.1-beta.3, Electron 43.8.3: 77 archivos verificados
+[package verify] AppImage verificado: Singevery-0.2.1-beta.3-x86_64.AppImage
+[package verify] SHA-256: ebd830d0fadaf06c7778f4ce031bdd1b39e2bd2c5bd5d9cdc39aead946fe881c

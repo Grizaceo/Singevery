@@ -1,0 +1,34 @@
+{
+  "version": "0.2.1-beta.3",
+  "baseCommit": "dd0adaaa86d8ae3cfbaadf8d08976dfc0c37385e",
+  "uncommittedChanges": true,
+  "electron": "43.8.3",
+  "tests": {
+    "passed": 829,
+    "skipped": 1
+  },
+  "npmAuditKnownVulnerabilities": 0,
+  "packagedFilesVerified": 77,
+  "windowsContentVerified": true,
+  "linuxContentVerified": true,
+  "windowsInteractiveTested": false,
+  "hyprlandDragInteractiveTested": false,
+  "smtcRebuilt": false,
+  "artifacts": [
+    {
+      "file": "apps/desktop/release/Singevery-Setup-0.2.1-beta.3.exe",
+      "bytes": 152320652,
+      "sha256": "38b922bc692118566a51f1cab575dcd757abe7b955dced2ffe63e25b569b91af"
+    },
+    {
+      "file": "apps/desktop/release/Singevery-0.2.1-beta.3-x86_64.AppImage",
+      "bytes": 150672814,
+      "sha256": "ebd830d0fadaf06c7778f4ce031bdd1b39e2bd2c5bd5d9cdc39aead946fe881c"
+    },
+    {
+      "file": "apps/desktop/release/Singevery-0.2.1-beta.3-x64.tar.gz",
+      "bytes": 143302088,
+      "sha256": "8e8c14ae9fc822173fb199f781d22d0eaed41099f47aec41345ec990d9386c48"
+    }
+  ]
+}

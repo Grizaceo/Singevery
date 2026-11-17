@@ -2,6 +2,7 @@ const crypto = require('node:crypto');
 const childProcess = require('node:child_process');
 const fs = require('node:fs');
 const path = require('node:path');
+const { installerListing } = require('./installer-listing.cjs');
 
 const appRoot = path.resolve(__dirname, '..');
 const pkg = JSON.parse(fs.readFileSync(path.join(appRoot, 'package.json'), 'utf8'));
@@ -65,14 +66,14 @@ function findSevenZip() {
   const cacheRoot = process.env.LOCALAPPDATA
     ? path.join(process.env.LOCALAPPDATA, 'electron-builder', 'Cache')
     : '';
-  const fromCache = findExecutable(cacheRoot, '7za.exe');
+  const fromCache = process.platform === 'win32' ? findExecutable(cacheRoot, '7za.exe') : null;
   if (fromCache) return fromCache;
   // Entornos no-Windows (Docker): 7za puede estar en el cache de
   // electron-builder bajo ~/.cache o en el PATH (p7zip-full).
   const homeCache = process.env.HOME
     ? path.join(process.env.HOME, '.cache', 'electron-builder', 'Cache')
     : '';
-  const fromHome = findExecutable(homeCache, '7za.exe');
+  const fromHome = process.platform === 'win32' ? findExecutable(homeCache, '7za.exe') : null;
   if (fromHome) return fromHome;
   for (const name of ['7za', '7z']) {
     const which = childProcess.spawnSync(
@@ -91,27 +92,16 @@ function findSevenZip() {
 function verifyInstallerPayload(installer) {
   const sevenZip = findSevenZip();
   if (!sevenZip) {
-    if (process.platform === 'win32') {
-      fail('no se encontró 7za.exe para inspeccionar el contenido real del instalador');
-      return false;
-    }
-    // Linux/Docker: sin 7za no se puede inspeccionar el NSIS; el contenido
-    // ya se verificó en win-unpacked. Avisar sin fallar (ALTA 4 del audit
-    // Opus): el build de Docker no debe morir después de generar el
-    // instalador correctamente.
-    process.stderr.write('[package verify] AVISO: sin 7za no se inspecciona el instalador NSIS (solo Windows).\n');
-    return true;
-  }
-  const result = childProcess.spawnSync(sevenZip, ['l', '-slt', installer], {
-    encoding: 'utf8',
-    maxBuffer: 50 * 1024 * 1024,
-    windowsHide: true,
-  });
-  if (result.status !== 0) {
-    fail(`no se pudo inspeccionar el instalador: ${(result.stderr || result.stdout).trim()}`);
+    fail('no se encontró 7-Zip para inspeccionar el contenido real del instalador');
     return false;
   }
-  const listing = result.stdout.replace(/\//g, '\\');
+  let listing;
+  try {
+    listing = installerListing(sevenZip, installer);
+  } catch (error) {
+    fail(`no se pudo inspeccionar el instalador: ${error.message}`);
+    return false;
+  }
   const requiredPaths = [
     'GUIA_DE_USO.md',
     'GUIA_BETA_PROFESORES.md',
@@ -166,6 +156,14 @@ function verifyInputs() {
   if (ok) process.stdout.write('[package verify] Entradas de release completas.\n');
 }
 
+function verifyBuildEvidence(unpacked) {
+  const result = childProcess.spawnSync(process.execPath, [path.join(__dirname, 'verify-build-evidence.cjs'), unpacked], {
+    stdio: 'inherit', windowsHide: true,
+  });
+  if (result.status !== 0) { fail('el paquete no corresponde al build actual'); return false; }
+  return true;
+}
+
 function verifyOutput() {
   const unpacked = path.join(releaseDir, 'win-unpacked');
   const installer = path.join(releaseDir, `Singevery-Setup-${pkg.version}.exe`);
@@ -178,6 +176,7 @@ function verifyOutput() {
     installer,
   ];
   let ok = required.every((file) => requireFile(file));
+  ok = verifyBuildEvidence(unpacked) && ok;
   ok = verifySelfContained(path.join(unpacked, 'resources', 'native', 'smtc', 'dist')) && ok;
   // Espejo del check del instalador, un paso antes: si un .env se coló en
   // win-unpacked, se colará en el .exe.
@@ -243,6 +242,7 @@ function verifyOutputLinux() {
     path.join(unpacked, 'THIRD-PARTY-NOTICES.txt'),
   ];
   let ok = required.every((file) => requireFile(file));
+  ok = verifyBuildEvidence(unpacked) && ok;
   if (fs.existsSync(path.join(unpacked, 'resources', 'native', 'smtc'))) {
     fail('el paquete Linux no debe llevar el sidecar SMTC de Windows');
     ok = false;

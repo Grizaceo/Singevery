@@ -22,6 +22,7 @@ import type {
 } from './types';
 import { NULL_LYRICS_CACHE } from './types';
 import { providerChain } from './providers';
+import { LyricsRateLimitError } from './rateLimit';
 import { parseLrc, plainTextToLyrics } from '../lrcParser';
 import { romanizeTimedLyrics, needsReannotation, stripReadings } from '../romanize';
 import { normalizeTrackKey } from '../../core/syncTiming';
@@ -175,6 +176,7 @@ export class LyricsService {
         return await provider.lookup(query, controller.signal);
       } catch (err) {
         lastError = err;
+        if (err instanceof LyricsRateLimitError) break;
         // Un abort es NUESTRO timeout: reintentar duplicaría la espera.
         if (isAbortError(err) || controller.signal.aborted) break;
         if (attempt >= this.opts.retryCount) break;
@@ -220,7 +222,7 @@ export class LyricsService {
           // Un timeout (abort) en una variante predice timeouts en las demás
           // (host colgado/red rota): saltar al siguiente proveedor en vez de
           // quemar el timeout completo por cada variante restante.
-          if (isAbortError(err)) break;
+          if (isAbortError(err) || err instanceof LyricsRateLimitError) break;
           continue;
         }
         if (!raw) {

@@ -13,6 +13,23 @@ export interface Rect {
 export const PILL_WIDTH = 156;
 export const PILL_HEIGHT = 48;
 
+export const EXPANDED_MIN_WIDTH = 320;
+export const EXPANDED_MIN_HEIGHT = 200;
+
+/** Native minima can grow with a non-resizable Electron window. Use product limits. */
+export function resizeExpandedWindow(
+  win: { setSize(width: number, height: number): void },
+  width: number,
+  height: number,
+): boolean {
+  if (!Number.isFinite(width) || !Number.isFinite(height)) return false;
+  win.setSize(
+    Math.max(EXPANDED_MIN_WIDTH, Math.round(width)),
+    Math.max(EXPANDED_MIN_HEIGHT, Math.round(height)),
+  );
+  return true;
+}
+
 /**
  * Calcula los bounds de la pill: centrada horizontalmente y pegada arriba del
  * área de trabajo (workArea) del display, con un margen superior.

@@ -40,59 +40,118 @@ export function partFileName(finalPath: string): string {
   return `${finalPath}.part`;
 }
 
-/**
- * Descarga el modelo desde `url` a `filePath`, reanudando desde el .part si
- * existe. Devuelve el resultado; si se aborta, el .part queda para reanudar.
- */
+const activeDownloads = new Set<string>();
+const IDLE_TIMEOUT_MS = 30_000;
+
+interface ResumeIdentity { url: string; etag: string; }
+
+/** A partial file is reusable only with a strong validator for this URL. */
+function readIdentity(file: string, url: string): ResumeIdentity | null {
+  try {
+    const value = JSON.parse(fs.readFileSync(file, 'utf8')) as ResumeIdentity;
+    return value.url === url && /^"[^"\r\n]+"$/.test(value.etag) ? value : null;
+  } catch { return null; }
+}
+
 export async function downloadModel(
   url: string,
   filePath: string,
   onProgress?: (p: DownloadProgress) => void,
   signal?: AbortSignal,
 ): Promise<DownloadResult> {
-  const dir = path.dirname(filePath);
-  await fs.promises.mkdir(dir, { recursive: true });
-
+  const key = path.resolve(filePath);
+  if (activeDownloads.has(key)) return { ok: false, filePath, totalBytes: 0, error: 'Ya hay una descarga en curso' };
+  activeDownloads.add(key);
+  const controller = new AbortController();
+  const abort = () => controller.abort();
+  signal?.addEventListener('abort', abort, { once: true });
+  if (signal?.aborted) abort();
+  let timer: ReturnType<typeof setTimeout>;
+  const touch = () => { clearTimeout(timer); timer = setTimeout(abort, IDLE_TIMEOUT_MS); };
+  touch();
   const partPath = partFileName(filePath);
-  let resumedFrom = 0;
+  const identityPath = `${partPath}.json`;
+  let res: Response | undefined;
   try {
-    const st = await fs.promises.stat(partPath);
-    resumedFrom = st.size;
-  } catch {
-    /* no hay .part: empieza de cero */
-  }
-
-  const headers: Record<string, string> = {};
-  if (resumedFrom > 0) headers.Range = `bytes=${resumedFrom}-`;
-
-  const res = await fetch(url, { headers, signal });
-  if (!res.ok && res.status !== 206) {
-    return { ok: false, filePath, totalBytes: resumedFrom, error: `HTTP ${res.status} al descargar el modelo` };
-  }
-
-  const total = resumedFrom + Number(res.headers.get('content-length') ?? 0);
-  if (!res.body) {
-    return { ok: false, filePath, totalBytes: resumedFrom, error: 'El servidor no envió cuerpo' };
-  }
-
-  const handle = await fs.promises.open(partPath, resumedFrom > 0 ? 'a' : 'w');
-  let received = 0;
-  try {
-    const reader = res.body.getReader();
-    for (;;) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      await handle.write(value);
-      received += value.length;
-      onProgress?.({ received, total, resumedFrom });
+    await fs.promises.mkdir(path.dirname(filePath), { recursive: true });
+    const identity = readIdentity(identityPath, url);
+    let resumedFrom = identity ? await fs.promises.stat(partPath).then(s => s.size).catch(() => 0) : 0;
+    const headers: Record<string, string> = { 'Accept-Encoding': 'identity' };
+    if (resumedFrom > 0 && identity) {
+      headers.Range = `bytes=${resumedFrom}-`;
+      headers['If-Range'] = identity.etag;
     }
+    res = await fetch(url, { headers, signal: controller.signal });
+    if (res.status !== 200 && res.status !== 206) {
+      // An obsolete/full partial can be restarted on the next attempt.
+      if (res.status === 416) await fs.promises.rm(identityPath, { force: true });
+      return { ok: false, filePath, totalBytes: resumedFrom, error: `HTTP ${res.status} al descargar el modelo` };
+    }
+    if (!res.body) throw new Error('El servidor no envió cuerpo');
+    const encoding = res.headers.get('content-encoding');
+    if (encoding && encoding !== 'identity') throw new Error('Codificación no válida para descargar el modelo');
+    const rawLength = res.headers.get('content-length');
+    const length = rawLength === null ? null : Number(rawLength);
+    if (length !== null && (!Number.isSafeInteger(length) || length <= 0)) throw new Error('Content-Length inválido');
+    let total = length ?? 0;
+    if (res.status === 206) {
+      const range = /^bytes (\d+)-(\d+)\/(\d+)$/.exec(res.headers.get('content-range') ?? '');
+      if (!range || resumedFrom <= 0 || !identity || res.headers.get('etag') !== identity.etag) {
+        throw new Error('El servidor no confirmó la identidad/rango del modelo parcial');
+      }
+      const [begin, end, size] = range.slice(1).map(Number);
+      if (![begin, end, size].every(Number.isSafeInteger) || begin !== resumedFrom || end !== size - 1 || end < begin ||
+          (length !== null && length !== end - begin + 1)) throw new Error('Content-Range no coincide con el modelo parcial');
+      total = size;
+    } else {
+      // A server may ignore Range, or If-Range may detect a new model. Replace.
+      resumedFrom = 0;
+    }
+    const etag = res.headers.get('etag');
+    await fs.promises.rm(identityPath, { force: true });
+    const handle = await fs.promises.open(partPath, resumedFrom > 0 ? 'a' : 'w');
+    let received = 0;
+    try {
+      // Truncate/open before publishing a new identity: a crash must not pair
+      // an old prefix with the validator of a newly served model.
+      if (etag && /^"[^"\r\n]+"$/.test(etag)) {
+        await fs.promises.writeFile(identityPath, JSON.stringify({ url, etag }), { mode: 0o600 });
+      }
+      const reader = res.body.getReader();
+      try {
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          controller.signal.throwIfAborted();
+          touch();
+          await handle.writeFile(value);
+          received += value.length;
+          if (total > 0 && resumedFrom + received > total) throw new Error('El modelo excede el tamaño anunciado');
+          onProgress?.({ received, total, resumedFrom });
+        }
+      } finally { reader.releaseLock(); }
+    } finally { await handle.close(); }
+    controller.signal.throwIfAborted();
+    const totalBytes = resumedFrom + received;
+    if (totalBytes < 8 || (total > 0 && totalBytes !== total)) throw new Error('Descarga incompleta del modelo');
+    const check = await fs.promises.open(partPath, 'r');
+    try {
+      const magic = Buffer.alloc(4);
+      await check.read(magic, 0, 4, 0);
+      if (magic.toString('ascii') !== 'GGUF') {
+        await fs.promises.rm(identityPath, { force: true });
+        throw new Error('El archivo descargado no es un modelo GGUF');
+      }
+    } finally { await check.close(); }
+    await fs.promises.rename(partPath, filePath);
+    await fs.promises.rm(identityPath, { force: true });
+    return { ok: true, filePath, totalBytes };
   } finally {
-    await handle.close();
+    clearTimeout(timer!);
+    signal?.removeEventListener('abort', abort);
+    if (res?.body && !res.body.locked) await res.body.cancel().catch(() => {});
+    activeDownloads.delete(key);
   }
-
-  // Descarga completa: el .part pasa a ser el modelo final.
-  await fs.promises.rename(partPath, filePath);
-  return { ok: true, filePath, totalBytes: resumedFrom + received };
 }
 
 /** URL por defecto del modelo (exportada para la UI). */

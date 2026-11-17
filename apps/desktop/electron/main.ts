@@ -54,6 +54,7 @@ import {
   isWindowBoundsVisible,
   PILL_WIDTH,
   PILL_HEIGHT,
+  resizeExpandedWindow,
   type Rect,
 } from './services/windowLayout';
 import type { RecognitionPhase } from './core/stateStore';
@@ -633,13 +634,8 @@ function registerIpcHandlers(): void {
   ipcMain.handle(
     'window:setSize',
     (_event, width: number, height: number): { ok: boolean } => {
-      if (mainWindow) {
-        const [minW, minH] = mainWindow.getMinimumSize();
-        const safeWidth = Math.max(width, minW);
-        const safeHeight = Math.max(height, minH);
-        mainWindow.setSize(safeWidth, safeHeight);
-      }
-      return { ok: true };
+      if (!mainWindow || mainWindow.isDestroyed()) return { ok: false };
+      return { ok: resizeExpandedWindow(mainWindow, width, height) };
     },
   );
 

@@ -1,0 +1,25 @@
+
+> singevery-desktop@0.2.1-beta.3 pretest
+> npm run check:secrets
+
+
+> singevery-desktop@0.2.1-beta.3 check:secrets
+> node scripts/check-secrets.cjs
+
+[secrets] OK: no se encontraron credenciales con patrones conocidos.
+
+> singevery-desktop@0.2.1-beta.3 test
+> vitest run
+
+
+ RUN  v5.0.5 /home/gris96/.hermes/workspace/ACTIVE/singevery/apps/desktop
+
+
+ Test Files  74 passed | 1 skipped (75)
+      Tests  829 passed | 1 skipped (830)
+   Start at  20:58:37
+   Duration  4.42s (import 43%, tests 38%, transform 13%, worker 5%)
+
+    Isolate  75 workers spawned · ~289ms startup each (spawn + environment, per file)
+             at least ~1.68s faster with isolate: false — reuses workers across files instead of one per file
+

@@ -1,0 +1,22 @@
+
+> singevery-desktop@0.2.1-beta.3 pretest
+> npm run check:secrets
+
+
+> singevery-desktop@0.2.1-beta.3 check:secrets
+> node scripts/check-secrets.cjs
+
+[secrets] OK: no se encontraron credenciales con patrones conocidos.
+
+> singevery-desktop@0.2.1-beta.3 test
+> vitest run tests/settings.test.ts tests/installerListing.test.ts
+
+
+ RUN  v5.0.5 /home/gris96/.hermes/workspace/ACTIVE/singevery/apps/desktop
+
+
+ Test Files  2 passed (2)
+      Tests  20 passed (20)
+   Start at  21:03:04
+   Duration  248ms (transform 51%, import 24%, tests 21%, worker 4%)
+

@@ -1,7 +1,7 @@
 {
   "name": "singevery-desktop",
   "private": true,
-  "version": "0.2.1-beta.2",
+  "version": "0.2.1-beta.3",
   "description": "Transparent desktop widget that recognizes music (Shazam/AudD) and shows synced karaoke lyrics with romaji — sing along without blocking your screen.",
   "author": "Gris",
   "license": "Apache-2.0",
@@ -26,7 +26,7 @@
     "dev:wait-electron:nix": "npm run build:electron && wait-on tcp:5173 && cross-env NODE_ENV=development ELECTRON_DISABLE_SECURITY_WARNINGS=1 ELECTRON_DISABLE_GPU=1 electron .",
     "dev:wait-electron:win": "npm run build:electron && wait-on tcp:5173 && cross-env NODE_ENV=development ELECTRON_DISABLE_SECURITY_WARNINGS=1 electron .",
     "dev:wait-electron:linux": "npm run build:electron && wait-on tcp:5173 && cross-env NODE_ENV=development ELECTRON_DISABLE_SECURITY_WARNINGS=1 electron .",
-    "build": "tsc -b && vite build && tsc -p tsconfig.electron.json",
+    "build": "tsc -b && vite build && tsc -p tsconfig.electron.json && node scripts/build-evidence.cjs",
     "start": "npm run build && electron .",
     "build:electron": "tsc -p tsconfig.electron.json",
     "preview": "vite preview",
@@ -37,8 +37,8 @@
     "build:smtc": "dotnet publish ../../native/smtc/EspejoSmtc.csproj -c Release -r win-x64 --self-contained true -p:SelfContained=true --artifacts-path build/dotnet-artifacts -o build/smtc-dist",
     "verify:package-inputs": "node scripts/verify-package.cjs --inputs",
     "verify:package-output": "node scripts/verify-package.cjs --output",
-    "package": "npm run build && npm run notices && npm run verify:package-inputs && electron-builder --config electron-builder.yml && npm run verify:package-output",
-    "package:installer": "node scripts/edit-executable-metadata.cjs && electron-builder --prepackaged release/win-unpacked --config electron-builder.yml && npm run verify:package-output",
+    "package": "npm run build && npm run notices && npm run verify:package-inputs && electron-builder --win --config electron-builder.yml && npm run verify:package-output",
+    "package:installer": "node scripts/edit-executable-metadata.cjs && electron-builder --win --prepackaged release/win-unpacked --config electron-builder.yml && npm run verify:package-output",
     "package:signed": "node scripts/package-signed.cjs",
     "package:full": "npm run build:smtc && npm run package",
     "package:linux": "npm run build && npm run notices && node scripts/verify-package.cjs --inputs-linux && electron-builder --linux --config electron-builder.yml && node scripts/verify-package.cjs --output-linux",
@@ -63,7 +63,7 @@
     "@vitejs/plugin-react": "^5.1.1",
     "concurrently": "^9.1.0",
     "cross-env": "^7.0.3",
-    "electron": "^43.2.0",
+    "electron": "^43.8.3",
     "electron-builder": "^26.15.3",
     "eslint": "^9.39.1",
     "eslint-plugin-react-hooks": "^7.0.1",
@@ -74,5 +74,8 @@
     "vite": "^7.2.4",
     "vitest": "^5.0.0",
     "wait-on": "^8.0.0"
+  },
+  "overrides": {
+    "global-agent": "^4.1.3"
   }
 }

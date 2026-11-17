@@ -4,7 +4,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import { app } from 'electron';
+import { app, safeStorage } from 'electron';
 import type { RecognitionProviderMode } from './recognition/provider';
 import type { ReadingSettings, TranslationSettings } from '../../src/types';
 import { DEFAULT_LOCAL_ENDPOINT, DEFAULT_LOCAL_MODEL } from './translate';
@@ -115,7 +115,7 @@ export const DEFAULT_TRANSLATION_SETTINGS: TranslationSettings = {
   // credenciales. El modelo local y DeepL/Google son mejoras opcionales.
   provider: 'mymemory',
   apiKey: '',
-  targetLang: 'en',
+  targetLang: 'es',
   localEndpoint: DEFAULT_LOCAL_ENDPOINT,
   localModel: DEFAULT_LOCAL_MODEL,
 };
@@ -173,6 +173,7 @@ interface SettingsShape {
   display?: Partial<DisplaySettings>;
   recognitionProvider?: RecognitionProviderMode;
   translation?: Partial<TranslationSettings>;
+  translationSecret?: string;
   reading?: Partial<ReadingSettings>;
   windowBounds?: WindowBounds | null;
 }
@@ -294,6 +295,23 @@ function normalizeWindowBounds(raw: unknown): WindowBounds | null {
   };
 }
 
+/** Reject the Linux basic_text backend: it does not protect a paid API key. */
+function secureCredentialsAvailable(): boolean {
+  try {
+    return safeStorage.isEncryptionAvailable() &&
+      (process.platform !== 'linux' || safeStorage.getSelectedStorageBackend() !== 'basic_text');
+  } catch { return false; }
+}
+
+function atomicWrite(file: string, contents: string): void {
+  const temporary = `${file}.tmp`;
+  const fd = fs.openSync(temporary, 'w', 0o600);
+  try { fs.writeFileSync(fd, contents, 'utf8'); fs.fsyncSync(fd); }
+  finally { fs.closeSync(fd); }
+  fs.renameSync(temporary, file);
+  if (process.platform !== 'win32') fs.chmodSync(file, 0o600);
+}
+
 /**
  * Crea los almacenes persistentes respaldados en espejo-settings.json.
  * Sincrónico: llamar tras `app.whenReady()`.
@@ -308,42 +326,71 @@ export function createPersistentSettings(): AppSettings {
   let translation = { ...DEFAULT_TRANSLATION_SETTINGS };
   let reading = { ...DEFAULT_READING_SETTINGS };
   let windowBounds: WindowBounds | null = null;
+  let translationSecret: string | undefined;
+  let loaded = false;
+  let canProtectCredentials = secureCredentialsAvailable();
 
-  try {
-    if (fs.existsSync(file)) {
-      const parsed = JSON.parse(fs.readFileSync(file, 'utf8')) as SettingsShape;
-      if (parsed && typeof parsed.trackOffsets === 'object' && parsed.trackOffsets) {
-        trackOffsets = { ...parsed.trackOffsets };
+  for (const candidate of [file, `${file}.bak`]) {
+    try {
+      if (fs.existsSync(candidate)) {
+        const parsed = JSON.parse(fs.readFileSync(candidate, 'utf8')) as SettingsShape;
+        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('Formato de ajustes inválido');
+        if (parsed && typeof parsed.trackOffsets === 'object' && parsed.trackOffsets) {
+          trackOffsets = { ...parsed.trackOffsets };
+        }
+        if (typeof parsed.calibrationOffsetMs === 'number') {
+          calibrationOffsetMs = parsed.calibrationOffsetMs;
+        }
+        display = normalizeDisplay(parsed.display);
+        recognitionProvider = normalizeRecognitionProvider(parsed.recognitionProvider);
+        translation = normalizeTranslationSettings(parsed.translation);
+        translationSecret = typeof parsed.translationSecret === 'string' ? parsed.translationSecret : undefined;
+        if (translationSecret && canProtectCredentials) {
+          try { translation.apiKey = safeStorage.decryptString(Buffer.from(translationSecret, 'base64')); }
+          catch { canProtectCredentials = false; console.warn('[settings] No se pudo desbloquear la clave de traducción'); }
+        }
+        reading = normalizeReadingSettings(parsed.reading);
+        windowBounds = normalizeWindowBounds(parsed.windowBounds);
+        loaded = true;
+        break;
       }
-      if (typeof parsed.calibrationOffsetMs === 'number') {
-        calibrationOffsetMs = parsed.calibrationOffsetMs;
-      }
-      display = normalizeDisplay(parsed.display);
-      recognitionProvider = normalizeRecognitionProvider(parsed.recognitionProvider);
-      translation = normalizeTranslationSettings(parsed.translation);
-      reading = normalizeReadingSettings(parsed.reading);
-      windowBounds = normalizeWindowBounds(parsed.windowBounds);
+    } catch (err) {
+      console.error('[settings] no se pudo leer el archivo de ajustes:', err);
     }
-  } catch (err) {
-    console.error('[settings] no se pudo leer el archivo de ajustes, empezando limpio:', err);
   }
 
+  const serialize = (): string => {
+    const paidKey = translation.provider !== 'mymemory';
+    if (paidKey && translation.apiKey && canProtectCredentials) {
+      try { translationSecret = safeStorage.encryptString(translation.apiKey).toString('base64'); }
+      catch { canProtectCredentials = false; }
+    }
+    const payload: SettingsShape = {
+      trackOffsets,
+      calibrationOffsetMs,
+      display,
+      recognitionProvider,
+      translation: { ...translation, apiKey: paidKey ? '' : translation.apiKey },
+      translationSecret: paidKey ? translationSecret : undefined,
+      reading,
+      windowBounds,
+    };
+    return JSON.stringify(payload, null, 2);
+  };
+  let previous = serialize();
   const persist = (): void => {
     try {
-      const payload: SettingsShape = {
-        trackOffsets,
-        calibrationOffsetMs,
-        display,
-        recognitionProvider,
-        translation,
-        reading,
-        windowBounds,
-      };
-      fs.writeFileSync(file, JSON.stringify(payload, null, 2), 'utf8');
+      const next = serialize();
+      atomicWrite(`${file}.bak`, previous);
+      atomicWrite(file, next);
+      previous = next;
     } catch (err) {
       console.error('[settings] no se pudo guardar los ajustes:', err);
     }
   };
+
+  // Migrate legacy plaintext credentials immediately, including the backup.
+  if (loaded) persist();
 
   const offsetStore: OffsetStore = {
     get: (trackKey) => trackOffsets[trackKey] ?? 0,
@@ -393,9 +440,13 @@ export function createPersistentSettings(): AppSettings {
   };
 
   const translationStore: TranslationStore = {
-    get: () => ({ ...translation }),
+    get: () => ({ ...translation, credentialStorage: canProtectCredentials ? 'secure' : 'session' }),
     set: (partial) => {
-      translation = normalizeTranslationSettings({ ...translation, ...partial });
+      if (partial.apiKey !== undefined || (partial.provider && partial.provider !== translation.provider)) {
+        translationSecret = undefined;
+      }
+      const changedProvider = partial.provider && partial.provider !== translation.provider;
+      translation = normalizeTranslationSettings({ ...translation, ...(changedProvider ? { apiKey: '' } : {}), ...partial });
       persist();
     },
   };

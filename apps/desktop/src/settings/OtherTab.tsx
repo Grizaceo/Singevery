@@ -211,6 +211,11 @@ export function OtherTab({
               placeholder={translation.provider === 'deepl' ? 'DeepL auth key' : 'Google API key'}
               onChange={(e) => patchTranslation({ apiKey: e.target.value })}
             />
+            <p className="settings-hint">
+              {translation.credentialStorage === 'secure'
+                ? 'La clave se guarda cifrada con el almacén seguro de tu sistema.'
+                : 'La clave se usa sólo durante esta sesión. Para conservarla, habilita el almacén seguro de tu sistema.'}
+            </p>
           </>
         )}
 

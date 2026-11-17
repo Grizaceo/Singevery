@@ -10,9 +10,23 @@
 import type { LyricsProvider, LyricsQuery, RawLyrics } from '../types';
 import { titleArtistSimilarity } from '../normalizeQuery';
 import { appFetch } from '../../http';
+import { LyricsRateLimitError, retryAfterTime } from '../rateLimit';
+import { version } from '../../../../package.json';
 
-const USER_AGENT = 'Singevery/0.1.0 (https://github.com/Grizaceo/Singevery)';
+const USER_AGENT = `Singevery/${version} (https://github.com/Grizaceo/Singevery)`;
 const BASE = 'https://lrclib.net/api';
+let retryAt = 0;
+
+async function lrclibFetch(url: string, init: RequestInit): Promise<Response> {
+  if (Date.now() < retryAt) throw new LyricsRateLimitError(retryAt);
+  const res = await appFetch(url, init);
+  if (res.status === 429) {
+    retryAt = Math.max(retryAt, retryAfterTime(res.headers?.get('retry-after') ?? null));
+    await res.body?.cancel().catch(() => {});
+    throw new LyricsRateLimitError(retryAt);
+  }
+  return res;
+}
 /** Tolerancia de duración al elegir en /api/search (segundos). */
 const DURATION_TOLERANCE_S = 2;
 
@@ -91,7 +105,7 @@ async function tryGet(query: LyricsQuery, signal?: AbortSignal): Promise<RawLyri
     album_name: query.album ?? '',
     duration: String(Math.round(query.durationMs / 1000)),
   });
-  const res = await appFetch(`${BASE}/get?${params}`, {
+  const res = await lrclibFetch(`${BASE}/get?${params}`, {
     headers: { 'User-Agent': USER_AGENT },
     signal,
   });
@@ -108,7 +122,7 @@ async function trySearch(query: LyricsQuery, signal?: AbortSignal): Promise<RawL
     track_name: query.title,
     artist_name: query.artist,
   });
-  const res = await appFetch(`${BASE}/search?${params}`, {
+  const res = await lrclibFetch(`${BASE}/search?${params}`, {
     headers: { 'User-Agent': USER_AGENT },
     signal,
   });
@@ -122,7 +136,7 @@ async function tryGeneralSearch(query: LyricsQuery, signal?: AbortSignal): Promi
   const params = new URLSearchParams({
     q: `${query.artist} ${query.title}`.trim(),
   });
-  const res = await appFetch(`${BASE}/search?${params}`, {
+  const res = await lrclibFetch(`${BASE}/search?${params}`, {
     headers: { 'User-Agent': USER_AGENT },
     signal,
   });

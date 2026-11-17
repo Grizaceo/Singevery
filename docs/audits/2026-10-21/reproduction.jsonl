@@ -1,0 +1,3 @@
+{"case":"native-minimum-ratchet","requested":[600,400],"actual":[1000,800],"expanded":[1000,800]}
+{"case":"range-ignored-200","ok":true,"content":"GGUFpartialGGUFcomplete","bytes":23}
+{"case":"declared-length-not-validated","ok":true,"bytes":4}

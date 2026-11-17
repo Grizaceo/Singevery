@@ -72,7 +72,7 @@ const steps = [
   'npm run build',
   'npm run notices',
   'npm run verify:package-inputs',
-  'npx electron-builder --config electron-builder.yml',
+  'npx electron-builder --win --config electron-builder.yml',
   'npm run verify:package-output',
 ];
 

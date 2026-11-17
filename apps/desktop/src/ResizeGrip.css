@@ -9,6 +9,7 @@
   box-sizing: border-box;
   color: var(--chrome-text-muted);
   cursor: nwse-resize;
+  touch-action: none;
   pointer-events: auto;
   -webkit-app-region: no-drag !important;
   transition: color 0.15s;

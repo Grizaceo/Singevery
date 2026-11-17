@@ -139,6 +139,12 @@ usar `LLM_SERVER_BIN=/ruta/llama-server` y `LLM_MODEL_PATH=/ruta/Hy-MT2-1.8B-Q4_
 El modelo se obtiene desde:
 https://huggingface.co/tencent/Hy-MT2-1.8B-GGUF/resolve/main/Hy-MT2-1.8B-Q4_K_M.gguf
 
+**Disponibilidad:** los paquetes beta.3 generados en esta revisión no incluyen
+`llama-server`. El modelo local requiere preparar ese runtime y el GGUF o
+configurar un servidor local externo. La interfaz actual permite configurar
+endpoint/modelo; no ofrece un asistente de instalación/descarga del runtime.
+MyMemory sigue disponible sin esa preparación.
+
 En **Ajustes → Traducción → Modelo local**, el runtime integrado preparado
 redirige automáticamente el endpoint predeterminado. Su alias es
 `hymt2-singevery`; ese alias NO es un nombre descargable de Ollama.
@@ -213,7 +219,7 @@ Selector en **Ajustes (⚙)** del widget. También ahí: opacidad, **color de le
 ## Scripts útiles
 
 ```bash
-npm test              # Vitest (667 tests)
+npm test              # Vitest — pruebas unitarias y de regresión
 npm run build         # Build producción
 npm run package       # Instalador Windows (electron-builder)
 ```

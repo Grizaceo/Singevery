@@ -141,6 +141,7 @@ export type TranslationView = 'off' | 'below' | 'side';
 export type TranslationProvider = 'mymemory' | 'local' | 'deepl' | 'google';
 
 export interface TranslationSettings {
+  credentialStorage?: 'secure' | 'session';
   provider: TranslationProvider;
   apiKey: string;
   targetLang: string;
