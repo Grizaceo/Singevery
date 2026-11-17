@@ -14,6 +14,11 @@ import {
   readWidgetControls,
   writeWidgetControls,
 } from './widgetPrefs';
+import {
+  type AutoGhostPrefs,
+  readAutoGhostPrefs,
+  writeAutoGhostPrefs,
+} from './autoGhost';
 import { DisplayTab } from './settings/DisplayTab';
 import { AudioTab } from './settings/AudioTab';
 import { OtherTab } from './settings/OtherTab';
@@ -77,6 +82,8 @@ export function SettingsPanel({
   // F4: preferencias de micrófono. F5: controles del widget.
   const [micPrefs, setMicPrefs] = useState<MicrophonePrefs>(readMicrophonePrefs);
   const [widgetControls, setWidgetControls] = useState<WidgetControls>(readWidgetControls);
+  // Intangible automático por inactividad (modo fantasma solo).
+  const [autoGhost, setAutoGhost] = useState<AutoGhostPrefs>(readAutoGhostPrefs);
 
   useEffect(() => {
     if (!open || !window.api) return;
@@ -138,6 +145,14 @@ export function SettingsPanel({
     });
   }, []);
 
+  const patchAutoGhost = useCallback((partial: Partial<AutoGhostPrefs>) => {
+    setAutoGhost((prev) => {
+      const next = { ...prev, ...partial };
+      writeAutoGhostPrefs(next);
+      return next;
+    });
+  }, []);
+
   if (!open || !window.api) return null;
 
   return (
@@ -184,6 +199,8 @@ export function SettingsPanel({
             patchReading={patchReading}
             widgetControls={widgetControls}
             patchWidgetControls={patchWidgetControls}
+            autoGhost={autoGhost}
+            patchAutoGhost={patchAutoGhost}
           />
         )}
 

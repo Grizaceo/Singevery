@@ -51,6 +51,35 @@
   font-size: 0.95em;
 }
 
+/* Aviso del intangible automático por inactividad: mismo estilo que el badge
+   tangible, arriba para no pisarse si alguna vez coinciden. */
+.auto-ghost-notice {
+  position: fixed;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1300;
+  padding: 5px 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  background: rgba(0, 0, 0, 0.78);
+  backdrop-filter: blur(8px);
+  color: rgba(255, 255, 255, 0.92);
+  font-size: 0.7rem;
+  white-space: nowrap;
+  pointer-events: none;
+  user-select: none;
+}
+
+.auto-ghost-notice kbd {
+  padding: 0 3px;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.1);
+  font-family: inherit;
+  font-size: 0.95em;
+}
+
 /* Handle central único: siempre visible en modo expandido. Permite arrastrar
    la ventana (drag por IPC), revelar la chrome al hover y alternar modo
    fantasma con doble click. Color/tamaño/posición los personaliza el usuario

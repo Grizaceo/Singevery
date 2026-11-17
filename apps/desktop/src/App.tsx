@@ -18,6 +18,13 @@ import { SyncHoldBadge } from './SyncHoldBadge';
 import { IpaGuide } from './IpaGuide';
 import { matchWindow } from './audio/compare';
 import { RenderModelProvider, useRenderModel } from './renderModelContext';
+import {
+  AutoGhostTimer,
+  autoGhostEligible,
+  isHudActivity,
+  readAutoGhostPrefs,
+  type AutoGhostPrefs,
+} from './autoGhost';
 import { detectScriptFromLines } from './scriptDetect';
 import './App.css';
 
@@ -59,6 +66,15 @@ function AppContent() {
   // Guía de símbolos IPA: se abre con el botón "?" de los controles de lectura.
   const [ipaGuideOpen, setIpaGuideOpen] = useState(false);
   const hideTimerRef = useRef<number | undefined>(undefined);
+  // Intangible automático por inactividad (autoGhost.ts). Las prefs se releen
+  // al cerrar Ajustes para que el cambio aplique sin reiniciar la app.
+  const [autoGhostPrefs, setAutoGhostPrefs] = useState<AutoGhostPrefs>(readAutoGhostPrefs);
+  const [autoGhostNotice, setAutoGhostNotice] = useState(false);
+  const autoGhostTimerRef = useRef<AutoGhostTimer | null>(null);
+  const autoGhostNoticeTimerRef = useRef<number | undefined>(undefined);
+  // Último clickThrough calculado: lo usa isHudActivity para decidir si un
+  // mousemove es el usuario tocando el HUD o solo el cursor pasando de largo.
+  const clickThroughRef = useRef(false);
   const prevTrackRef = useRef<string | undefined>(undefined);
   const autoStartedRef = useRef(false);
   const [autoStart, setAutoStart] = useAutoStart();
@@ -147,6 +163,7 @@ function AppContent() {
       if (locked) {
         setGhost(false);
         setChromeVisible(true);
+        setAutoGhostNotice(false);
       }
     });
   }, []);
@@ -186,11 +203,19 @@ function AppContent() {
     void translateRef.current();
   }, [trackKey, translationView]);
 
+  // Cierra Ajustes y relee las prefs de intangible automático: el cambio en
+  // localStorage aplica sin reiniciar la app.
+  const closeSettings = useCallback(() => {
+    setSettingsOpen(false);
+    setAutoGhostPrefs(readAutoGhostPrefs());
+  }, []);
+
   const handleCollapse = useCallback(() => {
     setCollapsed(true);
-    setSettingsOpen(false);
+    closeSettings();
     setGhost(false);
-  }, []);
+    setAutoGhostNotice(false);
+  }, [closeSettings]);
 
   const dismissWelcome = useCallback(() => {
     try {
@@ -227,6 +252,8 @@ function AppContent() {
       }
       return next;
     });
+    // Salir del fantasma (o entrar a mano) descarta el aviso de inactividad.
+    setAutoGhostNotice(false);
   }, []);
 
   useEffect(() => {
@@ -253,6 +280,68 @@ function AppContent() {
     };
   }, [isDisplaying, chromeVisible, ghost, reveal]);
 
+  // Temporizador de inactividad → modo fantasma automático. El onFire hace lo
+  // mismo que activar el fantasma a mano (toggleGhost) más un aviso temporal.
+  useEffect(() => {
+    if (!autoGhostTimerRef.current) {
+      autoGhostTimerRef.current = new AutoGhostTimer(() => {
+        setGhost(true);
+        window.clearTimeout(hideTimerRef.current);
+        setChromeVisible(false);
+        setAutoGhostNotice(true);
+        window.clearTimeout(autoGhostNoticeTimerRef.current);
+        autoGhostNoticeTimerRef.current = window.setTimeout(() => setAutoGhostNotice(false), 6000);
+      });
+    }
+    autoGhostTimerRef.current.update({
+      enabled: autoGhostPrefs.enabled,
+      idleMs: autoGhostPrefs.idleSeconds * 1000,
+      eligible: autoGhostEligible({
+        collapsed,
+        tangible,
+        settingsOpen,
+        welcomeOpen,
+        manualSearchOpen,
+        ghost,
+      }),
+    });
+  }, [
+    autoGhostPrefs,
+    collapsed,
+    tangible,
+    settingsOpen,
+    welcomeOpen,
+    manualSearchOpen,
+    ghost,
+  ]);
+
+  useEffect(() => () => autoGhostTimerRef.current?.dispose(), []);
+
+  // Actividad del usuario sobre el HUD: reinicia la cuenta del intangible
+  // automático. Con la ventana click-through los mousemove reenviados no cuentan.
+  useEffect(() => {
+    const onActivity = (e: Event) => {
+      if (isHudActivity(e.type, clickThroughRef.current)) {
+        autoGhostTimerRef.current?.activity();
+      }
+    };
+    const types = [
+      'pointerdown',
+      'mousedown',
+      'wheel',
+      'keydown',
+      'contextmenu',
+      'pointermove',
+      'mousemove',
+    ] as const;
+    for (const type of types) {
+      window.addEventListener(type, onActivity, type === 'wheel' ? { passive: true } : undefined);
+    }
+    return () => {
+      for (const type of types) window.removeEventListener(type, onActivity);
+    };
+  }, []);
+
   const chromeHidden = !tangible && (ghost || (isDisplaying && !chromeVisible));
 
   useEffect(() => {
@@ -269,6 +358,7 @@ function AppContent() {
       !welcomeOpen &&
       !manualSearchOpen &&
       (ghost ? !handleHovered : chromeHidden);
+    clickThroughRef.current = clickThrough;
     window.api?.setClickThrough?.(clickThrough);
   }, [collapsed, ghost, handleHovered, chromeHidden, settingsOpen, tangible, welcomeOpen, manualSearchOpen]);
 
@@ -313,6 +403,12 @@ function AppContent() {
         <div className="tangible-badge" role="status">
           Modo tangible · <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>T</kbd> para soltar ·{' '}
           <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+flechas para mover
+        </div>
+      )}
+      {autoGhostNotice && ghost && (
+        <div className="auto-ghost-notice" role="status">
+          Intangible por inactividad · doble clic en la pestañita para volver ·{' '}
+          <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>T</kbd> fuerza el modo tangible
         </div>
       )}
       <WidgetHandle
@@ -372,7 +468,7 @@ function AppContent() {
       )}
       <SettingsPanel
         open={settingsOpen}
-        onClose={() => setSettingsOpen(false)}
+        onClose={closeSettings}
         autoStart={autoStart}
         onAutoStartChange={setAutoStart}
         teacherRef={teacherRef}
