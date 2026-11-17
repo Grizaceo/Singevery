@@ -6,13 +6,18 @@
 // persistía en la caché de letras y el guard `alreadyDone` del StateStore
 // impedía reintentarlo: la canción quedaba con la "traducción" idéntica para
 // siempre.
-import { describe, it, expect, vi, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
   translateLines,
   untranslatedRatio,
   UNTRANSLATED_FAIL_RATIO,
-  SAME_LANGUAGE_ERROR,
 } from '../electron/services/translate';
+import { setLocale, t } from '../src/i18n';
+
+// Estas pruebas comparan los textos en español que la app ya mostraba:
+// se fija el idioma local y se restaura el inglés al terminar.
+beforeEach(() => setLocale('es'));
+afterEach(() => setLocale('en'));
 
 function myMemoryOk(translatedText: string, detectedLanguage?: string) {
   return {
@@ -122,7 +127,7 @@ describe('translateLines — no acepta el eco', () => {
     });
 
     expect(result.ok).toBe(false);
-    expect(result.error).toBe(SAME_LANGUAGE_ERROR);
+    expect(result.error).toBe(t('translation.sameLanguage'));
     // Solo las peticiones de detección: ni una por línea.
     expect(fetchMock.mock.calls.length).toBeLessThanOrEqual(3);
   });

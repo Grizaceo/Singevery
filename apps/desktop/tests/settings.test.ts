@@ -251,4 +251,32 @@ describe('settings persistente (P2.8)', () => {
 
     expect(createPersistentSettings().displayStore.get().legibilityBoost).toBe(true);
   });
+
+  it('uiLanguage por defecto es inglés y persiste el cambio', () => {
+    const s1 = createPersistentSettings();
+    expect(s1.uiLanguageStore.get()).toBe('en');
+
+    s1.uiLanguageStore.set('es');
+    expect(s1.uiLanguageStore.get()).toBe('es');
+
+    // Una segunda instancia recarga el mismo archivo.
+    const s2 = createPersistentSettings();
+    expect(s2.uiLanguageStore.get()).toBe('es');
+  });
+
+  it('uiLanguage con valor inválido o ausente cae al inglés', () => {
+    const s1 = createPersistentSettings();
+    s1.uiLanguageStore.set('es');
+
+    const file = path.join(userDataDir, 'espejo-settings.json');
+    const raw = JSON.parse(fs.readFileSync(file, 'utf8')) as Record<string, unknown>;
+    raw.uiLanguage = 'fr';
+    fs.writeFileSync(file, JSON.stringify(raw), 'utf8');
+    expect(createPersistentSettings().uiLanguageStore.get()).toBe('en');
+
+    // Un archivo de ajustes viejo sin el campo también cae al inglés.
+    delete raw.uiLanguage;
+    fs.writeFileSync(file, JSON.stringify(raw), 'utf8');
+    expect(createPersistentSettings().uiLanguageStore.get()).toBe('en');
+  });
 });

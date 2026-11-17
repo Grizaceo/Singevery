@@ -15,6 +15,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import { t } from '../../../src/i18n';
 import { DEFAULT_MODEL_URL } from './llmPath';
 
 export interface DownloadProgress {
@@ -60,7 +61,7 @@ export async function downloadModel(
   signal?: AbortSignal,
 ): Promise<DownloadResult> {
   const key = path.resolve(filePath);
-  if (activeDownloads.has(key)) return { ok: false, filePath, totalBytes: 0, error: 'Ya hay una descarga en curso' };
+  if (activeDownloads.has(key)) return { ok: false, filePath, totalBytes: 0, error: t('errors.downloadInProgress') };
   activeDownloads.add(key);
   const controller = new AbortController();
   const abort = () => controller.abort();
@@ -85,23 +86,23 @@ export async function downloadModel(
     if (res.status !== 200 && res.status !== 206) {
       // An obsolete/full partial can be restarted on the next attempt.
       if (res.status === 416) await fs.promises.rm(identityPath, { force: true });
-      return { ok: false, filePath, totalBytes: resumedFrom, error: `HTTP ${res.status} al descargar el modelo` };
+      return { ok: false, filePath, totalBytes: resumedFrom, error: t('errors.downloadHttp', { status: res.status }) };
     }
-    if (!res.body) throw new Error('El servidor no envió cuerpo');
+    if (!res.body) throw new Error(t('errors.serverNoBody'));
     const encoding = res.headers.get('content-encoding');
-    if (encoding && encoding !== 'identity') throw new Error('Codificación no válida para descargar el modelo');
+    if (encoding && encoding !== 'identity') throw new Error(t('errors.downloadEncoding'));
     const rawLength = res.headers.get('content-length');
     const length = rawLength === null ? null : Number(rawLength);
-    if (length !== null && (!Number.isSafeInteger(length) || length <= 0)) throw new Error('Content-Length inválido');
+    if (length !== null && (!Number.isSafeInteger(length) || length <= 0)) throw new Error(t('errors.contentLengthInvalid'));
     let total = length ?? 0;
     if (res.status === 206) {
       const range = /^bytes (\d+)-(\d+)\/(\d+)$/.exec(res.headers.get('content-range') ?? '');
       if (!range || resumedFrom <= 0 || !identity || res.headers.get('etag') !== identity.etag) {
-        throw new Error('El servidor no confirmó la identidad/rango del modelo parcial');
+        throw new Error(t('errors.partialIdentity'));
       }
       const [begin, end, size] = range.slice(1).map(Number);
       if (![begin, end, size].every(Number.isSafeInteger) || begin !== resumedFrom || end !== size - 1 || end < begin ||
-          (length !== null && length !== end - begin + 1)) throw new Error('Content-Range no coincide con el modelo parcial');
+          (length !== null && length !== end - begin + 1)) throw new Error(t('errors.contentRangeMismatch'));
       total = size;
     } else {
       // A server may ignore Range, or If-Range may detect a new model. Replace.
@@ -126,21 +127,21 @@ export async function downloadModel(
           touch();
           await handle.writeFile(value);
           received += value.length;
-          if (total > 0 && resumedFrom + received > total) throw new Error('El modelo excede el tamaño anunciado');
+          if (total > 0 && resumedFrom + received > total) throw new Error(t('errors.modelExceedsSize'));
           onProgress?.({ received, total, resumedFrom });
         }
       } finally { reader.releaseLock(); }
     } finally { await handle.close(); }
     controller.signal.throwIfAborted();
     const totalBytes = resumedFrom + received;
-    if (totalBytes < 8 || (total > 0 && totalBytes !== total)) throw new Error('Descarga incompleta del modelo');
+    if (totalBytes < 8 || (total > 0 && totalBytes !== total)) throw new Error(t('errors.downloadIncomplete'));
     const check = await fs.promises.open(partPath, 'r');
     try {
       const magic = Buffer.alloc(4);
       await check.read(magic, 0, 4, 0);
       if (magic.toString('ascii') !== 'GGUF') {
         await fs.promises.rm(identityPath, { force: true });
-        throw new Error('El archivo descargado no es un modelo GGUF');
+        throw new Error(t('errors.notGguf'));
       }
     } finally { await check.close(); }
     await fs.promises.rename(partPath, filePath);

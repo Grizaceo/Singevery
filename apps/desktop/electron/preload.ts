@@ -174,6 +174,24 @@ const api = {
   ): Promise<{ ok: boolean; reading: import('../src/types').ReadingSettings }> =>
     ipcRenderer.invoke('settings:setReading', partial),
 
+  getUiLanguage: (): Promise<{ ok: boolean; language: import('../src/types').UiLanguage }> =>
+    ipcRenderer.invoke('settings:getUiLanguage'),
+
+  setUiLanguage: (
+    language: import('../src/types').UiLanguage,
+  ): Promise<{ ok: boolean; language: import('../src/types').UiLanguage }> =>
+    ipcRenderer.invoke('settings:setUiLanguage', language),
+
+  onUiLanguageChanged: (cb: (language: import('../src/types').UiLanguage) => void): (() => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, language: import('../src/types').UiLanguage): void => {
+      cb(language);
+    };
+    ipcRenderer.on('settings:uiLanguageChanged', listener);
+    return () => {
+      ipcRenderer.removeListener('settings:uiLanguageChanged', listener);
+    };
+  },
+
   requestTranslation: (): Promise<{ ok: boolean; error?: string }> =>
     ipcRenderer.invoke('lyrics:translate'),
 

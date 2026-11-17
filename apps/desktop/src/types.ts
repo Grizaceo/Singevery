@@ -169,6 +169,9 @@ export interface ReadingSettings {
 export type TextAlignment = 'left' | 'center' | 'right';
 export type TextColorMode = 'manual' | 'auto';
 
+/** Idioma de la interfaz. Debe coincidir con `Locale` de src/i18n. */
+export type UiLanguage = 'en' | 'es';
+
 export type RecognitionProviderMode = 'auto' | 'shazam' | 'audd';
 
 export interface DisplaySettings {
@@ -201,7 +204,8 @@ export interface DisplaySettings {
 export interface IpaInfo {
   lang: string;
   label: string;
-  accuracy: 'exacta' | 'aproximada';
+  /** Texto ya traducido del main ("exact"/"approximate" en inglés, "exacta"/"aproximada" en español). */
+  accuracy: string;
   caveat: string;
 }
 
@@ -483,6 +487,12 @@ export interface DesktopApi {
   setReadingSettings: (
     partial: Partial<ReadingSettings>,
   ) => Promise<{ ok: boolean; reading: ReadingSettings }>;
+
+  // Idioma de la interfaz (el main lo aplica a sus propios textos y avisa
+  // por 'settings:uiLanguageChanged' cuando cambia).
+  getUiLanguage: () => Promise<{ ok: boolean; language: UiLanguage }>;
+  setUiLanguage: (language: UiLanguage) => Promise<{ ok: boolean; language: UiLanguage }>;
+  onUiLanguageChanged: (cb: (language: UiLanguage) => void) => () => void;
 
   requestTranslation: () => Promise<{ ok: boolean; error?: string }>;
   exportDiagnostics: () => Promise<{

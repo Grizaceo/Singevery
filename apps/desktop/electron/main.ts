@@ -25,6 +25,7 @@ import {
   NULL_RECOGNITION_PROVIDER_STORE,
   NULL_TRANSLATION_STORE,
   NULL_READING_STORE,
+  NULL_UI_LANGUAGE_STORE,
   type AppSettings,
   type OffsetStore,
   type CalibrationStore,
@@ -32,6 +33,7 @@ import {
   type RecognitionProviderStore,
   type TranslationStore,
   type ReadingStore,
+  type UiLanguageStore,
 } from './services/settings';
 import { RecognitionService } from './services/recognition/recognitionService';
 import { FileLyricsCache } from './services/cache/lyricsCache';
@@ -91,6 +93,7 @@ import {
   validateSupportTicketDraft,
 } from './services/supportTicket';
 import type { SupportTicketDraft } from '../src/types';
+import { DEFAULT_LOCALE, getLocale, normalizeLocale, setLocale, t } from '../src/i18n';
 
 const isDev = process.env.NODE_ENV === 'development' || !!process.env.VITE_DEV_SERVER_URL;
 const devServerUrl = process.env.VITE_DEV_SERVER_URL ?? 'http://localhost:5173';
@@ -117,7 +120,7 @@ function openExternalSafe(url: string): Promise<void> {
     /* URL inválida */
   }
   console.warn(`[main] openExternal bloqueado (destino no permitido): ${url}`);
-  return Promise.reject(new Error(`Destino no permitido: ${url}`));
+  return Promise.reject(new Error(t('errors.destinationNotAllowed', { url })));
 }
 
 /** S2: la ventana solo navega a su propia UI. Comparación exacta, no prefijo
@@ -253,7 +256,7 @@ async function openBundledDocument(filename: string): Promise<{ ok: boolean; err
     path.join(process.cwd(), filename),
   ];
   const documentPath = candidates.find((candidate) => fs.existsSync(candidate));
-  if (!documentPath) return { ok: false, error: `No se encontró ${filename}` };
+  if (!documentPath) return { ok: false, error: t('errors.documentNotFound', { file: filename }) };
   const error = await shell.openPath(documentPath);
   return error ? { ok: false, error } : { ok: true };
 }
@@ -843,14 +846,14 @@ function registerIpcHandlers(): void {
     'lyrics:load',
     async (_event, title: string, artist: string): Promise<{ ok: boolean; error?: string }> => {
       if (!stateStore) {
-        return { ok: false, error: 'StateStore no inicializado' };
+        return { ok: false, error: t('errors.stateStoreNotInitialized') };
       }
       try {
         await stateStore.loadLyricsByMetadata(title, artist);
         matchLog?.log({ type: 'load', source: 'manual', outcome: 'loaded', track: { title, artist } });
         return { ok: true };
       } catch (err) {
-        const message = err instanceof Error ? err.message : 'Error desconocido';
+        const message = err instanceof Error ? err.message : t('common.unknownError');
         matchLog?.log({ type: 'load', source: 'manual', outcome: 'error', track: { title, artist }, error: message });
         return { ok: false, error: message };
       }
@@ -861,7 +864,7 @@ function registerIpcHandlers(): void {
     'lyrics:retry',
     async (_event, title: string, artist: string): Promise<{ ok: boolean; error?: string }> => {
       if (!stateStore) {
-        return { ok: false, error: 'StateStore no inicializado' };
+        return { ok: false, error: t('errors.stateStoreNotInitialized') };
       }
       try {
         // retrySearch limpia la caché (incluida la negativa) y preserva la
@@ -869,7 +872,7 @@ function registerIpcHandlers(): void {
         await stateStore.retrySearch(title, artist);
         return { ok: true };
       } catch (err) {
-        const message = err instanceof Error ? err.message : 'Error desconocido';
+        const message = err instanceof Error ? err.message : t('common.unknownError');
         return { ok: false, error: message };
       }
     },
@@ -887,16 +890,16 @@ function registerIpcHandlers(): void {
       error?: string;
     }> => {
       if (!stateStore || !mainWindow) {
-        return { ok: false, error: 'La ventana todavía no está lista' };
+        return { ok: false, error: t('errors.windowNotReady') };
       }
 
       try {
         const selection = await dialog.showOpenDialog(mainWindow, {
-          title: 'Importar letra propia o autorizada',
+          title: t('dialogs.importLyrics'),
           properties: ['openFile'],
           filters: [
-            { name: 'Letras LRC o texto', extensions: ['lrc', 'txt'] },
-            { name: 'Todos los archivos', extensions: ['*'] },
+            { name: t('dialogs.lyricsFiles'), extensions: ['lrc', 'txt'] },
+            { name: t('dialogs.allFiles'), extensions: ['*'] },
           ],
         });
         if (selection.canceled || selection.filePaths.length === 0) {
@@ -905,9 +908,9 @@ function registerIpcHandlers(): void {
 
         const filePath = selection.filePaths[0];
         const stats = await fs.promises.stat(filePath);
-        if (!stats.isFile()) return { ok: false, error: 'La selección no es un archivo' };
+        if (!stats.isFile()) return { ok: false, error: t('errors.notAFile') };
         if (stats.size > MAX_IMPORTED_LYRICS_BYTES) {
-          return { ok: false, error: 'El archivo supera el máximo permitido de 2 MB' };
+          return { ok: false, error: t('errors.fileTooLarge') };
         }
 
         const content = await fs.promises.readFile(filePath, 'utf8');
@@ -922,7 +925,7 @@ function registerIpcHandlers(): void {
           lineCount: imported.lyrics.lines.length,
         };
       } catch (err) {
-        const message = err instanceof Error ? err.message : 'No se pudo importar la letra';
+        const message = err instanceof Error ? err.message : t('errors.importLyricsFailed');
         console.warn('lyrics:import failed', message);
         return { ok: false, error: message };
       }
@@ -968,13 +971,13 @@ function registerIpcHandlers(): void {
       event,
       input: SaveReferenceInput,
     ): { ok: boolean; reference?: ReferenceMeta; error?: string } => {
-      if (!isTrustedSender(event)) return { ok: false, error: 'Origen no autorizado' };
-      if (!referenceStore) return { ok: false, error: 'El almacén no está disponible' };
+      if (!isTrustedSender(event)) return { ok: false, error: t('errors.unauthorizedOrigin') };
+      if (!referenceStore) return { ok: false, error: t('errors.storeUnavailable') };
       try {
         const saved = referenceStore.save({ ...input, appVersion: app.getVersion() });
         return { ok: true, reference: toMeta(saved) };
       } catch (err) {
-        return { ok: false, error: err instanceof Error ? err.message : 'Error al guardar' };
+        return { ok: false, error: err instanceof Error ? err.message : t('errors.saveFailed') };
       }
     },
   );
@@ -987,30 +990,30 @@ function registerIpcHandlers(): void {
   // Abre en el explorador la carpeta donde se guardan las melodías de
   // referencia (profesor + karaoke automático). Todo local, sin red.
   ipcMain.handle('references:openFolder', async (event): Promise<{ ok: boolean; error?: string }> => {
-    if (!isTrustedSender(event)) return { ok: false, error: 'Origen no autorizado' };
-    if (!referenceStore) return { ok: false, error: 'El almacén no está disponible' };
+    if (!isTrustedSender(event)) return { ok: false, error: t('errors.unauthorizedOrigin') };
+    if (!referenceStore) return { ok: false, error: t('errors.storeUnavailable') };
     try {
       const dir = referenceStore.directory();
       await fs.promises.mkdir(dir, { recursive: true });
       const err = await shell.openPath(dir);
       return err ? { ok: false, error: err } : { ok: true };
     } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : 'No se pudo abrir la carpeta' };
+      return { ok: false, error: err instanceof Error ? err.message : t('errors.openFolderFailed') };
     }
   });
 
   ipcMain.handle(
     'references:export',
     async (event, id: string): Promise<{ ok: boolean; canceled?: boolean; error?: string }> => {
-      if (!isTrustedSender(event)) return { ok: false, error: 'Origen no autorizado' };
-      if (!referenceStore) return { ok: false, error: 'El almacén no está disponible' };
+      if (!isTrustedSender(event)) return { ok: false, error: t('errors.unauthorizedOrigin') };
+      if (!referenceStore) return { ok: false, error: t('errors.storeUnavailable') };
       const reference = referenceStore.get(id);
-      if (!reference) return { ok: false, error: 'La referencia ya no existe' };
+      if (!reference) return { ok: false, error: t('errors.referenceGone') };
       try {
         const options = {
-          title: 'Exportar melodía de referencia',
+          title: t('dialogs.exportReference'),
           defaultPath: suggestedFileName(reference),
-          filters: [{ name: 'Referencia de Singevery', extensions: [REFERENCE_FILE_EXTENSION] }],
+          filters: [{ name: t('dialogs.referenceFilter'), extensions: [REFERENCE_FILE_EXTENSION] }],
         };
         const result = mainWindow
           ? await dialog.showSaveDialog(mainWindow, options)
@@ -1019,7 +1022,7 @@ function registerIpcHandlers(): void {
         fs.writeFileSync(result.filePath, buildReferenceFile(reference), 'utf8');
         return { ok: true };
       } catch (err) {
-        return { ok: false, error: err instanceof Error ? err.message : 'Error al exportar' };
+        return { ok: false, error: err instanceof Error ? err.message : t('errors.exportFailed') };
       }
     },
   );
@@ -1032,12 +1035,12 @@ function registerIpcHandlers(): void {
       reference?: ReferenceMeta;
       error?: string;
     }> => {
-      if (!referenceStore) return { ok: false, error: 'El almacén no está disponible' };
+      if (!referenceStore) return { ok: false, error: t('errors.storeUnavailable') };
       try {
         const options = {
-          title: 'Importar melodía de referencia',
+          title: t('dialogs.importReference'),
           properties: ['openFile' as const],
-          filters: [{ name: 'Referencia de Singevery', extensions: [REFERENCE_FILE_EXTENSION] }],
+          filters: [{ name: t('dialogs.referenceFilter'), extensions: [REFERENCE_FILE_EXTENSION] }],
         };
         const selection = mainWindow
           ? await dialog.showOpenDialog(mainWindow, options)
@@ -1051,12 +1054,12 @@ function registerIpcHandlers(): void {
         // ANTES de leerlo y parseReferenceFile valida todo lo demás.
         const size = fs.statSync(filePath).size;
         if (size > MAX_REFERENCE_FILE_BYTES) {
-          return { ok: false, error: 'El archivo es demasiado grande para ser una referencia' };
+          return { ok: false, error: t('errors.referenceTooLarge') };
         }
         const parsed = parseReferenceFile(fs.readFileSync(filePath, 'utf8'));
         return { ok: true, reference: toMeta(referenceStore.save(parsed)) };
       } catch (err) {
-        return { ok: false, error: err instanceof Error ? err.message : 'Error al importar' };
+        return { ok: false, error: err instanceof Error ? err.message : t('errors.importFailed') };
       }
     },
   );
@@ -1065,13 +1068,13 @@ function registerIpcHandlers(): void {
     'practice:exportCsv',
     async (_event, csv: string): Promise<{ ok: boolean; canceled?: boolean; error?: string }> => {
       if (typeof csv !== 'string' || Buffer.byteLength(csv, 'utf8') > 1024 * 1024) {
-        return { ok: false, error: 'La colección de repaso no es válida' };
+        return { ok: false, error: t('errors.practiceInvalid') };
       }
       try {
         const options = {
-          title: 'Exportar líneas de repaso',
+          title: t('dialogs.exportPractice'),
           defaultPath: `singevery-repaso-${new Date().toISOString().slice(0, 10)}.csv`,
-          filters: [{ name: 'Archivo CSV', extensions: ['csv'] }],
+          filters: [{ name: t('dialogs.csvFile'), extensions: ['csv'] }],
         };
         const result = mainWindow
           ? await dialog.showSaveDialog(mainWindow, options)
@@ -1080,7 +1083,7 @@ function registerIpcHandlers(): void {
         await fs.promises.writeFile(result.filePath, csv, 'utf8');
         return { ok: true };
       } catch (err) {
-        const message = err instanceof Error ? err.message : 'No se pudo exportar el repaso';
+        const message = err instanceof Error ? err.message : t('errors.exportPracticeFailed');
         console.warn('practice:exportCsv failed', message);
         return { ok: false, error: message };
       }
@@ -1109,10 +1112,10 @@ function registerIpcHandlers(): void {
       recordStartedAt: number,
     ): Promise<{ ok: boolean; matched: boolean; error?: string }> => {
       if (!isTrustedSender(event)) {
-        return { ok: false, matched: false, error: 'Origen no autorizado' };
+        return { ok: false, matched: false, error: t('errors.unauthorizedOrigin') };
       }
       if (!stateStore) {
-        return { ok: false, matched: false, error: 'StateStore no inicializado' };
+        return { ok: false, matched: false, error: t('errors.stateStoreNotInitialized') };
       }
 
       try {
@@ -1124,7 +1127,7 @@ function registerIpcHandlers(): void {
         // el resultado: un match tardío no debe recargar letras ni cambiar
         // estado después de pulsar detener.
         if (epoch !== recognitionEpoch) {
-          return { ok: false, matched: false, error: 'Reconocimiento detenido' };
+          return { ok: false, matched: false, error: t('errors.recognitionStopped') };
         }
         const durationMs = Date.now() - startedAt;
         if (!match) {
@@ -1151,12 +1154,12 @@ function registerIpcHandlers(): void {
         // match tardío (un stop no debe terminar pintando letras).
         if (epoch !== recognitionEpoch) {
           stateStore.clearRecognition();
-          return { ok: false, matched: false, error: 'Reconocimiento detenido' };
+          return { ok: false, matched: false, error: t('errors.recognitionStopped') };
         }
         return { ok: true, matched: true };
       } catch (err) {
         stateStore.setRecognitionPhase(null);
-        const message = err instanceof Error ? err.message : 'Error desconocido';
+        const message = err instanceof Error ? err.message : t('common.unknownError');
         return { ok: false, matched: false, error: message };
       }
     },
@@ -1179,10 +1182,10 @@ function registerIpcHandlers(): void {
       error?: string;
     }> => {
       if (!isTrustedSender(event)) {
-        return { ok: false, matched: false, error: 'Origen no autorizado' };
+        return { ok: false, matched: false, error: t('errors.unauthorizedOrigin') };
       }
       if (!stateStore) {
-        return { ok: false, matched: false, error: 'StateStore no inicializado' };
+        return { ok: false, matched: false, error: t('errors.stateStoreNotInitialized') };
       }
       try {
         const epoch = recognitionEpoch;
@@ -1191,7 +1194,7 @@ function registerIpcHandlers(): void {
         // F2: mismo descarte que en identify — detener invalida la corrección
         // en vuelo.
         if (epoch !== recognitionEpoch) {
-          return { ok: false, matched: false, error: 'Reconocimiento detenido' };
+          return { ok: false, matched: false, error: t('errors.recognitionStopped') };
         }
         const durationMs = Date.now() - startedAt;
         if (!match) {
@@ -1204,7 +1207,7 @@ function registerIpcHandlers(): void {
         // propagar el match tardío.
         if (epoch !== recognitionEpoch) {
           stateStore.clearRecognition();
-          return { ok: false, matched: false, error: 'Reconocimiento detenido' };
+          return { ok: false, matched: false, error: t('errors.recognitionStopped') };
         }
         // El mismo chunk sirve para medir el desfase de la letra por energía
         // vocal: ya está grabado y ya se sabe a qué posición corresponde.
@@ -1230,7 +1233,7 @@ function registerIpcHandlers(): void {
         // cerrar la confirmación en ~7s en vez de ~20s.
         return { ok: true, matched: true, changed, suspected: stateStore.isChangeSuspected() };
       } catch (err) {
-        const message = err instanceof Error ? err.message : 'Error desconocido';
+        const message = err instanceof Error ? err.message : t('common.unknownError');
         matchLog?.log({ type: 'correct', ...recognitionLogFields(null, recordStartedAt, appSettings?.recognitionProviderStore.get() ?? 'auto'), outcome: 'error', error: message });
         return { ok: false, matched: false, error: message };
       }
@@ -1265,7 +1268,7 @@ function registerIpcHandlers(): void {
     'matchlog:feedback',
     async (_event, correct: boolean): Promise<{ ok: boolean; resynced?: boolean; error?: string }> => {
       if (!matchLog || !stateStore || !mainWindow || mainWindow.isDestroyed()) {
-        return { ok: false, error: 'La ventana todavía no está lista' };
+        return { ok: false, error: t('errors.windowNotReady') };
       }
       const model = stateStore.getLastModel();
       matchLog.log({
@@ -1426,8 +1429,29 @@ function registerIpcHandlers(): void {
     },
   );
 
+  ipcMain.handle('settings:getUiLanguage', (): { ok: boolean; language: ReturnType<UiLanguageStore['get']> } => {
+    const language = appSettings?.uiLanguageStore.get() ?? NULL_UI_LANGUAGE_STORE.get();
+    return { ok: true, language };
+  });
+
+  ipcMain.handle(
+    'settings:setUiLanguage',
+    (event, language: unknown): { ok: boolean; language: ReturnType<UiLanguageStore['get']> } => {
+      if (!isTrustedSender(event)) return { ok: false, language: getLocale() };
+      const locale = normalizeLocale(language);
+      appSettings?.uiLanguageStore.set(locale);
+      // El main también muestra textos (errores IPC, diálogos, RenderModel):
+      // aplicar el idioma aquí los traduce sin reiniciar la app.
+      setLocale(locale);
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('settings:uiLanguageChanged', locale);
+      }
+      return { ok: true, language: locale };
+    },
+  );
+
   ipcMain.handle('lyrics:translate', async (): Promise<{ ok: boolean; error?: string }> => {
-    if (!stateStore) return { ok: false, error: 'App no inicializada' };
+    if (!stateStore) return { ok: false, error: t('errors.appNotInitialized') };
     return stateStore.requestTranslation();
   });
 
@@ -1435,9 +1459,9 @@ function registerIpcHandlers(): void {
     'diagnostics:export',
     async (): Promise<{ ok: boolean; canceled?: boolean; path?: string; error?: string }> => {
       const options = {
-        title: 'Exportar diagnóstico de Singevery',
+        title: t('dialogs.exportDiagnostics'),
         defaultPath: `Singevery-diagnostico-${new Date().toISOString().slice(0, 10)}.json`,
-        filters: [{ name: 'Diagnóstico JSON', extensions: ['json'] }],
+        filters: [{ name: t('dialogs.diagnosticsJson'), extensions: ['json'] }],
       };
       const result = mainWindow
         ? await dialog.showSaveDialog(mainWindow, options)
@@ -1452,7 +1476,7 @@ function registerIpcHandlers(): void {
         console.error('[diagnostics ERROR] No se pudo exportar:', err);
         return {
           ok: false,
-          error: err instanceof Error ? err.message : 'No se pudo guardar el diagnóstico',
+          error: err instanceof Error ? err.message : t('errors.saveDiagnosticsFailed'),
         };
       }
     },
@@ -1473,7 +1497,7 @@ function registerIpcHandlers(): void {
       error?: string;
     }> => {
       if (!isTrustedSender(event)) {
-        return { ok: false, error: 'Origen no autorizado' };
+        return { ok: false, error: t('errors.unauthorizedOrigin') };
       }
       const validation = validateSupportTicketDraft(input);
       if (!validation.ok) return { ok: false, error: validation.error };
@@ -1483,9 +1507,9 @@ function registerIpcHandlers(): void {
       const ticketId = createSupportTicketId(now);
       const filename = `Singevery-ticket-${ticketId}.json`;
       const options = {
-        title: 'Guardar ticket de Singevery',
+        title: t('dialogs.saveTicket'),
         defaultPath: filename,
-        filters: [{ name: 'Ticket JSON', extensions: ['json'] }],
+        filters: [{ name: t('dialogs.ticketJson'), extensions: ['json'] }],
       };
       const result = mainWindow
         ? await dialog.showSaveDialog(mainWindow, options)
@@ -1500,7 +1524,7 @@ function registerIpcHandlers(): void {
         console.error('[support ERROR] No se pudo guardar el ticket:', err);
         return {
           ok: false,
-          error: err instanceof Error ? err.message : 'No se pudo guardar el ticket',
+          error: err instanceof Error ? err.message : t('errors.saveTicketFailed'),
         };
       }
 
@@ -1518,7 +1542,7 @@ function registerIpcHandlers(): void {
         await openExternalSafe(issueUrl);
         issueOpened = true;
       } catch (err) {
-        warning = err instanceof Error ? err.message : 'No se pudo abrir el portal de soporte';
+        warning = err instanceof Error ? err.message : t('errors.supportPortalFailed');
         console.warn('[support] Ticket guardado, pero no se pudo abrir el portal:', warning);
       }
       shell.showItemInFolder(result.filePath);
@@ -1567,9 +1591,9 @@ function registerIpcHandlers(): void {
   ipcMain.handle(
     'llm:downloadModel',
     async (event): Promise<{ ok: boolean; error?: string; filePath?: string }> => {
-      if (!llmRuntime) return { ok: false, error: 'Runtime no disponible' };
+      if (!llmRuntime) return { ok: false, error: t('errors.runtimeUnavailable') };
       const modelPath = llmRuntime.getStatus().modelPath;
-      if (!modelPath) return { ok: false, error: 'Ruta de modelo no disponible' };
+      if (!modelPath) return { ok: false, error: t('errors.modelPathUnavailable') };
       const url = process.env.LLM_MODEL_URL?.trim() || DEFAULT_MODEL_URL;
       try {
         const result = await downloadModel(url, modelPath, (p) => {
@@ -1579,12 +1603,12 @@ function registerIpcHandlers(): void {
             resumedFrom: p.resumedFrom,
           });
         });
-        if (!result.ok) return { ok: false, error: result.error ?? 'Descarga fallida' };
+        if (!result.ok) return { ok: false, error: result.error ?? t('errors.downloadFailed') };
         // Modelo listo: arrancar el runtime automáticamente.
         llmRuntime.start();
         return { ok: true, filePath: result.filePath };
       } catch (err) {
-        return { ok: false, error: err instanceof Error ? err.message : 'Descarga fallida' };
+        return { ok: false, error: err instanceof Error ? err.message : t('errors.downloadFailed') };
       }
     },
   );
@@ -1640,6 +1664,10 @@ async function bootstrap(): Promise<void> {
     const candidate = new HyprlandWindow(LINUX_DESKTOP_NAME);
     hyprland = (await candidate.init()) ? candidate : null;
   }
+
+  // El idioma de la UI se aplica ANTES de crear la ventana: los textos del
+  // main (RenderModel, errores IPC, diálogos) ya nacen en el idioma elegido.
+  setLocale(appSettings?.uiLanguageStore.get() ?? DEFAULT_LOCALE);
 
   mainWindow = createWindow();
   // Un monitor que se desconecta o cambia de resolución puede dejar la

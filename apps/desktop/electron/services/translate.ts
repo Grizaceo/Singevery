@@ -9,6 +9,7 @@
 // ============================================================================
 
 import { deadline, isAbortError, seconds } from './http';
+import { t } from '../../src/i18n';
 
 export type TranslationProvider = 'mymemory' | 'local' | 'deepl' | 'google';
 
@@ -127,11 +128,6 @@ const SUBSTANTIAL_MIN_CHARS = 12;
 /** Muestras que votan el idioma de origen (ver detectSourceLang). */
 const DETECT_SAMPLES = 3;
 
-/** Error que se devuelve cuando la letra ya está en el idioma de destino. */
-export const SAME_LANGUAGE_ERROR =
-  'La letra ya parece estar en el idioma de destino. Cambia el idioma en ' +
-  'Ajustes → Traducción si querías otro.';
-
 function normalizeForCompare(text: string): string {
   return text
     .toLowerCase()
@@ -237,10 +233,7 @@ function readMyMemory(data: MyMemoryResponse): { text: string; detected?: string
   const detail = (data.responseDetails ?? '').trim();
 
   if (data.quotaFinished || /USED ALL AVAILABLE FREE TRANSLATIONS/i.test(detail)) {
-    throw new Error(
-      'MyMemory: se agotó la cuota gratuita de hoy. Añade tu email en Ajustes → ' +
-        'Traducción para subirla, o usa DeepL/Google con tu propia clave.',
-    );
+    throw new Error(t('translation.quotaExhausted'));
   }
   if (Number.isFinite(status) && status !== 200) {
     throw new Error(`MyMemory ${status}${detail ? `: ${detail.slice(0, 120)}` : ''}`);
@@ -248,7 +241,7 @@ function readMyMemory(data: MyMemoryResponse): { text: string; detected?: string
 
   const text = data.responseData?.translatedText;
   if (typeof text !== 'string' || !text) {
-    throw new Error('MyMemory devolvió una respuesta vacía');
+    throw new Error(t('translation.emptyResponse'));
   }
   return { text, detected: data.responseData?.detectedLanguage };
 }
@@ -278,7 +271,7 @@ async function myMemoryRequest(
     payload = (await res.json()) as MyMemoryResponse;
   } catch (err) {
     if (dl.timedOut) {
-      throw new Error(`MyMemory no respondió en ${seconds(REQUEST_TIMEOUT_MS.mymemory)} s`);
+      throw new Error(t('translation.providerTimeout', { provider: 'MyMemory', seconds: seconds(REQUEST_TIMEOUT_MS.mymemory) }));
     }
     throw err;
   } finally {
@@ -474,7 +467,7 @@ async function translateWithMyMemory(
   // cual: es la vía principal por la que la "traducción" salía idéntica al
   // original. Mejor decírselo al usuario que gastar 40 peticiones en un eco.
   if (source.toLowerCase() === target) {
-    throw new Error(SAME_LANGUAGE_ERROR);
+    throw new Error(t('translation.sameLanguage'));
   }
 
   return mapWithConcurrency(lines.length, MYMEMORY_CONCURRENCY, (i) =>
@@ -545,10 +538,7 @@ async function callLocalModel(
     // nada. El usuario debe configurarlo como proveedor externo (con
     // consentimiento) si quiere un servidor en otra máquina.
     if (!isLoopbackEndpoint(endpoint)) {
-      throw new Error(
-        'El endpoint local debe estar en esta máquina (localhost/127.0.0.1). ' +
-          'Para un servidor remoto usa un proveedor externo.',
-      );
+      throw new Error(t('translation.localEndpointRemote'));
     }
     const res = await fetch(endpoint, {
       method: 'POST',
@@ -565,14 +555,14 @@ async function callLocalModel(
     connected = true;
 
     if (res.status === 404) {
-      throw new Error(
-        `El runtime local no conoce el modelo "${model}". Descárgalo primero ` +
-          `(con Ollama: ollama pull ${model}).`,
-      );
+      throw new Error(t('translation.localModelUnknown', { model }));
     }
     if (!res.ok) {
       const detail = await res.text().catch(() => '');
-      throw new Error(`Modelo local ${res.status}${detail ? `: ${detail.slice(0, 120)}` : ''}`);
+      throw new Error(
+        t('translation.localHttpError', { status: res.status }) +
+          (detail ? `: ${detail.slice(0, 120)}` : ''),
+      );
     }
 
     const data = (await res.json()) as {
@@ -580,24 +570,20 @@ async function callLocalModel(
     };
     const content = data.choices?.[0]?.message?.content;
     if (typeof content !== 'string' || !content.trim()) {
-      throw new Error('El modelo local devolvió una respuesta vacía');
+      throw new Error(t('translation.localEmptyResponse'));
     }
     return content;
   } catch (err) {
     if (dl.timedOut) {
       throw new Error(
-        `El modelo local no terminó en ${seconds(REQUEST_TIMEOUT_MS.local)} s. ` +
-          'Prueba con un modelo más pequeño, o con GPU.',
+        t('translation.localTimeout', { seconds: seconds(REQUEST_TIMEOUT_MS.local) }),
       );
     }
     if (isAbortError(err)) throw err;
     // Solo es "no se pudo conectar" si el fallo ocurrió ANTES de la respuesta;
     // si ya conectamos, el error de arriba es más informativo y hay que dejarlo.
     if (connected) throw err;
-    throw new Error(
-      `No se pudo conectar con el modelo local en ${endpoint}. ` +
-        '¿Está el runtime abierto? (por ejemplo, que Ollama esté corriendo)',
-    );
+    throw new Error(t('translation.localConnectFailed', { endpoint }));
   } finally {
     dl.dispose();
   }
@@ -639,8 +625,7 @@ async function translateWithLocal(
   }
 
   throw new Error(
-    `El modelo local no respetó el formato pedido (se esperaban ${lines.length} líneas ` +
-      'numeradas y sin omisiones). Reintenta o selecciona otro modelo de traducción.',
+    t('translation.localFormatError', { count: lines.length }),
   );
 }
 
@@ -675,12 +660,12 @@ async function translateWithDeepL(
     const data = (await res.json()) as { translations?: { text: string }[] };
     const out = data.translations?.map((t) => t.text) ?? [];
     if (out.length !== lines.length) {
-      throw new Error(`DeepL devolvió ${out.length} líneas, se esperaban ${lines.length}`);
+      throw new Error(t('translation.providerLineCount', { provider: 'DeepL', got: out.length, expected: lines.length }));
     }
     return out;
   } catch (err) {
     if (dl.timedOut) {
-      throw new Error(`DeepL no respondió en ${seconds(REQUEST_TIMEOUT_MS.deepl)} s`);
+      throw new Error(t('translation.providerTimeout', { provider: 'DeepL', seconds: seconds(REQUEST_TIMEOUT_MS.deepl) }));
     }
     throw err;
   } finally {
@@ -718,12 +703,12 @@ async function translateWithGoogle(
     };
     const out = data.data?.translations?.map((t) => t.translatedText) ?? [];
     if (out.length !== lines.length) {
-      throw new Error(`Google devolvió ${out.length} líneas, se esperaban ${lines.length}`);
+      throw new Error(t('translation.providerLineCount', { provider: 'Google', got: out.length, expected: lines.length }));
     }
     return out;
   } catch (err) {
     if (dl.timedOut) {
-      throw new Error(`Google Translate no respondió en ${seconds(REQUEST_TIMEOUT_MS.google)} s`);
+      throw new Error(t('translation.providerTimeout', { provider: 'Google Translate', seconds: seconds(REQUEST_TIMEOUT_MS.google) }));
     }
     throw err;
   } finally {
@@ -746,7 +731,7 @@ export async function translateLines(
   // `apiKey` es un email opcional para subir la cuota.
   const needsKey = config.provider === 'deepl' || config.provider === 'google';
   if (needsKey && !key) {
-    return { ok: false, error: 'Falta la API key de traducción (Ajustes → Traducción)' };
+    return { ok: false, error: t('translation.apiKeyMissing') };
   }
 
   // Presupuesto para TODA la canción, por encima del plazo de cada petición:
@@ -779,10 +764,7 @@ export async function translateLines(
     if (echo >= UNTRANSLATED_FAIL_RATIO) {
       return {
         ok: false,
-        error:
-          `El proveedor devolvió el texto sin traducir (${Math.round(echo * 100)}% de las ` +
-          'líneas iguales al original). Puede que la letra ya esté en el idioma de destino, ' +
-          'o que el proveedor no soporte ese par de idiomas.',
+        error: t('translation.echoNotTranslated', { pct: Math.round(echo * 100) }),
       };
     }
     const cleaned = blankEchoedLines(lines, translations);
@@ -795,15 +777,13 @@ export async function translateLines(
     if (budget.timedOut) {
       return {
         ok: false,
-        error:
-          `La traducción tardó más de ${seconds(TOTAL_BUDGET_MS[config.provider])} s y se canceló. ` +
-          'Inténtalo otra vez o cambia de proveedor en Ajustes → Traducción.',
+        error: t('translation.budgetExceeded', { seconds: seconds(TOTAL_BUDGET_MS[config.provider]) }),
       };
     }
     if (isAbortError(err)) {
-      return { ok: false, error: 'Traducción cancelada' };
+      return { ok: false, error: t('translation.cancelled') };
     }
-    const message = err instanceof Error ? err.message : 'Error de traducción';
+    const message = err instanceof Error ? err.message : t('translation.failed');
     return { ok: false, error: message };
   } finally {
     budget.dispose();

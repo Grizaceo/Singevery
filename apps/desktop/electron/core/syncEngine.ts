@@ -8,11 +8,12 @@
 import type { IpaInfo, LyricLine, RenderLine, RenderModel, Status, TimedLyrics } from '../../src/types';
 import {
   IPA_LANGS,
-  LANG_ACCURACY,
-  LANG_CAVEAT,
-  LANG_LABEL,
+  ipaLangAccuracy,
+  ipaLangCaveat,
+  ipaLangLabel,
   type IpaLang,
 } from '../services/phonetics';
+import { t } from '../../src/i18n';
 import { computeLineProgress } from './syncTiming';
 
 export interface RenderConfig {
@@ -116,14 +117,16 @@ export function targetLeadMs(gapMs: number | null): number {
   return Math.min(FAST_MAX_LEAD_MS * norm, FAST_LEAD_GAP_FRACTION * gapMs);
 }
 
-/** Metadatos del IPA japonés (kana → IPA): aproximado por naturaleza. */
-const JA_IPA_INFO: IpaInfo = {
-  lang: 'ja',
-  label: 'japonés',
-  accuracy: 'aproximada',
-  caveat:
-    'Convención fonológica estándar a partir del kana: no refleja la realización de cada cantante, y la lectura de los kanji depende del analizador morfológico (puede equivocarse).',
-};
+/** Metadatos del IPA japonés (kana → IPA): aproximado por naturaleza. Se
+ *  resuelven con t() en cada consulta porque el idioma de la UI puede cambiar. */
+function jaIpaInfo(): IpaInfo {
+  return {
+    lang: 'ja',
+    label: t('ipa.lang.ja'),
+    accuracy: t('ipa.accuracy.approx'),
+    caveat: t('ipa.caveat.ja'),
+  };
+}
 
 /**
  * Traduce `TimedLyrics.ipaLang` al bloque `ipa_info` del RenderModel: las
@@ -132,14 +135,14 @@ const JA_IPA_INFO: IpaInfo = {
  */
 function ipaInfoFor(lang: TimedLyrics['ipaLang']): IpaInfo | null {
   if (!lang) return null;
-  if (lang === 'ja') return { ...JA_IPA_INFO };
+  if (lang === 'ja') return jaIpaInfo();
   if ((IPA_LANGS as readonly string[]).includes(lang)) {
     const ipaLang = lang as IpaLang;
     return {
       lang: ipaLang,
-      label: LANG_LABEL[ipaLang],
-      accuracy: LANG_ACCURACY[ipaLang],
-      caveat: LANG_CAVEAT[ipaLang],
+      label: ipaLangLabel(ipaLang),
+      accuracy: ipaLangAccuracy(ipaLang),
+      caveat: ipaLangCaveat(ipaLang),
     };
   }
   return null;

@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
   translateLines,
   splitForMyMemory,
@@ -6,6 +6,12 @@ import {
   buildLocalPrompt,
   MYMEMORY_MAX_BYTES,
 } from '../electron/services/translate';
+import { setLocale } from '../src/i18n';
+
+// Estas pruebas comparan los textos en español que la app ya mostraba:
+// se fija el idioma local y se restaura el inglés al terminar.
+beforeEach(() => setLocale('es'));
+afterEach(() => setLocale('en'));
 
 /** Respuesta con la forma de la API compatible con OpenAI (Ollama, LM Studio…). */
 function localOk(content: string) {
