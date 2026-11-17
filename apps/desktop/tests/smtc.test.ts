@@ -157,6 +157,7 @@ describe('StateStore — fuente externa (SMTC)', () => {
   it('applyExternalPosition ancla a la posición del SO (cubre el seek)', () => {
     const s = new StateStore(null);
     s.nudgePosition(10_000); // pos 10s
+    s.resumeAutoSync(); // libera el hold manual del nudge
     s.applyExternalPosition(50_000, true, 0); // SO dice 50s → snap
     expect(s.getDisplayedPosition(0)).toBe(50_000);
   });
@@ -164,6 +165,7 @@ describe('StateStore — fuente externa (SMTC)', () => {
   it('applyExternalPosition suaviza los microsaltos moderados con rampa (P3.10)', () => {
     const s = new StateStore(null);
     s.nudgePosition(10_000); // pos 10s en t=0
+    s.resumeAutoSync(); // libera el hold manual del nudge
     // SMTC reporta 10.5s: error +500 (entre deadband y snap) → 'correct'.
     s.applyExternalPosition(10_500, true, 0);
     // No hay salto instantáneo a 10.5s: la rampa empieza en 0 y el reloj sigue.
@@ -181,6 +183,7 @@ describe('StateStore — fuente externa (SMTC)', () => {
   it('applyExternalPosition ignora el jitter por debajo de la deadband', () => {
     const s = new StateStore(null);
     s.nudgePosition(10_000);
+    s.resumeAutoSync(); // libera el hold manual del nudge
     // Error +100 (< deadband 150) → ignore, sin mover.
     s.applyExternalPosition(10_100, true, 0);
     expect(s.getDisplayedPosition(0)).toBe(10_000);

@@ -20,6 +20,8 @@ import {
   projectAnchoredPosition,
   computeDrift,
   normalizeTrackKey,
+  repeatPeriodsMs,
+  DRIFT_SNAP_MS,
 } from './syncTiming';
 import type { RecognitionPhase } from './syncTiming';
 import { looksLikeSameTrack } from '../services/lyrics/normalizeQuery';
@@ -35,6 +37,7 @@ import {
 } from './energySync';
 import { decodeWav } from './wavDecode';
 import { LyricsService, defaultLyricsService } from '../services/lyrics/lyricsService';
+import { isAuddTokenInvalid } from '../services/recognition/auddProvider';
 import { NULL_OFFSET_STORE, NULL_CALIBRATION_STORE, NULL_DISPLAY_STORE, NULL_TRANSLATION_STORE, NULL_READING_STORE } from '../services/settings';
 import type { OffsetStore, CalibrationStore, DisplayStore, TranslationStore, ReadingStore } from '../services/settings';
 import { translateLines, localTranslationEngineKey } from '../services/translate';
@@ -75,6 +78,9 @@ export interface StateDiagnostics {
     offsetMs: number;
     calibrationOffsetMs: number;
     paused: boolean;
+    /** Hold manual activo: el usuario movió la letra y el auto solo observa. */
+    manualHold: boolean;
+    holdReason: 'seekLine' | 'nudge' | null;
     clock: ReturnType<SyncClock['getDiagnostics']>;
     /** Última medición por correlación de energía vocal (null si no hubo). */
     energy: EnergyMeasurement | null;
@@ -124,11 +130,77 @@ export class StateStore {
   /** Arbitraje "¿en quién confiar: MPRIS/SMTC o el audio?" (ver identityArbiter.ts). */
   private readonly identity: IdentityArbiter;
 
-  private pendingAnchor: { key: string | null; position: number; at: number; sampleAt: number } | null = null;
+  private pendingAnchor: {
+    key: string | null;
+    position: number;
+    at: number;
+    sampleAt: number;
+    /** Anclas coherentes ADICIONALES necesarias para aplicar el snap. */
+    needed: number;
+    /** Anclas coherentes consecutivas ya vistas (sin contar la pendiente). */
+    seen: number;
+  } | null = null;
 
   /** Holgura al comparar una posición externa con la duración de la pista: las
    *  duraciones de SMTC y del reconocedor no coinciden al segundo. */
   private static readonly EXTERNAL_POSITION_SLACK_MS = 5_000;
+
+  // ---- Cuarentena de posiciones externas (SMTC/MPRIS) ---------------------
+  // La posición del reproductor del SO es casi siempre la verdad, pero hay
+  // fuentes que alternan valores imposibles (un navegador que reporta el
+  // timeline de la pista anterior, un sidecar con proyección rota: 0,1000,0,
+  // 1000…). Aceptarlas tal cual producía un snap por muestra y la letra
+  // saltaba sin parar. Regla: un retroceso > EXTERNAL_BACKWARD_QUARANTINE_MS
+  // respecto a la última posición aceptada proyectada, o un salto adelante
+  // > DRIFT_SNAP_MS, NO se aplica de inmediato: queda pendiente y solo se
+  // aplica si las muestras siguientes la confirman (ver applyExternalPosition).
+
+  /** Última posición externa ACEPTADA (cruda, con su instante y fuente).
+   *  Se reinicia en cada cambio de pista (externo o por identidad). */
+  private lastExternalAccepted: { positionMs: number; at: number; source: string } | null = null;
+  /** Posición externa en cuarentena a la espera de confirmación. */
+  private pendingExternalPosition: {
+    positionMs: number;
+    at: number;
+    source: string;
+    kind: 'retroceso' | 'salto';
+    /** Posiciones coherentes consecutivas que faltan para aplicarla. */
+    needed: number;
+    seen: number;
+  } | null = null;
+  /** Retroceso (ms) que ya no es jitter: exige confirmación antes de aplicar. */
+  private static readonly EXTERNAL_BACKWARD_QUARANTINE_MS = 1_500;
+  /** Las confirmaciones deben llegar todas dentro de esta ventana. */
+  private static readonly EXTERNAL_QUARANTINE_CONFIRM_MS = 5_000;
+  /** Tolerancia (ms) para considerar coherente una muestra con la pendiente. */
+  private static readonly EXTERNAL_QUARANTINE_TOLERANCE_MS = 1_000;
+  /** Tras un evento de pista nuevo, las posiciones de arranque pasan directo. */
+  private static readonly EXTERNAL_TRACK_START_GRACE_MS = 3_000;
+  /** Instante del último evento de pista externo NUEVO (cambio real de clave). */
+  private lastExternalTrackEventAt = Number.NEGATIVE_INFINITY;
+  /** Clave del último evento 'track' externo registrado (dedupe del log 1c). */
+  private lastExternalEventKey: string | null = null;
+
+  // ---- Pistas rechazadas por el usuario (botón "✗ No es esta") -----------
+  // Cuando el usuario dice que la canción mostrada no es la que suena, su
+  // clave queda vetada: los próximos matches con esa clave se ignoran (el
+  // reconocedor la tiene fichada y la repetiría en bucle). La veto dura
+  // hasta que se confirme OTRA pista o pasados 10 min — si el usuario se
+  // equivocó de botón, la canción puede volver a identificarse luego.
+  private rejectedKeys = new Map<string, number>();
+  /** Vigencia de un veto (ms). */
+  private static readonly REJECTED_KEY_TTL_MS = 10 * 60_000;
+  /** Un título del reproductor más viejo que esto ya no es "segunda opinión". */
+  private static readonly EXTERNAL_TITLE_FRESH_MS = 60_000;
+
+  /** Períodos de repetición de la letra actual (ver repeatPeriodsMs), calculados
+   *  una sola vez por letra cargada. */
+  private repeatPeriodsCache: { lyrics: TimedLyrics; periods: number[] } | null = null;
+  /** Un snap con |error| mayor que esto exige 3 anclas coherentes (no 2). */
+  private static readonly SUSPICIOUS_SNAP_ERROR_MS = 20_000;
+  /** Tolerancia (ms) para considerar que un error "cae" en un período de
+   *  repetición de la letra (o en su doble). */
+  private static readonly REPEAT_PERIOD_TOLERANCE_MS = 1_000;
 
   /** Pide al renderer re-identificar YA (cambio de pista no confirmable). */
   private resyncRequester: (() => void) | null = null;
@@ -136,6 +208,22 @@ export class StateStore {
   private lastResyncRequestAt = Number.NEGATIVE_INFINITY;
   /** Mínimo entre peticiones de resync: un ciclo de captura completo. */
   private static readonly RESYNC_THROTTLE_MS = 10_000;
+
+  // ---- Hold manual de sincronía ------------------------------------------
+  // Mientras el usuario mueve la letra a mano (◀/▶ del panel ⇄ → seekToLine,
+  // o la rueda sobre la barra inferior → nudgePosition), NINGUNA fuente
+  // automática puede re-anclar ni iniciar corrección: la posición mostrada es
+  // decisión suya. Las fuentes siguen midiendo y dejan su última sugerencia,
+  // que resumeAutoSync() aplica al pulsar "Sincronizar" (o se descarta al
+  // cambiar de pista/letra). La pausa/reanudación del reloj NO se toca:
+  // congelar no cambia de línea y el usuario sigue queriendo que pause/play
+  // del SO o del silencio funcionen.
+  private manualHold: { since: number; reason: 'seekLine' | 'nudge' } | null = null;
+  /** Última posición propuesta por una fuente automática durante el hold, en
+   *  espacio "mostrado" (ya incluye el offset crónico). */
+  private lastAutoSuggestion: { positionMs: number; at: number; source: string } | null = null;
+  /** Una sugerencia más vieja que esto ya no representa dónde va la canción. */
+  private static readonly HOLD_SUGGESTION_TTL_MS = 30_000;
 
   private readonly displayStore: DisplayStore;
   private readonly translationStore: TranslationStore;
@@ -218,6 +306,8 @@ export class StateStore {
         offsetMs: this.clock.getSyncOffsetMs(),
         calibrationOffsetMs: this.clock.getCalibrationOffsetMs(),
         paused: this.clock.isClockPaused(),
+        manualHold: this.manualHold != null,
+        holdReason: this.manualHold?.reason ?? null,
         clock: this.clock.getDiagnostics(),
         energy: this.lastEnergyMeasurement,
       },
@@ -334,6 +424,9 @@ export class StateStore {
   }
 
   setLyrics(lyrics: TimedLyrics | null, title?: string, artist?: string): void {
+    // Letra limpiada (sin resultado o error de búsqueda): el hold manual ya
+    // no tiene sentido — no queda línea que el usuario haya querido fijar.
+    if (lyrics == null) this.releaseManualHold('sin-letra');
     this.engine.setLyrics(lyrics);
     this.trackTitle = title;
     this.trackArtist = artist;
@@ -352,6 +445,8 @@ export class StateStore {
     this.autoRetry.cancel();
     this.trackAliasKeys.clear();
     this.identity.wrongSong = null;
+    // Letra elegida a mano = pista confirmada por el usuario: levanta vetos.
+    this.rejectedKeys.clear();
     // La eligió el usuario: es la verdad, no un hint.
     this.identity.currentTrackProvisional = false;
     this.currentTrackKey = trackKey;
@@ -359,6 +454,10 @@ export class StateStore {
     // Letra elegida a mano: no sabemos a qué grabación corresponde, así que no
     // hay duración de referencia contra la que acotar posiciones externas.
     this.trackDurationMs = null;
+    this.resetExternalPositionState();
+    // Letra elegida a mano = identidad nueva: la selección manual anterior
+    // (si la había) era de otra canción y no aplica a esta.
+    this.releaseManualHold('letra importada');
     this.autoRetry.reset();
     this.clock.setCurrentTrackKey(trackKey);
     this.clock.loadSyncOffset(trackKey);
@@ -432,6 +531,7 @@ export class StateStore {
     anchorAt = Date.now(),
     album: string | null = null,
     durationMs: number | null = null,
+    options: { keepRejectedKeys?: boolean } = {},
   ): Promise<void> {
     const trackKey = normalizeTrackKey(artist, title);
     const isNewTrack = trackKey !== this.currentTrackKey;
@@ -441,6 +541,18 @@ export class StateStore {
       this.autoRetry.reset();
       // Pista distinta = la desalineación anterior ya no aplica.
       this.identity.mismatchResyncs = 0;
+      // Y la cuarentena de posiciones externas también: la línea de tiempo
+      // del reproductor acaba de cambiar, la historia anterior no aplica.
+      this.resetExternalPositionState();
+      // Cambio de pista/letra: la selección manual era de la canción
+      // anterior y no tiene sentido arrastrarla a la nueva.
+      this.releaseManualHold('cambio de pista');
+      // Confirmar OTRA pista levanta los vetos del usuario ("No es esta"):
+      // ya no estamos en la canción que rechazó. La única excepción es la
+      // segunda opinión que dispara el propio rejectCurrentTrack, que no
+      // debe borrar el veto que acaba de poner.
+      if (!options.keepRejectedKeys) this.rejectedKeys.clear();
+      this.repeatPeriodsCache = null;
     }
     this.autoRetry.cancel();
     this.currentTrackKey = trackKey;
@@ -487,6 +599,115 @@ export class StateStore {
       }
       throw err;
     }
+  }
+
+  /**
+   * Reinicia la memoria de posiciones externas (última aceptada + cuarentena)
+   * en cada cambio de pista, sea por evento del SO o por reconocimiento.
+   * Sin ella, una posición de la pista nueva se compararía contra la proyección
+   * de la anterior y nacería en cuarentena (o peor, en un snap falso).
+   */
+  private resetExternalPositionState(): void {
+    this.lastExternalAccepted = null;
+    this.pendingExternalPosition = null;
+  }
+
+  // -------------------------------------------------------------------------
+  // Hold manual de sincronía
+  // -------------------------------------------------------------------------
+
+  /**
+   * Activa el hold manual. Solo lo llaman seekToLine y nudgePosition: los
+   * ajustes de offset/calibración NO activan hold porque son correcciones
+   * persistentes ("esto pasa siempre"), no una selección de línea puntual.
+   */
+  private activateManualHold(reason: 'seekLine' | 'nudge', at: number = Date.now()): void {
+    this.manualHold = { since: at, reason };
+    // Las corroboraciones pendientes quedaron de la posición anterior: el
+    // usuario ya movió la letra a mano, ya no aplican.
+    this.pendingAnchor = null;
+    this.pendingExternalPosition = null;
+    console.log(`[manual] hold activado (${reason})`);
+  }
+
+  /** Libera el hold por causas ajenas a "Sincronizar" (pista/letra nueva). */
+  private releaseManualHold(reason: string, at: number = Date.now()): void {
+    if (!this.manualHold) return;
+    const durS = ((at - this.manualHold.since) / 1000).toFixed(1);
+    this.manualHold = null;
+    this.lastAutoSuggestion = null;
+    console.log(`[manual] hold liberado (${reason}) tras ${durS} s`);
+  }
+
+  /**
+   * "Sincronizar" (IPC sync:resume): libera el hold manual y devuelve el mando
+   * a las fuentes automáticas. Si quedó una sugerencia de hace <30 s se
+   * proyecta al ahora (sin avanzar si el reloj está pausado) y se aplica con
+   * la misma decisión que computeDrift: snap → reanchor directo, correct →
+   * rampa suave, ignore → nada. Además pide una re-identificación para traer
+   * un ancla fresco cuanto antes.
+   */
+  resumeAutoSync(at: number = Date.now()): void {
+    const hold = this.manualHold;
+    const suggestion = this.lastAutoSuggestion;
+    this.manualHold = null;
+    this.lastAutoSuggestion = null;
+
+    let accion = 'ninguna';
+    let errorMs = 0;
+    if (suggestion && at - suggestion.at <= StateStore.HOLD_SUGGESTION_TTL_MS) {
+      const projected =
+        suggestion.positionMs +
+        (this.clock.isClockPaused() ? 0 : Math.max(0, at - suggestion.at));
+      const decision = computeDrift(projected, this.clock.getDisplayedPosition(at));
+      errorMs = decision.errorMs;
+      if (decision.action === 'snap') {
+        this.clock.reanchor(projected, at);
+        accion = 'snap';
+      } else if (decision.action === 'correct') {
+        this.clock.startCorrection(decision.correctionMs, at);
+        accion = 'rampa';
+      } else {
+        accion = 'ignore';
+      }
+    }
+    this.requestResync(at);
+    const durS = hold ? ((at - hold.since) / 1000).toFixed(1) : '0.0';
+    console.log(
+      `[manual] sincronizar: liberado hold (${hold?.reason ?? 'sin-hold'}, ${durS} s), ` +
+        `aplicado ${accion} error=${Math.round(errorMs)}ms`,
+    );
+  }
+
+  /**
+   * Campos del RenderModel sobre el hold manual y la sincronía de la letra.
+   * `sync_hold_drift_ms` = sugerencia automática proyectada a `at` menos la
+   * posición mostrada; null si el hold está inactivo o la sugerencia ya es
+   * vieja (>30 s). `lyrics_synced` es false solo cuando la letra cargada es
+   * PLANA (synced:false): una entrada vieja de caché sin el campo cuenta como
+   * sincronizada para no alarmar de más.
+   */
+  private syncModelFields(
+    at: number,
+  ): Pick<RenderModel, 'sync_hold' | 'sync_hold_drift_ms' | 'lyrics_synced'> {
+    const lyrics = this.engine.getLyrics();
+    const suggestion = this.lastAutoSuggestion;
+    let driftMs: number | null = null;
+    if (
+      this.manualHold &&
+      suggestion &&
+      at - suggestion.at <= StateStore.HOLD_SUGGESTION_TTL_MS
+    ) {
+      const projected =
+        suggestion.positionMs +
+        (this.clock.isClockPaused() ? 0 : Math.max(0, at - suggestion.at));
+      driftMs = Math.round(projected - this.clock.getDisplayedPosition(at));
+    }
+    return {
+      sync_hold: this.manualHold != null,
+      sync_hold_drift_ms: driftMs,
+      lyrics_synced: lyrics != null && lyrics.synced !== false,
+    };
   }
 
   /** Programa el reintento automático delegando en AutoRetry. */
@@ -553,6 +774,89 @@ export class StateStore {
     }
   }
 
+  // -------------------------------------------------------------------------
+  // Pista rechazada por el usuario ("✗ No es esta")
+  // -------------------------------------------------------------------------
+
+  /** ¿La clave está vetada por el usuario y el veto sigue vigente? */
+  private isKeyRejected(key: string, at: number = Date.now()): boolean {
+    const rejectedAt = this.rejectedKeys.get(key);
+    if (rejectedAt == null) return false;
+    if (at - rejectedAt >= StateStore.REJECTED_KEY_TTL_MS) {
+      this.rejectedKeys.delete(key);
+      return false;
+    }
+    return true;
+  }
+
+  /**
+   * El usuario señaló que la canción mostrada NO es la que suena. Efectos:
+   *   - la clave actual queda vetada (applyMatch y applyExternalTrack la
+   *     ignoran) hasta que se confirme otra pista o pasen 10 min;
+   *   - la letra se retira sin tocar offset ni calibración: el estado queda
+   *     como "buscando" (FETCHING_LYRICS) a la espera de la re-identificación
+   *     que el handler de feedback dispara justo después;
+   *   - segunda opinión independiente: si el reproductor del SO reportó hace
+   *     <60 s un título distinto y no vetado, se carga SU letra como pista
+   *     provisional — el metadato del SO no depende del reconocedor que falló.
+   */
+  async rejectCurrentTrack(at: number = Date.now()): Promise<void> {
+    const rejectedKey = this.currentTrackKey;
+    if (!rejectedKey) return;
+    this.rejectedKeys.set(rejectedKey, at);
+    this.pendingAnchor = null;
+    // Un reintento automático en vuelo recargaría la letra vetada.
+    this.autoRetry.cancel();
+
+    const ext = this.identity.lastExternalTitle;
+    let secondOpinion: { title: string; artist: string } | null = null;
+    if (ext && at - ext.at < StateStore.EXTERNAL_TITLE_FRESH_MS) {
+      const extKey = normalizeTrackKey(ext.artist, ext.title);
+      if (extKey !== rejectedKey && !this.isKeyRejected(extKey, at)) {
+        secondOpinion = { title: ext.title, artist: ext.artist };
+      }
+    }
+
+    // Retira la letra mostrada conservando offset/calibración del reloj.
+    this.setLyrics(null, this.trackTitle, this.trackArtist);
+    this.overrideStatus = 'FETCHING_LYRICS';
+
+    if (!secondOpinion) {
+      console.log(
+        `[identidad] rechazada por el usuario: "${rejectedKey}" → espera nueva identificación`,
+      );
+      return;
+    }
+    console.log(
+      `[identidad] rechazada por el usuario: "${rejectedKey}" → ` +
+        `usa título del reproductor "${secondOpinion.title}"`,
+    );
+    // Segunda opinión = identidad provisional: el próximo match por audio la
+    // confirma o la reemplaza sin gastar la histéresis completa.
+    this.identity.currentTrackProvisional = this.identity.recognitionSource != null;
+    // Ancla con la última posición externa aceptada (el playhead real del
+    // reproductor) para no empezar la letra nueva desde cero.
+    const anchorMs = this.lastExternalAccepted
+      ? Math.max(
+          0,
+          this.lastExternalAccepted.positionMs + Math.max(0, at - this.lastExternalAccepted.at),
+        )
+      : 0;
+    try {
+      await this.loadLyricsByMetadata(
+        secondOpinion.title,
+        secondOpinion.artist,
+        anchorMs,
+        at,
+        null,
+        null,
+        { keepRejectedKeys: true },
+      );
+    } catch (err) {
+      console.warn('[identidad] la segunda opinión no pudo cargar letra:', err);
+    }
+  }
+
   /**
    * Aplica un match de reconocimiento.
    * - Misma canción ya cargada → corrige la deriva de forma suave (no recarga).
@@ -564,6 +868,13 @@ export class StateStore {
   async applyMatch(match: TrackMatch, recordStartedAt?: number): Promise<boolean> {
     const { title, artist, album, duration_ms } = match.track;
     const matchKey = normalizeTrackKey(artist, title);
+
+    // El usuario vetó esta canción ("No es esta"): el reconocedor la tiene
+    // fichada y la repetiría en bucle; se ignora hasta que venza el veto.
+    if (this.isKeyRejected(matchKey)) {
+      console.log(`[identidad] match descartado: "${matchKey}" rechazado por el usuario`);
+      return false;
+    }
 
     const anchor =
       recordStartedAt != null
@@ -619,7 +930,14 @@ export class StateStore {
     // primer indicio; una mis-identificación puntual no debe arrancar la letra.
     if (
       !corroborated &&
-      !this.identity.confirmTrackChange(matchKey, Boolean(this.engine.getLyrics()), this.trackTitle, this.trackArtist)
+      !this.identity.confirmTrackChange(
+        matchKey,
+        Boolean(this.engine.getLyrics()),
+        this.trackTitle,
+        this.trackArtist,
+        match.position_ms,
+        this.currentTrackKey,
+      )
     ) {
       // Aún no confirmado: mantener la letra actual intacta (no tocar la
       // posición: el anchor es de otra pista y desincronizaría la de ahora).
@@ -642,6 +960,14 @@ export class StateStore {
     // El reconocimiento por audio identifica lo que SUENA: la pista deja de ser
     // provisional aunque haya entrado por un título genérico del SO.
     this.identity.currentTrackProvisional = false;
+    // Trazabilidad del cambio: dos fuentes (sistema/corte de audio) o el
+    // motivo que dio el árbitro (sin-letra/provisional/histéresis/insistencia).
+    const motivo = corroboratedByOs
+      ? 'sistema'
+      : corroboratedByAudio
+        ? 'corte-de-audio'
+        : (this.identity.lastDecisionReason ?? 'histéresis');
+    console.log(`[identidad] cambio a "${matchKey}" motivo=${motivo}`);
     await this.loadLyricsByMetadata(
       title,
       artist,
@@ -741,6 +1067,10 @@ export class StateStore {
       measurement.skipped = `corrección ${correlation.offsetMs}ms fuera del tope`;
     } else if (correlation.offsetMs === 0) {
       measurement.skipped = 'ya alineado';
+    } else if (this.manualHold) {
+      // Hold manual: la corrección por energía también es una fuente
+      // automática — se mide (queda en /debug) pero no se aplica.
+      measurement.skipped = 'selección manual (hold)';
     } else if (!this.energySyncEnabled) {
       measurement.skipped = 'modo observación (SINGEVERY_ENERGY_SYNC apagado)';
     } else {
@@ -779,6 +1109,7 @@ export class StateStore {
 
     console.log('[sync] anchor', JSON.stringify({ provider: match.track.provider, position_ms: match.position_ms,
       sample_offset_ms: match.sample_offset_ms ?? 0, matched_at: match.matched_at, recordStartedAt,
+      trackKey: this.currentTrackKey, matchTitle: match.track.title, matchArtist: match.track.artist,
       ...anchor, estimatedNow, positionTrusted, ...this.clock.getDiagnostics() }));
 
     // Ancla sin timecode: el crudo es 0 y la proyección caería al inicio del
@@ -804,28 +1135,109 @@ export class StateStore {
         `(mostrado=${Math.round(this.clock.getDisplayedPosition(now))}ms, medido=${Math.round(estimatedNow)}ms)`,
     );
 
+    // Hold manual: el usuario fijó la posición; el ancla de reconocimiento
+    // solo queda como sugerencia (la aplicará "Sincronizar" si sigue fresca).
+    // Sin reanchor, sin rampa y sin requestResync por snap.
+    if (this.manualHold) {
+      this.lastAutoSuggestion = {
+        positionMs: estimatedNow,
+        at: now,
+        source: match.track.provider,
+      };
+      console.log(`[sync] hold: error=${Math.round(decision.errorMs)}ms (no se aplica)`);
+      return;
+    }
+
     if (decision.action !== 'snap') this.pendingAnchor = null;
     if (decision.action === 'ignore') return;
     if (decision.action === 'snap') {
       const sampleAt = recordStartedAt ?? match.matched_at;
       const pending = this.pendingAnchor;
       if (pending && sampleAt <= pending.sampleAt) return;
-      const corroborated = pending != null && pending.key === this.currentTrackKey &&
-        now - pending.at <= this.identity.externalCorroborationTtlMs &&
-        computeDrift(estimatedNow, pending.position + Math.max(0, now - pending.at)).action !== 'snap';
-      if (!corroborated) {
-        this.pendingAnchor = { key: this.currentTrackKey, position: estimatedNow, at: now, sampleAt };
-        console.log(`[sync] quarantined position_ms=${estimatedNow} sample_at=${sampleAt}`);
-        this.requestResync(now);
-        return;
+      const pendingValid =
+        pending != null &&
+        pending.key === this.currentTrackKey &&
+        now - pending.at <= this.identity.externalCorroborationTtlMs;
+      if (pendingValid) {
+        const coherent =
+          computeDrift(estimatedNow, pending.position + Math.max(0, now - pending.at)).action !==
+          'snap';
+        if (coherent) {
+          pending.seen += 1;
+          if (pending.seen >= pending.needed) {
+            // Confirmada por anclas coherentes suficientes: era un seek real.
+            this.pendingAnchor = null;
+            console.log(`[sync] corroborated seek position_ms=${estimatedNow}`);
+            this.clock.reanchor(estimatedNow, now);
+          } else {
+            console.log(
+              `[sync] quarantined position_ms=${estimatedNow} ` +
+                `(${pending.seen + 1}/${pending.needed + 1} anclas)`,
+            );
+          }
+          return;
+        }
+        // Ancla incoherente con la pendiente: la descarta y esta abre una
+        // cuarentena nueva (cae al bloque de abajo).
       }
-      this.pendingAnchor = null;
-      console.log(`[sync] corroborated seek position_ms=${estimatedNow}`);
-      this.clock.reanchor(estimatedNow, now);
+      // Snap sospechoso: error gigante o que cae en un período de repetición
+      // de la letra (secciones que vuelven cada N segundos — caso real:
+      // "Crack a Bottle" con estribillo cada 72,8 s). Exige 3 anclas
+      // coherentes en total en vez de 2.
+      const absError = Math.abs(decision.errorMs);
+      const repeatPeriod = this.matchRepeatPeriod(absError);
+      const suspicious = absError > StateStore.SUSPICIOUS_SNAP_ERROR_MS || repeatPeriod != null;
+      this.pendingAnchor = {
+        key: this.currentTrackKey,
+        position: estimatedNow,
+        at: now,
+        sampleAt,
+        needed: suspicious ? 2 : 1,
+        seen: 0,
+      };
+      console.log(
+        `[sync] quarantined position_ms=${estimatedNow} sample_at=${sampleAt}` +
+          (suspicious ? ' (sospechoso: requiere 3 anclas)' : ''),
+      );
+      this.requestResync(now);
       return;
     }
     // 'correct': consolidar lo absorbido hasta ahora y rampear el resto.
     this.clock.startCorrection(decision.correctionMs, now);
+  }
+
+  /** Períodos de repetición de la letra en pantalla (solo si es sincronizada).
+   *  Se calculan una vez por letra: el resultado se cachea por identidad del
+   *  objeto TimedLyrics y se invalida al cargar otra. */
+  private getRepeatPeriodsMs(): number[] {
+    const lyrics = this.engine.getLyrics();
+    if (!lyrics || lyrics.synced === false) return [];
+    if (this.repeatPeriodsCache?.lyrics !== lyrics) {
+      this.repeatPeriodsCache = { lyrics, periods: repeatPeriodsMs(lyrics.lines) };
+    }
+    return this.repeatPeriodsCache.periods;
+  }
+
+  /**
+   * ¿El error absoluto de un snap coincide (±1 s) con un período de
+   * repetición de la letra o con su doble? Devuelve el período base en ms, o
+   * null. Un salto de exactamente un estribillo es la firma típica de una
+   * sección repetida, no de un seek del usuario.
+   */
+  private matchRepeatPeriod(absErrorMs: number): number | null {
+    for (const period of this.getRepeatPeriodsMs()) {
+      if (
+        Math.abs(absErrorMs - period) <= StateStore.REPEAT_PERIOD_TOLERANCE_MS ||
+        Math.abs(absErrorMs - 2 * period) <= StateStore.REPEAT_PERIOD_TOLERANCE_MS
+      ) {
+        console.log(
+          `[sync] salto sospechoso: error=${Math.round(absErrorMs)}ms ` +
+            `coincide con repetición de ${(period / 1000).toFixed(1)} s`,
+        );
+        return period;
+      }
+    }
+    return null;
   }
 
   clearRecognition(): void {
@@ -852,8 +1264,14 @@ export class StateStore {
    * Usado por seek (rueda del mouse) y por ajuste fino.
    */
   nudgePosition(deltaMs: number): void {
+    const before = this.clock.getDisplayedPosition();
     this.pendingAnchor = null;
     this.clock.nudgePosition(deltaMs);
+    this.activateManualHold('nudge');
+    console.log(
+      `[manual] nudge delta=${deltaMs}ms antes=${Math.round(before)} ` +
+        `después=${Math.round(this.clock.getDisplayedPosition())}`,
+    );
   }
 
   /**
@@ -863,7 +1281,16 @@ export class StateStore {
   seekToLine(direction: -1 | 1): boolean {
     const lyrics = this.engine.getLyrics();
     if (!lyrics || lyrics.lines.length === 0) return false;
-    return this.clock.seekToLine(direction, lyrics.lines.map((l) => l.start_ms));
+    const before = this.clock.getDisplayedPosition();
+    const moved = this.clock.seekToLine(direction, lyrics.lines.map((l) => l.start_ms));
+    if (moved) {
+      this.activateManualHold('seekLine');
+      console.log(
+        `[manual] seek-line direction=${direction} antes=${Math.round(before)} ` +
+          `después=${Math.round(this.clock.getDisplayedPosition())}`,
+      );
+    }
+    return moved;
   }
 
   /**
@@ -906,6 +1333,7 @@ export class StateStore {
    */
   adjustSyncOffset(deltaMs: number): void {
     this.clock.adjustSyncOffset(deltaMs, this.currentTrackKey);
+    console.log(`[manual] sync-offset delta=${deltaMs}ms offset=${this.clock.getSyncOffsetMs()}ms`);
   }
 
   /**
@@ -916,6 +1344,9 @@ export class StateStore {
    */
   adjustCalibrationOffset(deltaMs: number): void {
     this.clock.adjustCalibrationOffset(deltaMs);
+    console.log(
+      `[manual] calibration delta=${deltaMs}ms calibration=${this.clock.getCalibrationOffsetMs()}ms`,
+    );
   }
 
   /**
@@ -924,7 +1355,9 @@ export class StateStore {
    * global resultante.
    */
   applyOffsetToAllTracks(): number {
-    return this.clock.applyOffsetToAllTracks();
+    const calibration = this.clock.applyOffsetToAllTracks();
+    console.log(`[manual] offset-a-todas calibration=${calibration}ms`);
+    return calibration;
   }
 
   // -------------------------------------------------------------------------
@@ -966,15 +1399,24 @@ export class StateStore {
   }
 
   /**
-   * Posición de alta confianza del reproductor (SMTC): `positionMs` es el
+   * Posición de alta confianza del reproductor (SMTC/MPRIS): `positionMs` es el
    * playhead real en `at`. Si no suena, congela. Si suena, reconcilia:
    *   - ignora diferencias mínimas (anti-jitter, deadband);
-   *   - saltos grandes (seek/skip, > DRIFT_SNAP_MS) → anclaje firme e instantáneo;
+   *   - retrocesos > EXTERNAL_BACKWARD_QUARANTINE_MS o saltos adelante
+   *     > DRIFT_SNAP_MS respecto a la última posición aceptada → CUARENTENA:
+   *     no se aplican hasta que las muestras siguientes las confirmen
+   *     (ver abajo); una fuente que alterna 0/1000 ya no puede mover la letra;
    *   - errores moderados (microsaltos de SMTC justo sobre la deadband) → se
    *     absorben con una rampa suave (igual que la deriva de AudD) en vez de un
    *     reanchor duro, para que la letra no tiemble.
+   * `source` identifica al reproductor ('smtc', 'mpris:spotify', …) para logs.
    */
-  applyExternalPosition(positionMs: number, playing: boolean, at: number = Date.now()): void {
+  applyExternalPosition(
+    positionMs: number,
+    playing: boolean,
+    at: number = Date.now(),
+    source = 'smtc',
+  ): void {
     if (this.identity.externalInputSuppressed) return;
     // Prueba de vida de la sesión del SO: el sidecar manda posición cada ~1s
     // pero el título solo cuando cambia. Sin esta marca no se podría distinguir
@@ -1007,10 +1449,117 @@ export class StateStore {
       return;
     }
     if (this.clock.isClockPaused()) this.clock.resumeClock(at);
+
+    // Hold manual: la posición externa NO re-ancla ni corrige; queda como
+    // sugerencia (la aplicará "Sincronizar" si sigue fresca). Sí se registra
+    // como última aceptada: es la línea base más reciente de la fuente, así
+    // la cuarentena retoma la comparación correcta al liberar el hold.
+    if (this.manualHold) {
+      const target = Math.max(0, positionMs) + this.clock.getSyncOffsetMs();
+      this.lastAutoSuggestion = { positionMs: target, at, source };
+      this.lastExternalAccepted = { positionMs, at, source };
+      console.log(
+        `[sync] hold: error=${Math.round(target - this.clock.getDisplayedPosition(at))}ms ` +
+          `(no se aplica) fuente=${source}`,
+      );
+      return;
+    }
+
+    // ---- Cuarentena de saltos externos ------------------------------------
+    // La comparación NO es contra la letra mostrada sino contra la última
+    // posición externa aceptada proyectada a `at`: es la única línea de tiempo
+    // que la fuente externa afirma, y detecta la oscilación 0/1000 aunque la
+    // letra esté desfasada por otro motivo.
+    // Excepción de arranque: los primeros 3 s tras un evento de pista nuevo se
+    // aceptan tal cual (el reproductor está reportando el inicio de la pista;
+    // una "retroceso" ahí es el punto de partida, no una mentira).
+    const inTrackStartGrace =
+      at - this.lastExternalTrackEventAt <= StateStore.EXTERNAL_TRACK_START_GRACE_MS;
+    const accepted = this.lastExternalAccepted;
+    if (!inTrackStartGrace && accepted != null) {
+      const projected = accepted.positionMs + Math.max(0, at - accepted.at);
+      const pending = this.pendingExternalPosition;
+      if (pending != null) {
+        // ¿La muestra nueva es coherente con la posición en cuarentena?
+        // Se proyecta igual que la aceptada (avanza con el reloj de pared).
+        const pendingProjected = pending.positionMs + Math.max(0, at - pending.at);
+        const coherent =
+          Math.abs(positionMs - pendingProjected) <= StateStore.EXTERNAL_QUARANTINE_TOLERANCE_MS;
+        const expired = at - pending.at > StateStore.EXTERNAL_QUARANTINE_CONFIRM_MS;
+        if (!coherent || expired) {
+          console.log(
+            `[smtc] posición descartada (${pending.kind} sin confirmar) ` +
+              `position_ms=${Math.round(positionMs)} pendiente=${Math.round(pending.positionMs)} ` +
+              `proyectada=${Math.round(pendingProjected)} fuente=${pending.source}`,
+          );
+          this.pendingExternalPosition = null;
+          // La muestra actual se reclasifica abajo contra la última aceptada:
+          // puede ser coherente con la pista real y aplicarse normal, o iniciar
+          // una cuarentena nueva si también es un salto.
+        } else {
+          pending.seen += 1;
+          if (pending.seen >= pending.needed) {
+            // Confirmada por muestras consecutivas coherentes: era un seek real.
+            this.pendingExternalPosition = null;
+            this.lastExternalAccepted = { positionMs, at, source };
+            this.clock.reanchor(Math.max(0, positionMs) + this.clock.getSyncOffsetMs(), at);
+            console.log(
+              `[smtc] accepted position_ms=${positionMs} at=${at} action=snap ` +
+                `fuente=${source} (confirmada tras cuarentena)`,
+            );
+            return;
+          }
+          // Aún falta una muestra: la letra no se mueve.
+          return;
+        }
+      }
+      if (this.pendingExternalPosition == null) {
+        const delta = positionMs - projected;
+        if (delta < -StateStore.EXTERNAL_BACKWARD_QUARANTINE_MS) {
+          // Retroceso: exige 2 posiciones coherentes más en <5 s.
+          this.pendingExternalPosition = {
+            positionMs,
+            at,
+            source,
+            kind: 'retroceso',
+            needed: 2,
+            seen: 0,
+          };
+          console.log(
+            `[smtc] posición en cuarentena (retroceso) position_ms=${Math.round(positionMs)} ` +
+              `proyectada=${Math.round(projected)} fuente=${source}`,
+          );
+          return;
+        }
+        if (delta > DRIFT_SNAP_MS) {
+          // Salto adelante: basta 1 posición coherente siguiente.
+          this.pendingExternalPosition = {
+            positionMs,
+            at,
+            source,
+            kind: 'salto',
+            needed: 1,
+            seen: 0,
+          };
+          console.log(
+            `[smtc] posición en cuarentena (salto) position_ms=${Math.round(positionMs)} ` +
+              `proyectada=${Math.round(projected)} fuente=${source}`,
+          );
+          return;
+        }
+      }
+    }
+
     const target = Math.max(0, positionMs) + this.clock.getSyncOffsetMs();
     const decision = computeDrift(target, this.clock.getDisplayedPosition(at));
-    if (decision.action === 'ignore') return;
-    console.log(`[smtc] accepted position_ms=${positionMs} at=${at} action=${decision.action}`);
+    if (decision.action === 'ignore') {
+      this.lastExternalAccepted = { positionMs, at, source };
+      return;
+    }
+    console.log(
+      `[smtc] accepted position_ms=${positionMs} at=${at} action=${decision.action} fuente=${source}`,
+    );
+    this.lastExternalAccepted = { positionMs, at, source };
     if (decision.action === 'snap') {
       this.clock.reanchor(target, at);
       return;
@@ -1032,21 +1581,48 @@ export class StateStore {
       positionMs?: number;
       at?: number;
       playing?: boolean;
+      /** Origen del evento ('smtc', 'mpris:spotify', …) para observabilidad. */
+      source?: string;
     } = {},
   ): Promise<boolean> {
     // Micrófono manejando audio externo: el reproductor del PC no manda.
     if (this.identity.externalInputSuppressed) return false;
-    const { album = null, durationMs = null, positionMs = 0, at = Date.now(), playing = true } = options;
+    const {
+      album = null,
+      durationMs = null,
+      positionMs = 0,
+      at = Date.now(),
+      playing = true,
+      source = 'smtc',
+    } = options;
     const key = normalizeTrackKey(artist, title);
+    // Log de eventos de pista (1c): solo cuando la clave difiere de la del
+    // último evento registrado — el sidecar/MPRIS repite 'track' en cada poll
+    // y loguear cada uno ahogaría la señal.
+    const esNuevoEvento = key !== this.lastExternalEventKey;
+    this.lastExternalEventKey = key;
+    const logPistaExterna = (decision: string): void => {
+      if (!esNuevoEvento) return;
+      console.log(
+        `[smtc] pista externa title="${title}" artist="${artist}" ` +
+          `fuente=${source} decisión=${decision}`,
+      );
+    };
     // Se registra SIEMPRE, coincida o no: es la segunda señal del arbitraje.
     // Que el SO siga diciendo la misma canción es información, no ruido.
     this.identity.lastExternalTitle = { title, artist, at };
     this.identity.lastExternalActivityAt = at;
+    // El usuario vetó esta canción ("No es esta"): ni el SO puede recargarla.
+    if (this.isKeyRejected(key, at)) {
+      logPistaExterna('rechazada-usuario');
+      return false;
+    }
     // Comparación tolerante: el título de video de YouTube ("Artista - Canción
     // (Official Video)" con canal como artista) y la metadata canónica de AudD
     // son la MISMA pista; sin esto, cada fuente "cambiaba" la canción de la
     // otra y la letra entraba en un loop de recarga (bug YouTube vs Spotify).
     if (this.matchesCurrentTrack(key, title, artist)) {
+      logPistaExterna('coincide');
       // La sesión SMTC coincide con la pista en curso: vuelve a ser confiable
       // (sus posiciones y play/pausa aplican).
       this.identity.externalTrusted = true;
@@ -1056,7 +1632,7 @@ export class StateStore {
       // anterior). Recogerla aquí habilita la cota de applyExternalPosition.
       if (durationMs != null && durationMs > 0) this.trackDurationMs = durationMs;
       if (this.engine.getLyrics()) {
-        this.applyExternalPosition(positionMs, playing, at);
+        this.applyExternalPosition(positionMs, playing, at, source);
         return false;
       }
       // Misma pista sin letra: ya se buscó (o se está buscando). SMTC repite
@@ -1084,6 +1660,7 @@ export class StateStore {
       // Se guarda para corroborar el próximo match de AudD (cambio real de
       // canción confirma rápido) y la sesión queda como NO confiable: sus
       // posiciones dejan de tirar la letra hacia otra pista.
+      logPistaExterna('bloqueada');
       this.identity.externalTrusted = false;
       this.clock.releaseExternalPause();
       const isNewSignal =
@@ -1099,6 +1676,7 @@ export class StateStore {
       // Una sesión EN PAUSA no roba la letra de lo que está sonando: Windows a
       // veces parpadea la "sesión actual" entre apps (navegador ↔ Spotify) y
       // ese flip transitorio no debe recargar nada.
+      logPistaExterna('en-pausa-ignorada');
       return false;
     }
     // SMTC no lleva histéresis por conteo: el sidecar emite 'track' una sola
@@ -1116,7 +1694,17 @@ export class StateStore {
           `(distintividad ${scoreTitleDistinctiveness(title).toFixed(2)}) → hint, no lock`,
       );
     }
+    logPistaExterna('nueva');
+    // Cambio de pista real: abre la ventana de gracia para las posiciones de
+    // arranque y deja la posición del evento como línea base del historial
+    // (loadLyricsByMetadata ya reinició la cuarentena por ser pista nueva).
+    this.lastExternalTrackEventAt = at;
     await this.loadLyricsByMetadata(title, artist, positionMs, at, album, durationMs);
+    // Línea base solo si la pista cargada sigue siendo la del evento (otra
+    // fuente pudo cambiarla mientras tanto).
+    if (this.currentTrackKey === key) {
+      this.lastExternalAccepted = { positionMs, at, source };
+    }
     this.identity.externalTrusted = true;
     this.identity.lastUnmatchedExternal = null;
     if (!playing) this.clock.pauseClock(at);
@@ -1155,6 +1743,8 @@ export class StateStore {
       track_title: this.trackTitle,
       track_artist: this.trackArtist,
       status,
+      ...this.syncModelFields(Date.now()),
+      recognition_warning: isAuddTokenInvalid() ? 'audd_invalid_token' : null,
     };
   }
 
@@ -1170,14 +1760,18 @@ export class StateStore {
       return;
     }
 
-    const model = this.engine.getRenderModel(this.clock.getDisplayedPosition(), 'DISPLAYING');
+    const now = Date.now();
+    const displayed = this.clock.getDisplayedPosition(now);
+    const model = this.engine.getRenderModel(displayed, 'DISPLAYING');
     const full: RenderModel = {
       ...model,
       ...this.appearance.resolveTextAppearance(),
       ...this.appearance.resolveHandleAppearance(),
       track_title: this.trackTitle,
       track_artist: this.trackArtist,
-      position_ms: Math.round(this.clock.getDisplayedPosition()),
+      position_ms: Math.round(displayed),
+      ...this.syncModelFields(now),
+      recognition_warning: isAuddTokenInvalid() ? 'audd_invalid_token' : null,
     };
     this.emit(full);
   }

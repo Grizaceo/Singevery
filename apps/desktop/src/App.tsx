@@ -14,6 +14,7 @@ import { usePitchMonitor } from './usePitchMonitor';
 import { useMelodyReference } from './useMelodyReference';
 import { useTeacherReference } from './useTeacherReference';
 import { ManualSearch } from './ManualSearch';
+import { SyncHoldBadge } from './SyncHoldBadge';
 import { matchWindow } from './audio/compare';
 import { RenderModelProvider, useRenderModel } from './renderModelContext';
 import { detectScriptFromLines } from './scriptDetect';
@@ -256,6 +257,8 @@ function AppContent() {
     // el cursor para recuperarla, y con una canción en pantalla el temporizador
     // de la chrome la volvía intangible a los pocos segundos (sin forma de
     // pulsar SING con el mouse).
+    // Hold manual: no cambia nada aquí. El indicador es atravesable y el botón
+    // "Sincronizar" está en la barra inferior, que se revela como siempre.
     const clickThrough =
       !collapsed &&
       !tangible &&
@@ -319,6 +322,7 @@ function AppContent() {
         scale={model.handle_scale}
         positionX={model.handle_position_x}
       />
+      <SyncHoldBadge />
       <div className={`app-chrome${chromeHidden ? ' chrome-hidden' : ''}`}>
         <ChromeTopBar
           api={window.api}

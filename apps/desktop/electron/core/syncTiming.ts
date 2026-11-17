@@ -156,3 +156,56 @@ export function normalizeTrackKey(artist: string, title: string): string {
   const norm = (s: string): string => s.toLowerCase().trim().replace(/\s+/g, ' ');
   return `${norm(artist)}::${norm(title)}`;
 }
+
+// ============================================================================
+// Períodos de repetición de la letra — para la cuarentena de snaps.
+//
+// Canciones con secciones repetidas (estribillo cada ~72 s) producen anclas de
+// reconocimiento "coherentes" pero desplazadas justo un período: el
+// reconocedor crea que la canción está una repetición más adelante. Un snap
+// así no es un seek real y no debe mover el reloj. Estas funciones puras
+// detectan los períodos para que applyCorrection exija más corroboración.
+// ============================================================================
+
+/** Normaliza el texto de una línea para comparar repeticiones: minúsculas,
+ *  sin puntuación ni espacios extra. Devuelve '' si no queda nada útil. */
+function normalizeLyricTextForRepeat(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/**
+ * Períodos (ms) en que la letra se repite a sí misma. Para cada texto
+ * normalizado que aparece en ≥2 líneas (≥8 caracteres tras normalizar) se
+ * toman las diferencias de start_ms entre apariciones consecutivas, se
+ * redondean a 0,1 s y se conservan las que se repiten ≥2 veces (un estribillo
+ * de varias líneas aporta el mismo período una vez por línea). Ordenados de
+ * menor a mayor. Función pura (testeable).
+ */
+export function repeatPeriodsMs(lines: { text: string; start_ms: number }[]): number[] {
+  const timesByText = new Map<string, number[]>();
+  for (const line of lines) {
+    const norm = normalizeLyricTextForRepeat(line.text);
+    if (norm.length < 8) continue;
+    const times = timesByText.get(norm);
+    if (times) times.push(line.start_ms);
+    else timesByText.set(norm, [line.start_ms]);
+  }
+  const counts = new Map<number, number>();
+  for (const times of timesByText.values()) {
+    if (times.length < 2) continue;
+    const sorted = [...times].sort((a, b) => a - b);
+    for (let i = 1; i < sorted.length; i += 1) {
+      const period = Math.round((sorted[i] - sorted[i - 1]) / 100) * 100;
+      if (period <= 0) continue;
+      counts.set(period, (counts.get(period) ?? 0) + 1);
+    }
+  }
+  return [...counts.entries()]
+    .filter(([, count]) => count >= 2)
+    .map(([period]) => period)
+    .sort((a, b) => a - b);
+}

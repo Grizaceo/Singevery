@@ -8,6 +8,16 @@ const AUDD_URL = 'https://api.audd.io/';
 let invalidToken: string | null = null;
 
 /**
+ * true si en ESTA sesión AudD ya respondió #900 (credencial inválida) con el
+ * token configurado actualmente. Se usa para exponer `recognition_warning`
+ * en el RenderModel sin filtrar el token en sí. Si el usuario cambia o quita
+ * AUDD_API_TOKEN, el aviso desaparece solo.
+ */
+export function isAuddTokenInvalid(): boolean {
+  return invalidToken != null && invalidToken === getAuddToken();
+}
+
+/**
  * Tope para AudD. Más holgado que el de Shazam porque aquí se SUBE el audio
  * completo (unos cientos de KB), no una huella: con subida lenta, 15 s se
  * quedaban cortos. Sin tope, una red caída deja el reconocimiento colgado.

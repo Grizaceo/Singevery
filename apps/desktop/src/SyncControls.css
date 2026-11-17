@@ -76,3 +76,13 @@
   min-width: 4rem;
   font-size: 0.6rem;
 }
+
+/* Botón "Sincronizar" del modo manual: resaltado para encontrarlo apenas se
+   revela la barra, sin ocupar pantalla cuando está oculta. */
+.sync-controls .sync-resume {
+  padding: 0 10px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--chrome-accent);
+  border-color: color-mix(in srgb, var(--chrome-accent) 55%, transparent);
+}

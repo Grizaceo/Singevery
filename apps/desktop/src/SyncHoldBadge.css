@@ -1,0 +1,29 @@
+/* Indicador del hold manual / letra sin sincronía. Va FUERA de .app-chrome
+   para seguir visible con la barra oculta, pero es solo informativo: tenue,
+   chico, en una esquina y sin recibir clics (no debe estorbar al juego o app
+   de atrás). El botón "Sincronizar" está en la barra inferior. */
+.sync-hold-badge {
+  position: fixed;
+  right: 10px;
+  bottom: 8px;
+  z-index: 1350;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--chrome-text-muted);
+  font-size: 0.62rem;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  opacity: 0.55;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.85);
+  pointer-events: none;
+  user-select: none;
+}
+
+.sync-hold-tag {
+  color: var(--chrome-accent);
+}
+
+.lyrics-unsynced-tag {
+  font-style: italic;
+}

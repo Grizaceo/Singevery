@@ -29,9 +29,11 @@ export interface SmtcSink {
       positionMs?: number;
       at?: number;
       playing?: boolean;
+      /** Origen del evento ('smtc', 'mpris:spotify', …) para observabilidad. */
+      source?: string;
     },
   ): Promise<boolean> | boolean;
-  applyExternalPosition(positionMs: number, playing: boolean, at?: number): void;
+  applyExternalPosition(positionMs: number, playing: boolean, at?: number, source?: string): void;
   setPlaybackState(playing: boolean, at?: number): void;
 }
 
@@ -44,9 +46,11 @@ export type SmtcEvent =
       durationMs: number | null;
       positionMs: number;
       playing: boolean;
+      /** Origen del evento ('smtc' en Windows, 'mpris:<player>' en Linux). */
+      source?: string;
     }
-  | { type: 'position'; positionMs: number; playing: boolean }
-  | { type: 'playback'; playing: boolean };
+  | { type: 'position'; positionMs: number; playing: boolean; source?: string }
+  | { type: 'playback'; playing: boolean; source?: string };
 
 /** Parsea una línea del sidecar a un evento tipado. Pura (testeable). */
 export function parseSmtcMessage(line: string): SmtcEvent | null {
@@ -59,6 +63,7 @@ export function parseSmtcMessage(line: string): SmtcEvent | null {
     return null;
   }
 
+  const source = typeof m.source === 'string' ? m.source : undefined;
   if (m.type === 'track' && typeof m.title === 'string' && typeof m.artist === 'string') {
     return {
       type: 'track',
@@ -68,13 +73,19 @@ export function parseSmtcMessage(line: string): SmtcEvent | null {
       durationMs: typeof m.durationMs === 'number' ? m.durationMs : null,
       positionMs: typeof m.positionMs === 'number' ? m.positionMs : 0,
       playing: m.playing !== false,
+      ...(source ? { source } : {}),
     };
   }
   if (m.type === 'position' && typeof m.positionMs === 'number') {
-    return { type: 'position', positionMs: m.positionMs, playing: m.playing !== false };
+    return {
+      type: 'position',
+      positionMs: m.positionMs,
+      playing: m.playing !== false,
+      ...(source ? { source } : {}),
+    };
   }
   if (m.type === 'playback' && typeof m.playing === 'boolean') {
-    return { type: 'playback', playing: m.playing };
+    return { type: 'playback', playing: m.playing, ...(source ? { source } : {}) };
   }
   return null;
 }
@@ -114,10 +125,11 @@ export function dispatchSmtcEvent(ev: SmtcEvent, sink: SmtcSink, at: number = Da
         positionMs: ev.positionMs,
         at,
         playing: ev.playing,
+        source: ev.source,
       });
       break;
     case 'position':
-      sink.applyExternalPosition(ev.positionMs, ev.playing, at);
+      sink.applyExternalPosition(ev.positionMs, ev.playing, at, ev.source);
       break;
     case 'playback':
       sink.setPlaybackState(ev.playing, at);

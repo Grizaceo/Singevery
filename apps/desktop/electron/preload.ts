@@ -128,6 +128,7 @@ const api = {
     ipcRenderer.invoke('sync:nudge', deltaMs),
   seekLine: (direction: -1 | 1): Promise<{ ok: boolean }> =>
     ipcRenderer.invoke('sync:seekLine', direction),
+  resumeSync: (): Promise<{ ok: boolean }> => ipcRenderer.invoke('sync:resume'),
   adjustSyncOffset: (deltaMs: number): Promise<{ ok: boolean; offsetMs: number }> =>
     ipcRenderer.invoke('sync:adjustOffset', deltaMs),
   getSyncOffset: (): Promise<{ ok: boolean; offsetMs: number }> =>

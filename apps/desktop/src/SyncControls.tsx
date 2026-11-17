@@ -66,6 +66,20 @@ export function SyncControls() {
 
   return (
     <div className="sync-controls">
+      {model.sync_hold && (
+        // Modo manual activo (moviste la línea con ◀/▶ o la rueda): la letra
+        // no se mueve sola hasta pulsar aquí. Vive en la barra para no
+        // estorbar en pantalla cuando la barra está oculta.
+        <button
+          type="button"
+          className="chrome-button sync-resume"
+          onClick={() => void window.api?.resumeSync()}
+          title="Volver a seguir la canción automáticamente"
+          aria-label="Sincronizar: volver a seguir la canción automáticamente"
+        >
+          Sincronizar
+        </button>
+      )}
       <button
         type="button"
         className={`chrome-button sync-toggle${open ? ' active' : ''}`}
