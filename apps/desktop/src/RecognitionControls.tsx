@@ -23,6 +23,8 @@ interface RecognitionControlsProps {
   hasTrack: boolean;
   /** Abre la búsqueda manual de canción. */
   onManualSearch: () => void;
+  /** Aviso de infraestructura del reconocedor (p. ej. token de AudD inválido). */
+  recognitionWarning?: 'audd_invalid_token' | null;
 }
 
 /**
@@ -36,7 +38,7 @@ interface RecognitionControlsProps {
  *  - cuando hay canción mostrada, un botón "No es esta" permite señalar que
  *    el reconocimiento falló (feedback wrong + buscador manual).
  */
-export function RecognitionControls({ recognition, hasTrack, onManualSearch }: RecognitionControlsProps) {
+export function RecognitionControls({ recognition, hasTrack, onManualSearch, recognitionWarning }: RecognitionControlsProps) {
   const { activeSource, hint, error, level, start, stop } = recognition;
 
   if (!window.api) {
@@ -108,6 +110,14 @@ export function RecognitionControls({ recognition, hasTrack, onManualSearch }: R
       )}
       {hint && !error && <span className="recognition-hint">{hint}</span>}
       {error && <span className="recognition-error">{error}</span>}
+      {recognitionWarning === 'audd_invalid_token' && (
+        <span
+          className="recognition-warning"
+          title="AudD rechazó la credencial (error #900). Revisa AUDD_API_TOKEN en el .env junto a la app o quítalo para reconocer solo con Shazam."
+        >
+          Token de AudD inválido: revisa .env o usa solo Shazam
+        </span>
+      )}
     </div>
   );
 }

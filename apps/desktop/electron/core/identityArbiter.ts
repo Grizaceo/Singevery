@@ -42,9 +42,16 @@ export type AudioBoundaryKind = 'gap' | 'novelty';
  *   - 'provisional' → la pista en pantalla era un hint genérico del SO.
  *   - 'histéresis'  → la misma canción nueva se confirmó N ciclos seguidos.
  *   - 'insistencia' → el audio rompió el lock pese a que el SO la contradice.
+ *   - 'desacuerdo-reciente' → dos matches seguidos con position_ms=0 no se
+ *     ponen de acuerdo: la pista provisional no se cree a la primera.
  * StateStore la loguea como `motivo=` del cambio de pista.
  */
-export type TrackChangeReason = 'sin-letra' | 'provisional' | 'histéresis' | 'insistencia';
+export type TrackChangeReason =
+  | 'sin-letra'
+  | 'provisional'
+  | 'histéresis'
+  | 'insistencia'
+  | 'desacuerdo-reciente';
 
 /** Lo que IdentityArbiter necesita del reloj de sincronía: soltar una pausa
  *  que resultó ser de una sesión que ya no es de confianza. */
@@ -132,6 +139,17 @@ export class IdentityArbiter {
    *  llamada a confirmTrackChange no confirmó o aún no se llamó). Lo lee
    *  StateStore para el log `[identidad] cambio a ... motivo=`. */
   private lastDecisionReason_: TrackChangeReason | null = null;
+
+  // Último match DISTINTO de la pista en curso que llegó al árbitro. Caso real
+  // (DE09): Shazam devolvió "Zenzenzense" y 7 s después "Be a flower", ambos
+  // con position_ms=0 — dos conjeturas sin timecode que no se ponen de
+  // acuerdo. Si la siguiente llega dentro de la ventana y también dice
+  // position_ms=0 con OTRA clave, la identidad no puede confirmarse de
+  // inmediato aunque sea provisional: exige la misma clave dos veces.
+  private lastMatchCandidate_: { key: string; positionMs: number; at: number } | null = null;
+  /** Ventana en que dos matches position_ms=0 consecutivos cuentan como
+   *  "desacuerdo" (un ciclo de corrección completo, ~18-20 s). */
+  private static readonly DISAGREEMENT_WINDOW_MS = 20_000;
 
   constructor(private readonly pauseBridge: ExternalPauseBridge) {}
 
@@ -298,8 +316,26 @@ export class IdentityArbiter {
     hasLyrics: boolean,
     trackTitle: string | undefined,
     trackArtist: string | undefined,
+    positionMs = 0,
+    currentTrackKey: string | null = null,
   ): boolean {
     this.lastDecisionReason_ = null;
+    const now = Date.now();
+    const prev = this.lastMatchCandidate_;
+    // Desacuerdo reciente: el match anterior también fue una conjetura
+    // position_ms=0, hace <20 s, con clave distinta de la nueva Y de la pista
+    // en curso — el reconocedor está probando candidatas sin timecode y no se
+    // decide. En ese caso NO vale el atajo provisional: la clave nueva debe
+    // repetirse CHANGE_CONFIRM_COUNT veces como cualquier histéresis.
+    const recentDisagreement =
+      positionMs === 0 &&
+      prev != null &&
+      now - prev.at < IdentityArbiter.DISAGREEMENT_WINDOW_MS &&
+      prev.key !== matchKey &&
+      currentTrackKey != null &&
+      prev.key !== currentTrackKey;
+    this.lastMatchCandidate_ = { key: matchKey, positionMs, at: now };
+
     if (!hasLyrics) {
       this.wrongSong_ = null;
       this.lastDecisionReason_ = 'sin-letra';
@@ -307,14 +343,19 @@ export class IdentityArbiter {
     }
     // La pista en pantalla entró por un título genérico del SO: es un hint, no
     // un lock. El audio sabe qué suena de verdad; no hay nada que proteger.
-    if (this.currentTrackProvisional_) {
+    // Excepción: desacuerdo reciente de conjeturas position_ms=0.
+    if (this.currentTrackProvisional_ && !recentDisagreement) {
       this.wrongSong_ = null;
       this.lastDecisionReason_ = 'provisional';
       return true;
     }
 
     const osConfirms = this.osStillConfirmsCurrentTrack(trackTitle, trackArtist);
-    const required = osConfirms ? this.WRONG_SONG_STRIKE_LIMIT : this.CHANGE_CONFIRM_COUNT;
+    const required = recentDisagreement
+      ? this.CHANGE_CONFIRM_COUNT
+      : osConfirms
+        ? this.WRONG_SONG_STRIKE_LIMIT
+        : this.CHANGE_CONFIRM_COUNT;
 
     if (this.wrongSong_?.songIdentified === matchKey) {
       this.wrongSong_.consecutiveHits += 1;
@@ -335,10 +376,15 @@ export class IdentityArbiter {
       }
       this.wrongSong_ = null;
       // Con el SO en contra y 5 insistencias es 'insistencia'; sin segunda
-      // señal en contra la confirmación llegó por la histéresis normal.
-      this.lastDecisionReason_ = osConfirms ? 'insistencia' : 'histéresis';
+      // señal en contra la confirmación llegó por la histéresis normal. Un
+      // bloqueo por desacuerdo que igual se confirmó queda como histéresis.
+      this.lastDecisionReason_ = osConfirms && !recentDisagreement ? 'insistencia' : 'histéresis';
       return true;
     }
+    // El bloqueo por desacuerdo de conjeturas position_ms=0 queda marcado:
+    // es la señal de que el reconocedor está alternando candidatas sin
+    // timecode y conviene re-identificar en vez de fiarse de ninguna.
+    if (recentDisagreement) this.lastDecisionReason_ = 'desacuerdo-reciente';
     return false;
   }
 

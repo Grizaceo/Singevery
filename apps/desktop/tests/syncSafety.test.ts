@@ -8,15 +8,18 @@ beforeEach(async () => { vi.useFakeTimers(); vi.setSystemTime(100000); s = new S
 afterEach(() => { s.stop(); vi.useRealTimers(); });
 const match = (pos: number, at: number) => ({track: {provider:'shazam', provider_track_id:'s', title:'Known Song', artist:'Artist'}, position_ms:pos, sample_offset_ms:6000, matched_at:at, confidence:1});
 it('quarantines a backward outlier, then accepts independently corroborated backward seek', async () => {
+ // Error de 80 s (>20 s): snap sospechoso, exige 3 anclas coherentes en total.
  await s.applyMatch(match(20000, 100000)); expect(s.getDisplayedPosition()).toBe(100000);
  await s.applyMatch(match(20000, 100000)); expect(s.getDisplayedPosition()).toBe(100000);
- vi.setSystemTime(110000); await s.applyMatch(match(30000, 110000)); expect(s.getDisplayedPosition()).toBe(30000);
+ vi.setSystemTime(110000); await s.applyMatch(match(30000, 110000)); expect(s.getDisplayedPosition()).toBe(110000);
+ vi.setSystemTime(120000); await s.applyMatch(match(40000, 120000)); expect(s.getDisplayedPosition()).toBe(40000);
 });
 it('quarantines forward seeks too, and recovery cancels old candidates', async () => {
  await s.applyMatch(match(200000,100000)); expect(s.getDisplayedPosition()).toBe(100000);
  vi.setSystemTime(110000); await s.applyMatch(match(110000,110000));
  vi.setSystemTime(120000); await s.applyMatch(match(220000,120000)); expect(s.getDisplayedPosition()).toBe(120000);
- vi.setSystemTime(130000); await s.applyMatch(match(230000,130000)); expect(s.getDisplayedPosition()).toBe(230000);
+ vi.setSystemTime(130000); await s.applyMatch(match(230000,130000)); expect(s.getDisplayedPosition()).toBe(130000);
+ vi.setSystemTime(140000); await s.applyMatch(match(240000,140000)); expect(s.getDisplayedPosition()).toBe(240000);
 });
 it('revokes mismatched SMTC pause, but noise cannot revoke trusted pause', async () => {
  s.setRecognitionSource('system'); await s.applyExternalTrack('Known Song','Artist',{playing:false});

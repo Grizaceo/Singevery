@@ -112,6 +112,101 @@ describe('IdentityArbiter — confirmTrackChange (histéresis)', () => {
   });
 });
 
+describe('IdentityArbiter — desacuerdo reciente de conjeturas position_ms=0 (DE09)', () => {
+  // Secuencia real: Shazam devolvió "Zenzenzense" y 7 s después "Be a flower",
+  // ambos position_ms=0. Con identidad provisional, la segunda confirmaba al
+  // instante y la app cambiaba de canción cada pocos segundos.
+  it('una segunda conjetura position_ms=0 distinta NO se confirma aunque sea provisional', () => {
+    vi.useFakeTimers();
+    try {
+      const { arbiter } = makeArbiter();
+      arbiter.currentTrackProvisional = true;
+
+      // Primer match: sin candidato previo no hay desacuerdo → provisional.
+      vi.setSystemTime(1_000_000);
+      expect(
+        arbiter.confirmTrackChange('radwimps::zenzenzense', true, 'Actual', 'Artista', 0, 'pista::actual'),
+      ).toBe(true);
+      expect(arbiter.lastDecisionReason).toBe('provisional');
+
+      // 7 s después, OTRA clave también con position_ms=0: la anterior no es
+      // la pista actual en este arbitraje (sigue siendo el hint del SO) →
+      // desacuerdo: exige la misma clave dos veces.
+      vi.setSystemTime(1_007_000);
+      expect(
+        arbiter.confirmTrackChange('ryokuoushoku::be a flower', true, 'Actual', 'Artista', 0, 'pista::actual'),
+      ).toBe(false);
+      expect(arbiter.lastDecisionReason).toBe('desacuerdo-reciente');
+      expect(arbiter.wrongSong?.songIdentified).toBe('ryokuoushoku::be a flower');
+      expect(arbiter.wrongSong?.consecutiveHits).toBe(1);
+
+      // La misma clave repetida confirma: el candidato previo ya coincide con
+      // el match (no hay desacuerdo) y el atajo provisional vuelve a aplicar.
+      // Neto: la clave nueva necesitó 2 coincidencias seguidas, como pide la
+      // histéresis — sin el bloqueo se habría confirmado a la primera.
+      expect(
+        arbiter.confirmTrackChange('ryokuoushoku::be a flower', true, 'Actual', 'Artista', 0, 'pista::actual'),
+      ).toBe(true);
+      expect(arbiter.lastDecisionReason).toBe('provisional');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('sin letra mostrándose (arranque en frío) el desacuerdo no bloquea', () => {
+    vi.useFakeTimers();
+    try {
+      const { arbiter } = makeArbiter();
+      arbiter.currentTrackProvisional = true;
+      vi.setSystemTime(1_000_000);
+      arbiter.confirmTrackChange('a::uno', true, 'Actual', 'Artista', 0, 'pista::actual');
+      vi.setSystemTime(1_007_000);
+      // hasLyrics=false → identificación inicial: cambio inmediato.
+      expect(
+        arbiter.confirmTrackChange('b::dos', false, 'Actual', 'Artista', 0, 'pista::actual'),
+      ).toBe(true);
+      expect(arbiter.lastDecisionReason).toBe('sin-letra');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('pasada la ventana de 20 s el desacuerdo ya no aplica', () => {
+    vi.useFakeTimers();
+    try {
+      const { arbiter } = makeArbiter();
+      arbiter.currentTrackProvisional = true;
+      vi.setSystemTime(1_000_000);
+      arbiter.confirmTrackChange('a::uno', true, 'Actual', 'Artista', 0, 'pista::actual');
+      vi.setSystemTime(1_025_000); // 25 s después
+      // El candidato previo ya es viejo: provisional confirma al instante.
+      expect(
+        arbiter.confirmTrackChange('b::dos', true, 'Actual', 'Artista', 0, 'pista::actual'),
+      ).toBe(true);
+      expect(arbiter.lastDecisionReason).toBe('provisional');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('con position_ms>0 no hay desacuerdo: el atajo provisional sigue valiendo', () => {
+    vi.useFakeTimers();
+    try {
+      const { arbiter } = makeArbiter();
+      arbiter.currentTrackProvisional = true;
+      vi.setSystemTime(1_000_000);
+      arbiter.confirmTrackChange('a::uno', true, 'Actual', 'Artista', 0, 'pista::actual');
+      vi.setSystemTime(1_007_000);
+      expect(
+        arbiter.confirmTrackChange('b::dos', true, 'Actual', 'Artista', 42_000, 'pista::actual'),
+      ).toBe(true);
+      expect(arbiter.lastDecisionReason).toBe('provisional');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
 describe('IdentityArbiter — cortes de audio (noteAudioBoundary / boundaryCorroborates)', () => {
   it('solo un hueco (gap) reciente y sin confirmación del SO corrobora', () => {
     const { arbiter } = makeArbiter();

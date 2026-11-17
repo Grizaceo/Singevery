@@ -39,6 +39,12 @@
   color: #93c5fd;
 }
 
+.recognition-warning {
+  font-size: 0.65rem;
+  color: #fbbf24;
+  text-shadow: var(--chrome-shadow-text);
+}
+
 .level-meter {
   font-size: 0.7rem;
   letter-spacing: 1px;

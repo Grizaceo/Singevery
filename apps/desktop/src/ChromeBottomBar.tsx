@@ -54,6 +54,7 @@ export function ChromeBottomBar({
           recognition={recognition}
           hasTrack={model.status === 'DISPLAYING'}
           onManualSearch={onManualSearch}
+          recognitionWarning={model.recognition_warning ?? null}
         />
       </div>
       <div className="chrome-bar-group">

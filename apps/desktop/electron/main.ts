@@ -1196,6 +1196,15 @@ function registerIpcHandlers(): void {
         track: model ? { title: model.track_title ?? 'desconocida', artist: model.track_artist ?? 'desconocido' } : undefined,
       });
       if (!correct) {
+        // "No es esta" ahora tiene efecto: la clave queda vetada (los próximos
+        // matches con ella se ignoran), se retira la letra y, si el
+        // reproductor reportó hace poco OTRA canción, se carga como segunda
+        // opinión. Después se fuerza la re-identificación como siempre.
+        try {
+          await stateStore.rejectCurrentTrack();
+        } catch (err) {
+          console.warn('[identidad] rejectCurrentTrack falló:', err);
+        }
         mainWindow.webContents.send('command:resync');
         return { ok: true, resynced: true };
       }

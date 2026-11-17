@@ -247,6 +247,13 @@ export interface RenderModel {
    * sincronizadas.
    */
   lyrics_synced?: boolean;
+  /**
+   * Aviso de infraestructura del reconocedor (no de la canción). Hoy solo:
+   *   - 'audd_invalid_token' → AudD respondió #900 (credencial inválida) en
+   *     esta sesión; conviene revisar AUDD_API_TOKEN en .env o quedarse solo
+   *     con Shazam. Nunca incluye el token en sí.
+   */
+  recognition_warning?: 'audd_invalid_token' | null;
 }
 
 /** Fuente de audio para reconocimiento. */
