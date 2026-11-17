@@ -1,47 +1,29 @@
-/* Insignia flotante del hold manual / letra sin sincronía. Va FUERA de
-   .app-chrome para seguir visible con la barra oculta; pointer-events y
-   no-drag propios porque la chrome oculta los desactiva a ella. */
+/* Indicador del hold manual / letra sin sincronía. Va FUERA de .app-chrome
+   para seguir visible con la barra oculta, pero es solo informativo: tenue,
+   chico, en una esquina y sin recibir clics (no debe estorbar al juego o app
+   de atrás). El botón "Sincronizar" está en la barra inferior. */
 .sync-hold-badge {
   position: fixed;
-  bottom: 54px;
-  left: 50%;
-  transform: translateX(-50%);
+  right: 10px;
+  bottom: 8px;
   z-index: 1350;
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 5px 10px;
-  border: 1px solid var(--chrome-border);
-  border-radius: 999px;
-  background: rgba(0, 0, 0, 0.72);
-  backdrop-filter: blur(8px);
-  color: var(--chrome-text);
-  font-size: 0.7rem;
+  gap: 6px;
+  color: var(--chrome-text-muted);
+  font-size: 0.62rem;
+  letter-spacing: 0.02em;
   white-space: nowrap;
-  pointer-events: auto;
-  -webkit-app-region: no-drag;
+  opacity: 0.55;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.85);
+  pointer-events: none;
   user-select: none;
-}
-
-.sync-hold-resume {
-  height: 24px;
-  padding: 0 10px;
-  font-size: 0.72rem;
-  font-weight: 600;
 }
 
 .sync-hold-tag {
   color: var(--chrome-accent);
-  font-weight: 600;
-}
-
-.sync-hold-drift {
-  color: var(--chrome-text-muted);
 }
 
 .lyrics-unsynced-tag {
-  padding: 2px 8px;
-  border: 1px dashed var(--chrome-border);
-  border-radius: 999px;
-  color: var(--chrome-text-muted);
+  font-style: italic;
 }
