@@ -290,6 +290,19 @@ export function DisplayTab({
           Si no tocas el widget durante ese tiempo, deja pasar los clics a la app de atrás (modo
           fantasma). Para recuperarlo: doble clic en la pestañita, o Ctrl+Alt+T.
         </p>
+
+        <label className="settings-check">
+          <input
+            type="checkbox"
+            checked={autoGhost.openOnRecognize}
+            onChange={(e) => patchAutoGhost({ openOnRecognize: e.target.checked })}
+          />
+          Abrirse solo al reconocer una canción (desde SING)
+        </label>
+        <p className="settings-hint">
+          Se abre en modo intangible para no atrapar tus clics. Desactivado, se queda como SING
+          (con un punto verde) hasta que lo pulses.
+        </p>
       </section>
 
       {/* ---------------- Extras de lectura ---------------- */}

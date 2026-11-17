@@ -6,6 +6,7 @@ import {
   isHudActivity,
   readAutoGhostPrefs,
   writeAutoGhostPrefs,
+  autoOpenAction,
 } from '../src/autoGhost';
 
 // localStorage no existe en el entorno node de vitest: stub mínimo.
@@ -33,13 +34,15 @@ afterEach(() => {
 
 describe('preferencias de intangible automático', () => {
   it('devuelve los defaults sin nada guardado', () => {
-    expect(readAutoGhostPrefs()).toEqual({ enabled: true, idleSeconds: 60 });
+    expect(readAutoGhostPrefs()).toEqual({ enabled: true, idleSeconds: 60, openOnRecognize: true });
   });
 
   it('hace roundtrip write/read', () => {
-    writeAutoGhostPrefs({ enabled: false, idleSeconds: 120 });
-    expect(readAutoGhostPrefs()).toEqual({ enabled: false, idleSeconds: 120 });
-    expect(store.get(AUTO_GHOST_KEY)).toBe('{"enabled":false,"idleSeconds":120}');
+    writeAutoGhostPrefs({ enabled: false, idleSeconds: 120, openOnRecognize: false });
+    expect(readAutoGhostPrefs()).toEqual({ enabled: false, idleSeconds: 120, openOnRecognize: false });
+    expect(store.get(AUTO_GHOST_KEY)).toBe(
+      '{"enabled":false,"idleSeconds":120,"openOnRecognize":false}',
+    );
   });
 
   it('ajusta idleSeconds a la opción permitida más cercana', () => {
@@ -51,9 +54,37 @@ describe('preferencias de intangible automático', () => {
 
   it('cae a defaults con valores no válidos', () => {
     store.set(AUTO_GHOST_KEY, JSON.stringify({ enabled: 'sí', idleSeconds: 'mucho' }));
-    expect(readAutoGhostPrefs()).toEqual({ enabled: true, idleSeconds: 60 });
+    expect(readAutoGhostPrefs()).toEqual({ enabled: true, idleSeconds: 60, openOnRecognize: true });
     store.set(AUTO_GHOST_KEY, '{no es json');
-    expect(readAutoGhostPrefs()).toEqual({ enabled: true, idleSeconds: 60 });
+    expect(readAutoGhostPrefs()).toEqual({ enabled: true, idleSeconds: 60, openOnRecognize: true });
+  });
+});
+
+describe('apertura automática desde la pastilla', () => {
+  it('las prefs guardadas antes de existir la opción la dejan activada', () => {
+    store.set(AUTO_GHOST_KEY, JSON.stringify({ enabled: false, idleSeconds: 30 }));
+    expect(readAutoGhostPrefs()).toEqual({ enabled: false, idleSeconds: 30, openOnRecognize: true });
+  });
+
+  it('con la pastilla y una canción nueva, abre en fantasma', () => {
+    expect(autoOpenAction({ collapsed: true, newTrack: true, openOnRecognize: true })).toBe(
+      'open-ghost',
+    );
+  });
+
+  it('desactivada, se queda como pastilla', () => {
+    expect(autoOpenAction({ collapsed: true, newTrack: true, openOnRecognize: false })).toBe(
+      'stay',
+    );
+  });
+
+  it('sin pastilla o sin canción nueva no hace nada', () => {
+    expect(autoOpenAction({ collapsed: false, newTrack: true, openOnRecognize: true })).toBe(
+      'none',
+    );
+    expect(autoOpenAction({ collapsed: true, newTrack: false, openOnRecognize: true })).toBe(
+      'none',
+    );
   });
 });
 

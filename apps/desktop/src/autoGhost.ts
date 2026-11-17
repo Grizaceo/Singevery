@@ -10,13 +10,23 @@ export interface AutoGhostPrefs {
   enabled: boolean;
   /** Segundos de inactividad antes de pasar a fantasma. */
   idleSeconds: number;
+  /**
+   * Con la pastilla (SING), al reconocer una canción el widget se abre solo, y
+   * lo hace en modo fantasma para no atrapar los clics de lo que el usuario
+   * esté haciendo. En false se queda como pastilla hasta que la pulse.
+   */
+  openOnRecognize: boolean;
 }
 
 export const AUTO_GHOST_KEY = 'espejo.widget.autoGhost';
 
 export const AUTO_GHOST_OPTIONS_S = [15, 30, 60, 120, 300] as const;
 
-export const DEFAULT_AUTO_GHOST: AutoGhostPrefs = { enabled: true, idleSeconds: 60 };
+export const DEFAULT_AUTO_GHOST: AutoGhostPrefs = {
+  enabled: true,
+  idleSeconds: 60,
+  openOnRecognize: true,
+};
 
 function nearestIdleOption(seconds: number): number {
   let best: number = AUTO_GHOST_OPTIONS_S[0];
@@ -42,7 +52,11 @@ export function readAutoGhostPrefs(): AutoGhostPrefs {
         typeof parsed.idleSeconds === 'number' && Number.isFinite(parsed.idleSeconds)
           ? nearestIdleOption(parsed.idleSeconds)
           : DEFAULT_AUTO_GHOST.idleSeconds;
-      return { enabled, idleSeconds };
+      const openOnRecognize =
+        typeof parsed.openOnRecognize === 'boolean'
+          ? parsed.openOnRecognize
+          : DEFAULT_AUTO_GHOST.openOnRecognize;
+      return { enabled, idleSeconds, openOnRecognize };
     }
   } catch {
     /* ídem widgetPrefs: si el almacenamiento falla, defaults */
@@ -72,6 +86,23 @@ export function autoGhostEligible(s: {
   ghost: boolean;
 }): boolean {
   return !(s.collapsed || s.tangible || s.settingsOpen || s.welcomeOpen || s.manualSearchOpen || s.ghost);
+}
+
+/** Por qué se muestra el aviso del modo fantasma automático. */
+export type GhostNoticeReason = 'idle' | 'auto-open';
+
+/**
+ * Con la pastilla visible y una canción nueva reconocida: abrir en fantasma,
+ * o quedarse como pastilla si el usuario lo desactivó. Si no hay pastilla o la
+ * canción no cambió, no hace nada.
+ */
+export function autoOpenAction(s: {
+  collapsed: boolean;
+  newTrack: boolean;
+  openOnRecognize: boolean;
+}): 'open-ghost' | 'stay' | 'none' {
+  if (!s.collapsed || !s.newTrack) return 'none';
+  return s.openOnRecognize ? 'open-ghost' : 'stay';
 }
 
 /**
