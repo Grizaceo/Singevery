@@ -16,13 +16,27 @@ export const PILL_HEIGHT = 48;
 export const EXPANDED_MIN_WIDTH = 320;
 export const EXPANDED_MIN_HEIGHT = 200;
 
-/** Native minima can grow with a non-resizable Electron window. Use product limits. */
+/**
+ * Redimensiona el overlay expandido respetando solo los límites de producto.
+ *
+ * Electron en Linux implementa `resizable: false` fijando mínimo = máximo =
+ * tamaño actual en cada setSize. Tras agrandar, el mínimo nativo queda en el
+ * tamaño grande y cualquier setSize menor se topa con él: la ventana ya no se
+ * podía achicar desde la esquina (verificado en Hyprland el 17-11 con el
+ * inspector del main: min=max=[1100,850] y setSize(600,400) sin efecto).
+ * Bajar el mínimo al de producto justo antes de setSize lo destraba; Electron
+ * vuelve a fijar mínimo y máximo al tamaño nuevo.
+ */
 export function resizeExpandedWindow(
-  win: { setSize(width: number, height: number): void },
+  win: {
+    setSize(width: number, height: number): void;
+    setMinimumSize(width: number, height: number): void;
+  },
   width: number,
   height: number,
 ): boolean {
   if (!Number.isFinite(width) || !Number.isFinite(height)) return false;
+  win.setMinimumSize(EXPANDED_MIN_WIDTH, EXPANDED_MIN_HEIGHT);
   win.setSize(
     Math.max(EXPANDED_MIN_WIDTH, Math.round(width)),
     Math.max(EXPANDED_MIN_HEIGHT, Math.round(height)),
