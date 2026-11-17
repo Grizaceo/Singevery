@@ -53,6 +53,7 @@ const KNOWN_JA = [
   '兎田ぺこら', 'Gawr Gura', '大空スバル', 'AZKi', '常闇トワ',
   'Sou', 'まふまふ', 'Mafumafu', '天月', 'そらる', 'Soraru', 'ヒバナ',
   'Kessoku Band', '結束バンド', 'ClariS', 'ChouCho', 'fripSide', 'ZAQ',
+  'AiNA THE END', 'アイナ・ジ・エンド',
 ] as const;
 
 /** Artistas coreanos (K-pop y afines). */
@@ -198,6 +199,32 @@ export function vetoLyricsByLanguage(artist: string, lyricsText: string): Langua
     return { vetoed: true, reason: `artista coreano con letra en han sin hangul (${pct(profile.hanRatio)})` };
   }
   return { vetoed: false };
+}
+
+/**
+ * ¿Está esta letra en la escritura esperable del artista conocido?
+ *
+ * Es una PREFERENCIA, no un veto: el latino sigue siendo válido (letras
+ * romanizadas en LRCLIB, artistas que graban en inglés), así que esto solo
+ * sirve para desempatar entre versiones de la misma canción. Devuelve
+ * true/false solo cuando el artista está en la tabla y el texto es suficiente;
+ * null en cualquier otro caso (no hay base para opinar).
+ */
+export function isInExpectedScript(
+  artist: string | null | undefined,
+  lyricsText: string,
+): boolean | null {
+  const lang = knownArtistLanguage(artist);
+  if (!lang) return null;
+
+  const profile = profileScript(lyricsText);
+  if (profile.total < MIN_MEANINGFUL_CHARS) return null;
+
+  const has = (ratio: number): boolean => ratio >= SCRIPT_PRESENCE_RATIO;
+  if (lang === 'ja') return has(profile.kanaRatio + profile.hanRatio);
+  if (lang === 'ko') return has(profile.hangulRatio);
+  if (lang === 'zh') return has(profile.hanRatio);
+  return null;
 }
 
 /** Cantidad de artistas en la tabla (para diagnóstico y tests). */

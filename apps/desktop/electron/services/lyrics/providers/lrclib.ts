@@ -9,6 +9,7 @@
 
 import type { LyricsProvider, LyricsQuery, RawLyrics } from '../types';
 import { titleArtistSimilarity } from '../normalizeQuery';
+import { isInExpectedScript } from '../artistLanguage';
 import { appFetch } from '../../http';
 import { LyricsRateLimitError, retryAfterTime } from '../rateLimit';
 import { version } from '../../../../package.json';
@@ -41,6 +42,17 @@ const DURATION_TOLERANCE_S = 2;
  * 15s; una versión extendida se pasa de largo.
  */
 export const VERSION_MISMATCH_S = 15;
+
+/**
+ * Bonus por letra en la escritura nativa del artista conocido.
+ *
+ * Menor que el bonus de sincronizada (+1000) para que una sincronizada
+ * válida siga ganando a una plana. Mayor que el peso de similitud (×250) +
+ * cercanía de duración (≤100) para que, entre dos versiones con la misma
+ * duración (ej. "On The Way" en inglés vs "革命道中 - On The Way"), gane la
+ * que está en la escritura del artista.
+ */
+export const NATIVE_SCRIPT_BONUS = 300;
 
 interface LrcLibEntry {
   trackName?: string | null;
@@ -168,6 +180,11 @@ export function pickBest(results: LrcLibEntry[], query: LyricsQuery): RawLyrics 
     if (!isOtherVersion(e.duration, query.durationMs) && e.syncedLyrics && e.syncedLyrics.trim()) {
       s += 1000;
     }
+    // Preferencia de escritura nativa (solo artistas conocidos): desempata
+    // versiones del mismo tema en distinto idioma que /api/get no distingue.
+    if (isInExpectedScript(query.artist, e.syncedLyrics || e.plainLyrics || '') === true) {
+      s += NATIVE_SCRIPT_BONUS;
+    }
     s += similarity * 250;
     if (wantS != null && e.duration != null) {
       const diff = Math.abs(e.duration - wantS);
@@ -202,11 +219,47 @@ export function pickBest(results: LrcLibEntry[], query: LyricsQuery): RawLyrics 
   return toRaw(best, isOtherVersion(best.duration, query.durationMs));
 }
 
+/** Texto crudo de una letra ya elegida, para evaluar su escritura. */
+function rawText(raw: RawLyrics): string {
+  return raw.lrc ?? raw.plain ?? '';
+}
+
+/**
+ * Busca una versión de la letra en la escritura nativa del artista cuando la
+ * firma exacta devolvió OTRA versión de idioma (mismo título romanizado y
+ * misma duración). Devuelve null ante cualquier fallo: la letra exacta ya
+ * encontrada nunca debe perderse por un problema en la búsqueda alternativa.
+ */
+async function findNativeScriptAlternative(
+  query: LyricsQuery,
+  signal?: AbortSignal,
+): Promise<RawLyrics | null> {
+  try {
+    const isNative = (raw: RawLyrics | null): raw is RawLyrics =>
+      raw != null && isInExpectedScript(query.artist, rawText(raw)) === true;
+    const searched = await trySearch(query, signal);
+    if (isNative(searched)) return searched;
+    const general = await tryGeneralSearch(query, signal);
+    if (isNative(general)) return general;
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 export const lrclibProvider: LyricsProvider = {
   name: 'lrclib',
   async lookup(query, signal) {
     const exact = await tryGet(query, signal);
-    if (exact) return exact;
+    if (exact) {
+      // La firma exacta calza, pero puede ser OTRA versión de idioma de la misma
+      // canción (mismo título romanizado y misma duración). Solo para artistas
+      // conocidos y solo si la letra exacta NO está en su escritura, se busca una
+      // alternativa; si no aparece o la búsqueda falla, se queda la exacta.
+      if (isInExpectedScript(query.artist, rawText(exact)) !== false) return exact;
+      const native = await findNativeScriptAlternative(query, signal);
+      return native && (native.synced || !exact.synced) ? native : exact;
+    }
     const searched = await trySearch(query, signal);
     if (searched) return searched;
     return tryGeneralSearch(query, signal);
