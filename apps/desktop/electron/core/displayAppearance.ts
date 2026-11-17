@@ -60,6 +60,16 @@ export class DisplayAppearance {
     };
   }
 
+  /** Transparencia separada de letra y fondo (el renderer calcula los pisos
+   *  de legibilidad; aquí solo viajan los ajustes crudos). */
+  resolveLegibilitySettings(): Pick<RenderModel, 'background_opacity' | 'legibility_boost'> {
+    const d = this.displayStore.get();
+    return {
+      background_opacity: typeof d.backgroundOpacity === 'number' ? d.backgroundOpacity : 1,
+      legibility_boost: typeof d.legibilityBoost === 'boolean' ? d.legibilityBoost : true,
+    };
+  }
+
   /** Apariencia del handle configurada por el usuario (color/tamaño/posición). */
   resolveHandleAppearance(): Pick<RenderModel, 'handle_color' | 'handle_scale' | 'handle_position_x'> {
     const d = this.displayStore.get();

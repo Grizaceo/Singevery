@@ -2,6 +2,7 @@ import React from 'react';
 import type { ReadingMode, RenderModel, TranslationView } from '../types';
 import { LineView } from './LineView';
 import { splitPreviousTiers, splitNextTiers, tierSizes } from './teleprompterHelpers';
+import { computeLegibility } from './legibility';
 import type { MelodyPoint } from '../audio/melody';
 import type { PitchResult } from '../audio/pitch';
 import '../Teleprompter.css';
@@ -37,15 +38,36 @@ export const Teleprompter = React.memo(function Teleprompter({
   livePitch = null,
   pitchScore = null,
 }: Props) {
+  // Transparencia separada: la letra ya no arrastra a la viñeta. Los valores
+  // concretos (pisos de legibilidad, boost de contorno) salen de legibility.ts.
+  const legibility = computeLegibility({
+    textOpacity: model.opacity,
+    backgroundOpacity: model.background_opacity ?? 1,
+    boost: model.legibility_boost ?? true,
+  });
+
   const containerStyle: React.CSSProperties = {
     transform: model.mirror_mode ? 'scaleX(-1)' : 'none',
-    opacity: model.opacity,
     textAlign: model.alignment,
     transition: 'opacity 0.4s ease, color 0.4s ease',
     ['--lyrics-color' as string]: model.text_color ?? '#ffffff',
+    ['--lyrics-current-opacity' as string]: legibility.currentLineOpacity,
+    ['--lyrics-context-opacity' as string]: legibility.contextOpacity,
+    ['--lyrics-bg-alpha' as string]: legibility.backgroundAlpha,
   };
 
+  // Las barras de control (.chrome-bar) viven fuera de este contenedor, así
+  // que la variable del fondo se replica en :root para que también las alcance.
+  React.useEffect(() => {
+    const root = document.documentElement;
+    root.style.setProperty('--lyrics-bg-alpha', String(legibility.backgroundAlpha));
+    return () => {
+      root.style.removeProperty('--lyrics-bg-alpha');
+    };
+  }, [legibility.backgroundAlpha]);
+
   const vignetteClass = model.text_vignette_light ? ' vignette-light' : '';
+  const boostClass = legibility.boostActive ? ' legibility-boost' : '';
 
   const fastPace = Boolean(model.fast_pace);
   // Cuanto más contexto pida el usuario, más chico el texto: si no, con 5
@@ -59,7 +81,7 @@ export const Teleprompter = React.memo(function Teleprompter({
   const sideBySide = translationView === 'side';
 
   return (
-    <div className={`teleprompter-container${vignetteClass}`} style={containerStyle}>
+    <div className={`teleprompter-container${vignetteClass}${boostClass}`} style={containerStyle}>
       {/* El título/artista ya no flota aquí: vive en la barra superior
           (ChromeTopBar) como elemento central del flex, para que no pueda
           solaparse con los controles. */}

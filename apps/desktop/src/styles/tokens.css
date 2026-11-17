@@ -58,10 +58,15 @@
   gap: var(--chrome-bar-gap);
   padding: var(--chrome-bar-padding);
   border-radius: calc(var(--chrome-radius) + 2px);
-  background: rgba(0, 0, 0, 0.35);
+  /* --lyrics-bg-alpha la define el teleprompter (0–1): el fondo de las barras
+     acompaña al de la letra. Fallback 1 = aspecto actual fuera del widget.
+     Piso 0.4: con el fondo de la letra en 0 los controles siguen siendo
+     legibles y clicables (las barras solo aparecen al pasar el mouse). */
+  background: rgba(0, 0, 0, calc(0.35 * max(var(--lyrics-bg-alpha, 1), 0.4)));
   border: 1px solid rgba(255, 255, 255, 0.08);
   backdrop-filter: blur(4px);
   -webkit-app-region: no-drag !important;
+  transition: background 0.4s ease;
 }
 
 .chrome-bar-top {

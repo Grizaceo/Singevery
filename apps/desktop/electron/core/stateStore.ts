@@ -1739,6 +1739,7 @@ export class StateStore {
       alignment: d.alignment,
       mirror_mode: d.mirrorMode,
       ...this.appearance.resolveTextAppearance(),
+      ...this.appearance.resolveLegibilitySettings(),
       ...this.appearance.resolveHandleAppearance(),
       track_title: this.trackTitle,
       track_artist: this.trackArtist,
@@ -1766,6 +1767,7 @@ export class StateStore {
     const full: RenderModel = {
       ...model,
       ...this.appearance.resolveTextAppearance(),
+      ...this.appearance.resolveLegibilitySettings(),
       ...this.appearance.resolveHandleAppearance(),
       track_title: this.trackTitle,
       track_artist: this.trackArtist,

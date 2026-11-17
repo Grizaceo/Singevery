@@ -66,7 +66,7 @@ export function DisplayTab({
         />
 
         <label className="settings-label" htmlFor="opacity-range">
-          Opacidad ({Math.round(display.opacity * 100)}%)
+          Opacidad de la letra ({Math.round(display.opacity * 100)}%)
         </label>
         <input
           id="opacity-range"
@@ -77,6 +77,30 @@ export function DisplayTab({
           value={display.opacity}
           onChange={(e) => patchDisplay({ opacity: Number(e.target.value) })}
         />
+        <p className="settings-hint">
+          La línea que se canta nunca baja del 60 % para seguir siendo legible.
+        </p>
+
+        <label className="settings-label" htmlFor="background-opacity-range">
+          Opacidad del fondo ({Math.round(display.backgroundOpacity * 100)}%)
+        </label>
+        <input
+          id="background-opacity-range"
+          type="range"
+          min={0}
+          max={1}
+          step={0.05}
+          value={display.backgroundOpacity}
+          onChange={(e) => patchDisplay({ backgroundOpacity: Number(e.target.value) })}
+        />
+        <label className="settings-check">
+          <input
+            type="checkbox"
+            checked={display.legibilityBoost}
+            onChange={(e) => patchDisplay({ legibilityBoost: e.target.checked })}
+          />
+          Reforzar contorno del texto cuando el fondo es muy transparente
+        </label>
 
         <span className="settings-label">Color</span>
         <div className="settings-color-row">

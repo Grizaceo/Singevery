@@ -32,7 +32,12 @@ export type TextAlignment = 'left' | 'center' | 'right';
 export type TextColorMode = 'manual' | 'auto';
 
 export interface DisplaySettings {
+  /** Opacidad de la LETRA (0.2–1). El fondo tiene su propio control. */
   opacity: number;
+  /** Opacidad de la viñeta/fondo detrás de la letra (0–1; 1 = aspecto actual). */
+  backgroundOpacity: number;
+  /** Reforzar el contorno del texto cuando el fondo queda muy transparente. */
+  legibilityBoost: boolean;
   fontScale: number;
   alignment: TextAlignment;
   mirrorMode: boolean;
@@ -97,6 +102,8 @@ export interface AppSettings {
 
 export const DEFAULT_DISPLAY_SETTINGS: DisplaySettings = {
   opacity: 1.0,
+  backgroundOpacity: 1.0,
+  legibilityBoost: true,
   fontScale: 1.0,
   alignment: 'center',
   mirrorMode: false,
@@ -182,6 +189,11 @@ function clampOpacity(value: number): number {
   return Math.min(1, Math.max(0.2, value));
 }
 
+/** Opacidad del fondo: aquí sí se permite llegar a 0 (ventana limpia). */
+function clampUnit(value: number): number {
+  return Math.min(1, Math.max(0, value));
+}
+
 function clampFontScale(value: number): number {
   return Math.min(2, Math.max(0.6, value));
 }
@@ -213,6 +225,15 @@ function normalizeTextColorMode(value: unknown): TextColorMode {
 function normalizeDisplay(raw?: Partial<DisplaySettings>): DisplaySettings {
   return {
     opacity: clampOpacity(typeof raw?.opacity === 'number' ? raw.opacity : DEFAULT_DISPLAY_SETTINGS.opacity),
+    backgroundOpacity: clampUnit(
+      typeof raw?.backgroundOpacity === 'number'
+        ? raw.backgroundOpacity
+        : DEFAULT_DISPLAY_SETTINGS.backgroundOpacity,
+    ),
+    legibilityBoost:
+      typeof raw?.legibilityBoost === 'boolean'
+        ? raw.legibilityBoost
+        : DEFAULT_DISPLAY_SETTINGS.legibilityBoost,
     fontScale: clampFontScale(typeof raw?.fontScale === 'number' ? raw.fontScale : DEFAULT_DISPLAY_SETTINGS.fontScale),
     alignment:
       raw?.alignment === 'left' || raw?.alignment === 'right' || raw?.alignment === 'center'

@@ -84,6 +84,8 @@ describe('settings persistente (P2.8)', () => {
     const s2 = createPersistentSettings();
     expect(s2.displayStore.get()).toEqual({
       opacity: 0.8,
+      backgroundOpacity: 1,
+      legibilityBoost: true,
       fontScale: 1.2,
       alignment: 'left',
       mirrorMode: true,
@@ -198,4 +200,55 @@ describe('settings persistente (P2.8)', () => {
     expect(createPersistentSettings().translationStore.get().apiKey).toBe('');
   });
 
+
+  it('backgroundOpacity y legibilityBoost tienen defaults retrocompatibles', () => {
+    // Ajustes de una versión anterior: el archivo no trae los campos nuevos.
+    const s1 = createPersistentSettings();
+    s1.displayStore.set({ opacity: 0.8 });
+
+    const file = path.join(userDataDir, 'espejo-settings.json');
+    const raw = JSON.parse(fs.readFileSync(file, 'utf8')) as {
+      display: Record<string, unknown>;
+    };
+    delete raw.display.backgroundOpacity;
+    delete raw.display.legibilityBoost;
+    fs.writeFileSync(file, JSON.stringify(raw), 'utf8');
+
+    const s2 = createPersistentSettings();
+    const display = s2.displayStore.get();
+    expect(display.backgroundOpacity).toBe(1); // aspecto actual
+    expect(display.legibilityBoost).toBe(true);
+    expect(display.opacity).toBe(0.8); // lo demás se conserva
+  });
+
+  it('backgroundOpacity se clampea a 0–1 y legibilityBoost persiste', () => {
+    const s = createPersistentSettings();
+
+    s.displayStore.set({ backgroundOpacity: -0.5, legibilityBoost: false });
+    expect(s.displayStore.get().backgroundOpacity).toBe(0);
+    expect(s.displayStore.get().legibilityBoost).toBe(false);
+
+    s.displayStore.set({ backgroundOpacity: 1.7 });
+    expect(s.displayStore.get().backgroundOpacity).toBe(1);
+
+    // Persiste entre sesiones.
+    s.displayStore.set({ backgroundOpacity: 0.3, legibilityBoost: false });
+    const s2 = createPersistentSettings();
+    expect(s2.displayStore.get().backgroundOpacity).toBe(0.3);
+    expect(s2.displayStore.get().legibilityBoost).toBe(false);
+  });
+
+  it('legibilityBoost con valor no booleano cae al default', () => {
+    const s1 = createPersistentSettings();
+    s1.displayStore.set({ textColor: '#ffffff' });
+
+    const file = path.join(userDataDir, 'espejo-settings.json');
+    const raw = JSON.parse(fs.readFileSync(file, 'utf8')) as {
+      display: Record<string, unknown>;
+    };
+    raw.display.legibilityBoost = 'si';
+    fs.writeFileSync(file, JSON.stringify(raw), 'utf8');
+
+    expect(createPersistentSettings().displayStore.get().legibilityBoost).toBe(true);
+  });
 });
