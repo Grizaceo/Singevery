@@ -1237,6 +1237,14 @@ function registerIpcHandlers(): void {
     return { ok: true };
   });
 
+  // "Sincronizar": libera el hold manual (seek ◀/▶ o rueda) y devuelve el
+  // mando a las fuentes automáticas, aplicando la última sugerencia fresca.
+  ipcMain.handle('sync:resume', (event): { ok: boolean } => {
+    if (!isTrustedSender(event)) return { ok: false };
+    stateStore?.resumeAutoSync();
+    return { ok: true };
+  });
+
   ipcMain.handle('sync:adjustOffset', (_event, deltaMs: number): { ok: boolean; offsetMs: number } => {
     if (stateStore) {
       stateStore.adjustSyncOffset(deltaMs);

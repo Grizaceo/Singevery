@@ -76,6 +76,9 @@ export interface StateDiagnostics {
     offsetMs: number;
     calibrationOffsetMs: number;
     paused: boolean;
+    /** Hold manual activo: el usuario movió la letra y el auto solo observa. */
+    manualHold: boolean;
+    holdReason: 'seekLine' | 'nudge' | null;
     clock: ReturnType<SyncClock['getDiagnostics']>;
     /** Última medición por correlación de energía vocal (null si no hubo). */
     energy: EnergyMeasurement | null;
@@ -174,6 +177,22 @@ export class StateStore {
   /** Mínimo entre peticiones de resync: un ciclo de captura completo. */
   private static readonly RESYNC_THROTTLE_MS = 10_000;
 
+  // ---- Hold manual de sincronía ------------------------------------------
+  // Mientras el usuario mueve la letra a mano (◀/▶ del panel ⇄ → seekToLine,
+  // o la rueda sobre la barra inferior → nudgePosition), NINGUNA fuente
+  // automática puede re-anclar ni iniciar corrección: la posición mostrada es
+  // decisión suya. Las fuentes siguen midiendo y dejan su última sugerencia,
+  // que resumeAutoSync() aplica al pulsar "Sincronizar" (o se descarta al
+  // cambiar de pista/letra). La pausa/reanudación del reloj NO se toca:
+  // congelar no cambia de línea y el usuario sigue queriendo que pause/play
+  // del SO o del silencio funcionen.
+  private manualHold: { since: number; reason: 'seekLine' | 'nudge' } | null = null;
+  /** Última posición propuesta por una fuente automática durante el hold, en
+   *  espacio "mostrado" (ya incluye el offset crónico). */
+  private lastAutoSuggestion: { positionMs: number; at: number; source: string } | null = null;
+  /** Una sugerencia más vieja que esto ya no representa dónde va la canción. */
+  private static readonly HOLD_SUGGESTION_TTL_MS = 30_000;
+
   private readonly displayStore: DisplayStore;
   private readonly translationStore: TranslationStore;
   private readonly lyricsService: LyricsService;
@@ -255,6 +274,8 @@ export class StateStore {
         offsetMs: this.clock.getSyncOffsetMs(),
         calibrationOffsetMs: this.clock.getCalibrationOffsetMs(),
         paused: this.clock.isClockPaused(),
+        manualHold: this.manualHold != null,
+        holdReason: this.manualHold?.reason ?? null,
         clock: this.clock.getDiagnostics(),
         energy: this.lastEnergyMeasurement,
       },
@@ -371,6 +392,9 @@ export class StateStore {
   }
 
   setLyrics(lyrics: TimedLyrics | null, title?: string, artist?: string): void {
+    // Letra limpiada (sin resultado o error de búsqueda): el hold manual ya
+    // no tiene sentido — no queda línea que el usuario haya querido fijar.
+    if (lyrics == null) this.releaseManualHold('sin-letra');
     this.engine.setLyrics(lyrics);
     this.trackTitle = title;
     this.trackArtist = artist;
@@ -397,6 +421,9 @@ export class StateStore {
     // hay duración de referencia contra la que acotar posiciones externas.
     this.trackDurationMs = null;
     this.resetExternalPositionState();
+    // Letra elegida a mano = identidad nueva: la selección manual anterior
+    // (si la había) era de otra canción y no aplica a esta.
+    this.releaseManualHold('letra importada');
     this.autoRetry.reset();
     this.clock.setCurrentTrackKey(trackKey);
     this.clock.loadSyncOffset(trackKey);
@@ -482,6 +509,9 @@ export class StateStore {
       // Y la cuarentena de posiciones externas también: la línea de tiempo
       // del reproductor acaba de cambiar, la historia anterior no aplica.
       this.resetExternalPositionState();
+      // Cambio de pista/letra: la selección manual era de la canción
+      // anterior y no tiene sentido arrastrarla a la nueva.
+      this.releaseManualHold('cambio de pista');
     }
     this.autoRetry.cancel();
     this.currentTrackKey = trackKey;
@@ -539,6 +569,104 @@ export class StateStore {
   private resetExternalPositionState(): void {
     this.lastExternalAccepted = null;
     this.pendingExternalPosition = null;
+  }
+
+  // -------------------------------------------------------------------------
+  // Hold manual de sincronía
+  // -------------------------------------------------------------------------
+
+  /**
+   * Activa el hold manual. Solo lo llaman seekToLine y nudgePosition: los
+   * ajustes de offset/calibración NO activan hold porque son correcciones
+   * persistentes ("esto pasa siempre"), no una selección de línea puntual.
+   */
+  private activateManualHold(reason: 'seekLine' | 'nudge', at: number = Date.now()): void {
+    this.manualHold = { since: at, reason };
+    // Las corroboraciones pendientes quedaron de la posición anterior: el
+    // usuario ya movió la letra a mano, ya no aplican.
+    this.pendingAnchor = null;
+    this.pendingExternalPosition = null;
+    console.log(`[manual] hold activado (${reason})`);
+  }
+
+  /** Libera el hold por causas ajenas a "Sincronizar" (pista/letra nueva). */
+  private releaseManualHold(reason: string, at: number = Date.now()): void {
+    if (!this.manualHold) return;
+    const durS = ((at - this.manualHold.since) / 1000).toFixed(1);
+    this.manualHold = null;
+    this.lastAutoSuggestion = null;
+    console.log(`[manual] hold liberado (${reason}) tras ${durS} s`);
+  }
+
+  /**
+   * "Sincronizar" (IPC sync:resume): libera el hold manual y devuelve el mando
+   * a las fuentes automáticas. Si quedó una sugerencia de hace <30 s se
+   * proyecta al ahora (sin avanzar si el reloj está pausado) y se aplica con
+   * la misma decisión que computeDrift: snap → reanchor directo, correct →
+   * rampa suave, ignore → nada. Además pide una re-identificación para traer
+   * un ancla fresco cuanto antes.
+   */
+  resumeAutoSync(at: number = Date.now()): void {
+    const hold = this.manualHold;
+    const suggestion = this.lastAutoSuggestion;
+    this.manualHold = null;
+    this.lastAutoSuggestion = null;
+
+    let accion = 'ninguna';
+    let errorMs = 0;
+    if (suggestion && at - suggestion.at <= StateStore.HOLD_SUGGESTION_TTL_MS) {
+      const projected =
+        suggestion.positionMs +
+        (this.clock.isClockPaused() ? 0 : Math.max(0, at - suggestion.at));
+      const decision = computeDrift(projected, this.clock.getDisplayedPosition(at));
+      errorMs = decision.errorMs;
+      if (decision.action === 'snap') {
+        this.clock.reanchor(projected, at);
+        accion = 'snap';
+      } else if (decision.action === 'correct') {
+        this.clock.startCorrection(decision.correctionMs, at);
+        accion = 'rampa';
+      } else {
+        accion = 'ignore';
+      }
+    }
+    this.requestResync(at);
+    const durS = hold ? ((at - hold.since) / 1000).toFixed(1) : '0.0';
+    console.log(
+      `[manual] sincronizar: liberado hold (${hold?.reason ?? 'sin-hold'}, ${durS} s), ` +
+        `aplicado ${accion} error=${Math.round(errorMs)}ms`,
+    );
+  }
+
+  /**
+   * Campos del RenderModel sobre el hold manual y la sincronía de la letra.
+   * `sync_hold_drift_ms` = sugerencia automática proyectada a `at` menos la
+   * posición mostrada; null si el hold está inactivo o la sugerencia ya es
+   * vieja (>30 s). `lyrics_synced` es false solo cuando la letra cargada es
+   * PLANA (synced:false): una entrada vieja de caché sin el campo cuenta como
+   * sincronizada para no alarmar de más.
+   */
+  private syncModelFields(
+    at: number,
+  ): Pick<RenderModel, 'sync_hold' | 'sync_hold_drift_ms' | 'lyrics_synced'> {
+    const lyrics = this.engine.getLyrics();
+    const suggestion = this.lastAutoSuggestion;
+    let driftMs: number | null = null;
+    if (
+      this.manualHold &&
+      suggestion &&
+      at - suggestion.at <= StateStore.HOLD_SUGGESTION_TTL_MS
+    ) {
+      const projected =
+        suggestion.positionMs +
+        (this.clock.isClockPaused() ? 0 : Math.max(0, at - suggestion.at));
+      driftMs = Math.round(projected - this.clock.getDisplayedPosition(at));
+    }
+    return {
+      sync_hold: this.manualHold != null,
+      sync_hold_drift_ms: driftMs,
+      lyrics_synced: lyrics != null && lyrics.synced !== false,
+    };
   }
 
   /** Programa el reintento automático delegando en AutoRetry. */
@@ -801,6 +929,10 @@ export class StateStore {
       measurement.skipped = `corrección ${correlation.offsetMs}ms fuera del tope`;
     } else if (correlation.offsetMs === 0) {
       measurement.skipped = 'ya alineado';
+    } else if (this.manualHold) {
+      // Hold manual: la corrección por energía también es una fuente
+      // automática — se mide (queda en /debug) pero no se aplica.
+      measurement.skipped = 'selección manual (hold)';
     } else if (!this.energySyncEnabled) {
       measurement.skipped = 'modo observación (SINGEVERY_ENERGY_SYNC apagado)';
     } else {
@@ -865,6 +997,19 @@ export class StateStore {
         `(mostrado=${Math.round(this.clock.getDisplayedPosition(now))}ms, medido=${Math.round(estimatedNow)}ms)`,
     );
 
+    // Hold manual: el usuario fijó la posición; el ancla de reconocimiento
+    // solo queda como sugerencia (la aplicará "Sincronizar" si sigue fresca).
+    // Sin reanchor, sin rampa y sin requestResync por snap.
+    if (this.manualHold) {
+      this.lastAutoSuggestion = {
+        positionMs: estimatedNow,
+        at: now,
+        source: match.track.provider,
+      };
+      console.log(`[sync] hold: error=${Math.round(decision.errorMs)}ms (no se aplica)`);
+      return;
+    }
+
     if (decision.action !== 'snap') this.pendingAnchor = null;
     if (decision.action === 'ignore') return;
     if (decision.action === 'snap') {
@@ -916,6 +1061,7 @@ export class StateStore {
     const before = this.clock.getDisplayedPosition();
     this.pendingAnchor = null;
     this.clock.nudgePosition(deltaMs);
+    this.activateManualHold('nudge');
     console.log(
       `[manual] nudge delta=${deltaMs}ms antes=${Math.round(before)} ` +
         `después=${Math.round(this.clock.getDisplayedPosition())}`,
@@ -932,6 +1078,7 @@ export class StateStore {
     const before = this.clock.getDisplayedPosition();
     const moved = this.clock.seekToLine(direction, lyrics.lines.map((l) => l.start_ms));
     if (moved) {
+      this.activateManualHold('seekLine');
       console.log(
         `[manual] seek-line direction=${direction} antes=${Math.round(before)} ` +
           `después=${Math.round(this.clock.getDisplayedPosition())}`,
@@ -1096,6 +1243,21 @@ export class StateStore {
       return;
     }
     if (this.clock.isClockPaused()) this.clock.resumeClock(at);
+
+    // Hold manual: la posición externa NO re-ancla ni corrige; queda como
+    // sugerencia (la aplicará "Sincronizar" si sigue fresca). Sí se registra
+    // como última aceptada: es la línea base más reciente de la fuente, así
+    // la cuarentena retoma la comparación correcta al liberar el hold.
+    if (this.manualHold) {
+      const target = Math.max(0, positionMs) + this.clock.getSyncOffsetMs();
+      this.lastAutoSuggestion = { positionMs: target, at, source };
+      this.lastExternalAccepted = { positionMs, at, source };
+      console.log(
+        `[sync] hold: error=${Math.round(target - this.clock.getDisplayedPosition(at))}ms ` +
+          `(no se aplica) fuente=${source}`,
+      );
+      return;
+    }
 
     // ---- Cuarentena de saltos externos ------------------------------------
     // La comparación NO es contra la letra mostrada sino contra la última
@@ -1370,6 +1532,7 @@ export class StateStore {
       track_title: this.trackTitle,
       track_artist: this.trackArtist,
       status,
+      ...this.syncModelFields(Date.now()),
     };
   }
 
@@ -1385,14 +1548,17 @@ export class StateStore {
       return;
     }
 
-    const model = this.engine.getRenderModel(this.clock.getDisplayedPosition(), 'DISPLAYING');
+    const now = Date.now();
+    const displayed = this.clock.getDisplayedPosition(now);
+    const model = this.engine.getRenderModel(displayed, 'DISPLAYING');
     const full: RenderModel = {
       ...model,
       ...this.appearance.resolveTextAppearance(),
       ...this.appearance.resolveHandleAppearance(),
       track_title: this.trackTitle,
       track_artist: this.trackArtist,
-      position_ms: Math.round(this.clock.getDisplayedPosition()),
+      position_ms: Math.round(displayed),
+      ...this.syncModelFields(now),
     };
     this.emit(full);
   }

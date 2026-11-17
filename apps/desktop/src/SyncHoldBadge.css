@@ -1,0 +1,47 @@
+/* Insignia flotante del hold manual / letra sin sincronía. Va FUERA de
+   .app-chrome para seguir visible con la barra oculta; pointer-events y
+   no-drag propios porque la chrome oculta los desactiva a ella. */
+.sync-hold-badge {
+  position: fixed;
+  bottom: 54px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1350;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 10px;
+  border: 1px solid var(--chrome-border);
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.72);
+  backdrop-filter: blur(8px);
+  color: var(--chrome-text);
+  font-size: 0.7rem;
+  white-space: nowrap;
+  pointer-events: auto;
+  -webkit-app-region: no-drag;
+  user-select: none;
+}
+
+.sync-hold-resume {
+  height: 24px;
+  padding: 0 10px;
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+
+.sync-hold-tag {
+  color: var(--chrome-accent);
+  font-weight: 600;
+}
+
+.sync-hold-drift {
+  color: var(--chrome-text-muted);
+}
+
+.lyrics-unsynced-tag {
+  padding: 2px 8px;
+  border: 1px dashed var(--chrome-border);
+  border-radius: 999px;
+  color: var(--chrome-text-muted);
+}

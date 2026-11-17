@@ -230,6 +230,23 @@ export interface RenderModel {
    * referencia del pitch con los timestamps de las líneas).
    */
   position_ms?: number;
+  /**
+   * true mientras la posición de la letra la controla el usuario (seek ◀/▶ o
+   * rueda): las fuentes automáticas solo observan hasta pulsar "Sincronizar".
+   */
+  sync_hold?: boolean;
+  /**
+   * Durante el hold: cuánto se desvía la última sugerencia automática de la
+   * posición mostrada (ms, sugerencia proyectada a ahora − mostrada).
+   * null/undefined si no hay sugerencia fresca (<30 s).
+   */
+  sync_hold_drift_ms?: number | null;
+  /**
+   * false = la letra cargada es plana (sin tiempos por línea): el avance es
+   * aproximado. Las entradas viejas de caché sin el campo cuentan como
+   * sincronizadas.
+   */
+  lyrics_synced?: boolean;
 }
 
 /** Fuente de audio para reconocimiento. */
@@ -396,6 +413,8 @@ export interface DesktopApi {
   // Sync: seek manual + offset crónico por pista
   nudgeSync: (deltaMs: number) => Promise<{ ok: boolean }>;
   seekLine: (direction: -1 | 1) => Promise<{ ok: boolean }>;
+  /** "Sincronizar": libera la selección manual (hold) y devuelve el mando al auto. */
+  resumeSync: () => Promise<{ ok: boolean }>;
   adjustSyncOffset: (deltaMs: number) => Promise<{ ok: boolean; offsetMs: number }>;
   getSyncOffset: () => Promise<{ ok: boolean; offsetMs: number }>;
 

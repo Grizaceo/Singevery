@@ -14,6 +14,7 @@ import { usePitchMonitor } from './usePitchMonitor';
 import { useMelodyReference } from './useMelodyReference';
 import { useTeacherReference } from './useTeacherReference';
 import { ManualSearch } from './ManualSearch';
+import { SyncHoldBadge } from './SyncHoldBadge';
 import { matchWindow } from './audio/compare';
 import { RenderModelProvider, useRenderModel } from './renderModelContext';
 import { detectScriptFromLines } from './scriptDetect';
@@ -54,6 +55,9 @@ function AppContent() {
   // cuando hay un juego en primer plano: el overlay no recibe el hover del
   // mouse, así que sin teclado no habría forma de agarrarlo para moverlo.
   const [tangible, setTangible] = useState(false);
+  // Hover sobre la insignia del hold manual: en modo fantasma la ventana es
+  // click-through y solo el hover la vuelve pulsable (igual que el handle).
+  const [badgeHovered, setBadgeHovered] = useState(false);
   const hideTimerRef = useRef<number | undefined>(undefined);
   const prevTrackRef = useRef<string | undefined>(undefined);
   const autoStartedRef = useRef(false);
@@ -256,15 +260,20 @@ function AppContent() {
     // el cursor para recuperarla, y con una canción en pantalla el temporizador
     // de la chrome la volvía intangible a los pocos segundos (sin forma de
     // pulsar SING con el mouse).
+    // Hold manual: la ventana sigue pudiendo ser atravesable (si no, durante
+    // todo el modo manual el widget volvería a estorbar). Solo la insignia de
+    // "Sincronizar" se vuelve pulsable al pasar el cursor por encima; en
+    // Hyprland, donde con el paso activo no llegan eventos, se alcanza igual
+    // que el resto de la chrome: pasando por la pestañita, que la revela.
     const clickThrough =
       !collapsed &&
       !tangible &&
       !settingsOpen &&
       !welcomeOpen &&
       !manualSearchOpen &&
-      (ghost ? !handleHovered : chromeHidden);
+      (ghost ? !(handleHovered || badgeHovered) : chromeHidden && !badgeHovered);
     window.api?.setClickThrough?.(clickThrough);
-  }, [collapsed, ghost, handleHovered, chromeHidden, settingsOpen, tangible, welcomeOpen, manualSearchOpen]);
+  }, [collapsed, ghost, handleHovered, badgeHovered, chromeHidden, settingsOpen, tangible, welcomeOpen, manualSearchOpen]);
 
   const visibleLines = useMemo(
     () => [...model.previous_lines, model.current_line, ...model.next_lines],
@@ -319,6 +328,7 @@ function AppContent() {
         scale={model.handle_scale}
         positionX={model.handle_position_x}
       />
+      <SyncHoldBadge onHoverChange={setBadgeHovered} onReveal={reveal} />
       <div className={`app-chrome${chromeHidden ? ' chrome-hidden' : ''}`}>
         <ChromeTopBar
           api={window.api}

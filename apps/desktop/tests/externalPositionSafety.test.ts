@@ -52,6 +52,7 @@ describe('StateStore — cuarentena de posiciones externas', () => {
     const log = vi.spyOn(console, 'log').mockImplementation(() => {});
     const s = new StateStore(null);
     s.nudgePosition(95_000); // la canción va en 95 s
+    s.resumeAutoSync(); // nudge activa el hold manual: soltarlo para probar la cuarentena
     // Primera posición externa: establece la línea base (~95 s).
     s.applyExternalPosition(95_000, true, 0);
 
@@ -69,6 +70,7 @@ describe('StateStore — cuarentena de posiciones externas', () => {
   it('un seek real hacia atrás se aplica tras 2 posiciones coherentes', () => {
     const s = new StateStore(null);
     s.nudgePosition(30_000);
+    s.resumeAutoSync(); // libera el hold manual del nudge
     s.applyExternalPosition(30_000, true, 0); // línea base
 
     s.applyExternalPosition(5_000, true, 1_000); // retroceso → cuarentena
@@ -82,6 +84,7 @@ describe('StateStore — cuarentena de posiciones externas', () => {
   it('un seek real hacia adelante se aplica tras 1 posición coherente', () => {
     const s = new StateStore(null);
     s.nudgePosition(30_000);
+    s.resumeAutoSync(); // libera el hold manual del nudge
     s.applyExternalPosition(30_000, true, 0);
 
     s.applyExternalPosition(90_000, true, 1_000); // salto > DRIFT_SNAP_MS → cuarentena
@@ -93,6 +96,7 @@ describe('StateStore — cuarentena de posiciones externas', () => {
   it('una posición incoherente descarta la pendiente y la letra se recupera', () => {
     const s = new StateStore(null);
     s.nudgePosition(30_000);
+    s.resumeAutoSync(); // libera el hold manual del nudge
     s.applyExternalPosition(30_000, true, 0);
 
     s.applyExternalPosition(5_000, true, 1_000); // retroceso → cuarentena
