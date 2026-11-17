@@ -22,9 +22,12 @@ import {
   AutoGhostTimer,
   autoGhostEligible,
   isHudActivity,
+  autoOpenAction,
   readAutoGhostPrefs,
   type AutoGhostPrefs,
+  type GhostNoticeReason,
 } from './autoGhost';
+import { GUARDED_POINTER_EVENTS, withinExpandGuard } from './expandGuard';
 import { detectScriptFromLines } from './scriptDetect';
 import './App.css';
 
@@ -69,9 +72,17 @@ function AppContent() {
   // Intangible automático por inactividad (autoGhost.ts). Las prefs se releen
   // al cerrar Ajustes para que el cambio aplique sin reiniciar la app.
   const [autoGhostPrefs, setAutoGhostPrefs] = useState<AutoGhostPrefs>(readAutoGhostPrefs);
-  const [autoGhostNotice, setAutoGhostNotice] = useState(false);
+  const [autoGhostNotice, setAutoGhostNotice] = useState<GhostNoticeReason | null>(null);
   const autoGhostTimerRef = useRef<AutoGhostTimer | null>(null);
   const autoGhostNoticeTimerRef = useRef<number | undefined>(undefined);
+  const showGhostNotice = useCallback((reason: GhostNoticeReason) => {
+    setAutoGhostNotice(reason);
+    window.clearTimeout(autoGhostNoticeTimerRef.current);
+    autoGhostNoticeTimerRef.current = window.setTimeout(() => setAutoGhostNotice(null), 6000);
+  }, []);
+  // Instante en que la pastilla se expandió (expandGuard.ts).
+  const expandedAtRef = useRef<number | null>(null);
+  const prevCollapsedRef = useRef<boolean | null>(null);
   // Último clickThrough calculado: lo usa isHudActivity para decidir si un
   // mousemove es el usuario tocando el HUD o solo el cursor pasando de largo.
   const clickThroughRef = useRef(false);
@@ -163,22 +174,52 @@ function AppContent() {
       if (locked) {
         setGhost(false);
         setChromeVisible(true);
-        setAutoGhostNotice(false);
+        setAutoGhostNotice(null);
       }
     });
   }, []);
 
   useEffect(() => {
+    if (!collapsed && prevCollapsedRef.current) expandedAtRef.current = performance.now();
+    prevCollapsedRef.current = collapsed;
     void window.api?.setCollapsed?.(collapsed);
   }, [collapsed]);
 
+  // Tras expandir la pastilla se descartan los clics un instante: el segundo
+  // clic de un doble clic en SING caía sobre el botón Cerrar (expandGuard.ts).
+  // Va en captura sobre window para cortar el evento antes que React.
+  useEffect(() => {
+    const swallow = (e: Event) => {
+      if (withinExpandGuard(performance.now(), expandedAtRef.current)) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+    };
+    for (const type of GUARDED_POINTER_EVENTS) window.addEventListener(type, swallow, true);
+    return () => {
+      for (const type of GUARDED_POINTER_EVENTS) window.removeEventListener(type, swallow, true);
+    };
+  }, []);
+
+  // Canción nueva reconocida con la pastilla: abrir en modo fantasma (no
+  // atrapa los clics de lo que el usuario esté haciendo) o, si lo desactivó en
+  // Ajustes, quedarse como pastilla. Pulsar SING abre normal (handleSing).
   useEffect(() => {
     const t = model.track_title;
-    if (t && t !== prevTrackRef.current && collapsed) {
+    const action = autoOpenAction({
+      collapsed,
+      newTrack: Boolean(t) && t !== prevTrackRef.current,
+      openOnRecognize: autoGhostPrefs.openOnRecognize,
+    });
+    if (action === 'open-ghost') {
+      setGhost(true);
+      window.clearTimeout(hideTimerRef.current);
+      setChromeVisible(false);
+      showGhostNotice('auto-open');
       setCollapsed(false);
     }
     prevTrackRef.current = t;
-  }, [model.track_title, collapsed]);
+  }, [model.track_title, collapsed, autoGhostPrefs.openOnRecognize, showGhostNotice]);
 
   // F2: al cambiar de canción (trackKey distinto), re-traducir la letra nueva
   // si la vista de traducción está activa. El ref evita re-disparos por el
@@ -214,7 +255,7 @@ function AppContent() {
     setCollapsed(true);
     closeSettings();
     setGhost(false);
-    setAutoGhostNotice(false);
+    setAutoGhostNotice(null);
   }, [closeSettings]);
 
   const dismissWelcome = useCallback(() => {
@@ -253,7 +294,7 @@ function AppContent() {
       return next;
     });
     // Salir del fantasma (o entrar a mano) descarta el aviso de inactividad.
-    setAutoGhostNotice(false);
+    setAutoGhostNotice(null);
   }, []);
 
   useEffect(() => {
@@ -288,9 +329,7 @@ function AppContent() {
         setGhost(true);
         window.clearTimeout(hideTimerRef.current);
         setChromeVisible(false);
-        setAutoGhostNotice(true);
-        window.clearTimeout(autoGhostNoticeTimerRef.current);
-        autoGhostNoticeTimerRef.current = window.setTimeout(() => setAutoGhostNotice(false), 6000);
+        showGhostNotice('idle');
       });
     }
     autoGhostTimerRef.current.update({
@@ -313,6 +352,7 @@ function AppContent() {
     welcomeOpen,
     manualSearchOpen,
     ghost,
+    showGhostNotice,
   ]);
 
   useEffect(() => () => autoGhostTimerRef.current?.dispose(), []);
@@ -382,7 +422,7 @@ function AppContent() {
   }, [model.status, visibleLines]);
 
   if (collapsed) {
-    return <Pill onSing={handleSing} />;
+    return <Pill onSing={handleSing} trackTitle={model.track_title} />;
   }
 
   return (
@@ -407,7 +447,9 @@ function AppContent() {
       )}
       {autoGhostNotice && ghost && (
         <div className="auto-ghost-notice" role="status">
-          Intangible por inactividad · doble clic en la pestañita para volver ·{' '}
+          {autoGhostNotice === 'auto-open'
+            ? 'Se abrió en modo intangible para no interrumpirte · doble clic en la pestañita para usarlo · '
+            : 'Intangible por inactividad · doble clic en la pestañita para volver · '}
           <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>T</kbd> fuerza el modo tangible
         </div>
       )}
