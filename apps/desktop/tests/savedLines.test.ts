@@ -7,6 +7,7 @@ const model: RenderModel = {
   current_line: {
     text: '夢を見ていた',
     romaji: 'yume o miteita',
+    ipa: 'ɰɯme o miteita',
     translation: 'Estaba soñando',
     start_ms: 12_000,
   },
@@ -26,6 +27,7 @@ describe('líneas guardadas', () => {
     const saved = savedLineFromModel(model, new Date('2026-08-01T12:00:00.000Z'))!;
     expect(saved.text).toBe('夢を見ていた');
     expect(saved.reading).toBe('yume o miteita');
+    expect(saved.ipa).toBe('ɰɯme o miteita');
     expect(saved.translation).toBe('Estaba soñando');
     expect(saved.positionMs).toBe(12_000);
   });
@@ -41,6 +43,8 @@ describe('líneas guardadas', () => {
     expect(csv).toContain('"Canción, prueba"');
     expect(csv).toContain('"Artista ""A"""');
     expect(csv).toContain('"yume o miteita"');
+    expect(csv).toContain('"ɰɯme o miteita"');
+    expect(csv).toContain('"Lectura","IPA","Traducción"');
   });
 
   it('neutraliza fórmulas al exportar a una hoja de cálculo', () => {

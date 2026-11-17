@@ -45,6 +45,7 @@
     "install:linux": "npm run package:linux && bash scripts/install-linux.sh"
   },
   "dependencies": {
+    "cmu-pronouncing-dictionary": "^3.0.0",
     "cyrillic-to-translit-js": "^3.2.1",
     "es-hangul": "^2.3.8",
     "kuroshiro": "^1.2.0",

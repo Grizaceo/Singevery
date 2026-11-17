@@ -13,6 +13,7 @@
 // canción produciría transcripciones incoherentes entre versos.
 // ============================================================================
 
+import { englishToIpa, isEnglishDictionaryLoaded, loadEnglishDictionary } from './english';
 import { frenchToIpa } from './french';
 import { germanToIpa } from './german';
 import { italianToIpa } from './italian';
@@ -22,6 +23,7 @@ import type { IpaLang } from './langDetect';
 export { detectLatinLanguage, scoreLanguages, hasIpaEngine, IPA_LANGS } from './langDetect';
 export type { DetectedLang, IpaLang } from './langDetect';
 export type { SpanishVariant } from './spanish';
+export { loadEnglishDictionary, isEnglishDictionaryLoaded };
 
 export interface LatinIpaOptions {
   /** Norma del español: seseo americano (por defecto) o distinción castellana. */
@@ -34,6 +36,7 @@ export const LANG_LABEL: Record<IpaLang, string> = {
   it: 'italiano',
   fr: 'francés',
   de: 'alemán',
+  en: 'inglés (EE. UU.)',
 };
 
 /**
@@ -48,6 +51,7 @@ export const LANG_ACCURACY: Record<IpaLang, 'exacta' | 'aproximada'> = {
   it: 'exacta',
   fr: 'aproximada',
   de: 'aproximada',
+  en: 'aproximada',
 };
 
 /** Qué queda fuera en cada idioma, en una línea, para mostrarlo al usuario. */
@@ -56,6 +60,7 @@ export const LANG_CAVEAT: Record<IpaLang, string> = {
   it: 'e/o abiertas o cerradas solo se distinguen cuando la palabra lleva tilde; z se transcribe sorda.',
   fr: 'Sin liaison entre palabras; el final -ent verbal y algunos timbres son aproximados.',
   de: 'La cantidad de la vocal ante ⟨ch⟩ es léxica y se resuelve breve; los préstamos conservan su fonética original.',
+  en: 'Pronunciación de diccionario (CMUdict, inglés general estadounidense) en forma de cita: no refleja las reducciones del habla rápida ni el flap de la t, y las palabras que no están en el diccionario quedan sin transcribir.',
 };
 
 /**
@@ -75,7 +80,9 @@ export function latinToIpa(text: string, lang: IpaLang, options: LatinIpaOptions
       return frenchToIpa(text);
     case 'de':
       return germanToIpa(text);
+    case 'en':
+      return englishToIpa(text);
   }
 }
 
-export { spanishToIpa, italianToIpa, frenchToIpa, germanToIpa };
+export { spanishToIpa, italianToIpa, frenchToIpa, germanToIpa, englishToIpa };

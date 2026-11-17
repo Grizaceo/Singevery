@@ -34,7 +34,7 @@ const PT = [
   'Porque eu sempre soube que esse amor não tem fim',
 ];
 
-describe('detectLatinLanguage — identifica los cuatro idiomas con motor', () => {
+describe('detectLatinLanguage — identifica los idiomas con motor', () => {
   it('reconoce el español', () => {
     expect(detectLatinLanguage(ES)).toBe('es');
   });
@@ -50,14 +50,14 @@ describe('detectLatinLanguage — identifica los cuatro idiomas con motor', () =
   it('reconoce el alemán', () => {
     expect(detectLatinLanguage(DE)).toBe('de');
   });
+
+  it('reconoce el inglés (tiene motor: CMUdict)', () => {
+    expect(detectLatinLanguage(EN)).toBe('en');
+  });
 });
 
 describe('detectLatinLanguage — prefiere no responder antes que responder mal', () => {
-  it('devuelve null con inglés: no hay motor y transcribirlo sería inventar', () => {
-    expect(detectLatinLanguage(EN)).toBeNull();
-  });
-
-  it('devuelve null con portugués en vez de tratarlo como español', () => {
+  it('devuelve null con portugués: no hay motor y tratarlo como español sería inventar', () => {
     expect(detectLatinLanguage(PT)).toBeNull();
   });
 
@@ -106,13 +106,13 @@ describe('scoreLanguages — evidencia inspeccionable', () => {
 });
 
 describe('hasIpaEngine', () => {
-  it('acepta los cuatro idiomas implementados', () => {
+  it('acepta los idiomas implementados, inglés incluido', () => {
     expect(hasIpaEngine('es')).toBe(true);
     expect(hasIpaEngine('de')).toBe(true);
+    expect(hasIpaEngine('en')).toBe(true);
   });
 
-  it('rechaza inglés, portugués y null', () => {
-    expect(hasIpaEngine('en')).toBe(false);
+  it('rechaza portugués y null', () => {
     expect(hasIpaEngine('pt')).toBe(false);
     expect(hasIpaEngine(null)).toBe(false);
   });

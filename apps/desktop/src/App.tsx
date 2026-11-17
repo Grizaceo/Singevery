@@ -14,6 +14,7 @@ import { usePitchMonitor } from './usePitchMonitor';
 import { useMelodyReference } from './useMelodyReference';
 import { useTeacherReference } from './useTeacherReference';
 import { ManualSearch } from './ManualSearch';
+import { IpaGuide } from './IpaGuide';
 import { matchWindow } from './audio/compare';
 import { RenderModelProvider, useRenderModel } from './renderModelContext';
 import { detectScriptFromLines } from './scriptDetect';
@@ -54,6 +55,8 @@ function AppContent() {
   // cuando hay un juego en primer plano: el overlay no recibe el hover del
   // mouse, así que sin teclado no habría forma de agarrarlo para moverlo.
   const [tangible, setTangible] = useState(false);
+  // Guía de símbolos IPA: se abre con el botón "?" de los controles de lectura.
+  const [ipaGuideOpen, setIpaGuideOpen] = useState(false);
   const hideTimerRef = useRef<number | undefined>(undefined);
   const prevTrackRef = useRef<string | undefined>(undefined);
   const autoStartedRef = useRef(false);
@@ -328,6 +331,9 @@ function AppContent() {
           hasAnnotations={hasAnnotations}
           hasIpa={hasIpa}
           scriptHint={scriptHint}
+          ipaInfo={model.ipa_info ?? null}
+          ipaGuideOpen={ipaGuideOpen}
+          onIpaGuideToggle={() => setIpaGuideOpen((v) => !v)}
           translationView={translationView}
           onTranslationViewChange={setTranslationView}
           translationLoading={translationState.loading}
@@ -346,6 +352,13 @@ function AppContent() {
           onManualSearch={() => setManualSearchOpen(true)}
         />
       </div>
+      {ipaGuideOpen && (
+        <IpaGuide
+          ipa={model.current_line.ipa}
+          label={model.ipa_info?.label}
+          onClose={() => setIpaGuideOpen(false)}
+        />
+      )}
       {manualSearchOpen && (
         <ManualSearch
           onClose={() => setManualSearchOpen(false)}

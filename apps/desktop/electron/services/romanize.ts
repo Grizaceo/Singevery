@@ -1,6 +1,13 @@
 import type { FuriganaSegment, TimedLyrics } from '../../src/types';
 import { kanaToIpa, ipaForRuby } from './ipa';
-import { detectLatinLanguage, latinToIpa, type IpaLang, type SpanishVariant } from './phonetics';
+import {
+  detectLatinLanguage,
+  latinToIpa,
+  loadEnglishDictionary,
+  isEnglishDictionaryLoaded,
+  type IpaLang,
+  type SpanishVariant,
+} from './phonetics';
 import { transliterate } from 'transliteration';
 import { pinyin } from 'pinyin-pro';
 import { romanize as hangulRomanize } from 'es-hangul';
@@ -17,10 +24,10 @@ const CJK_CHAR_RE = /[\u4E00-\u9FFF]/;
 
 /**
  * Incrementar al cambiar el formato de anotaciones (furigana, kana, ruby
- * multi-idioma). La 4 añade IPA para español, italiano, francés y alemán:
+ * multi-idioma). La 5 añade IPA de inglés y el campo ipaLang:
  * el bump obliga a re-anotar las letras ya cacheadas.
  */
-export const ANNOTATIONS_VERSION = 4;
+export const ANNOTATIONS_VERSION = 5;
 
 type KuroshiroInstance = {
   convert: (
@@ -366,7 +373,8 @@ const READING_CACHE_MAX = 4000;
 export async function analyzeLine(text: string, latinLang?: IpaLang): Promise<LineReadings> {
   // La clave incluye los ajustes que cambian el resultado: si el usuario pasa
   // de seseo a distinción, la caché no puede devolverle la transcripción vieja.
-  const cacheKey = `${pinyinToneType}:${spanishVariant}:${latinLang ?? '-'}:${text}`;
+  // También si el diccionario inglés pasó de descargado a cargado (o al revés).
+  const cacheKey = `${pinyinToneType}:${spanishVariant}:${latinLang ?? '-'}:${isEnglishDictionaryLoaded() ? '1' : '0'}:${text}`;
   const cached = readingCache.get(cacheKey);
   if (cached) return cached;
   const readings = await computeReadings(text, latinLang);
@@ -380,6 +388,7 @@ export function stripReadings(lyrics: TimedLyrics): TimedLyrics {
   return {
     ...lyrics,
     annotationsVersion: undefined,
+    ipaLang: undefined,
     lines: lyrics.lines.map(({ text, start_ms, end_ms, words }) => ({
       text,
       start_ms,
@@ -397,12 +406,32 @@ export async function romanizeTimedLyrics(lyrics: TimedLyrics): Promise<TimedLyr
   // El idioma se decide UNA vez, con toda la letra a la vista. Por línea suelta
   // no hay evidencia suficiente ("oh oh oh") y cambiar de motor a mitad de
   // canción daría versos transcritos con reglas distintas.
-  const latinLang = detectLatinLanguage(lyrics.lines.map((line) => line.text)) ?? undefined;
+  let latinLang = detectLatinLanguage(lyrics.lines.map((line) => line.text)) ?? undefined;
+
+  // El inglés se apoya en CMUdict (~4,7 MB): se carga perezosamente aquí, una
+  // vez por canción. Si la carga falla se sigue sin IPA — mejor nada que una
+  // transcripción de otro idioma o una invención.
+  if (latinLang === 'en') {
+    try {
+      await loadEnglishDictionary();
+    } catch (err) {
+      console.error('[romanize] no se pudo cargar el diccionario inglés:', err);
+      latinLang = undefined;
+    }
+  }
+
   const lines = await Promise.all(
     lyrics.lines.map(async (line) => {
       const readings = await analyzeLine(line.text, latinLang);
       return { ...line, ...readings };
     }),
   );
-  return { ...lyrics, lines, annotationsVersion: ANNOTATIONS_VERSION };
+  // Idioma del que salió el IPA, para la etiqueta de la UI. Una canción
+  // japonesa con un estribillo en inglés anota ambas cosas: manda el idioma
+  // con más líneas transcritas (empate → japonés, el cuerpo de la canción).
+  const jaIpaLines = lines.filter((line) => line.ipa != null && isJapanese(line.text)).length;
+  const latinIpaLines = lines.filter((line) => line.ipa != null && !isJapanese(line.text)).length;
+  const ipaLang =
+    jaIpaLines > 0 && (jaIpaLines >= latinIpaLines || !latinLang) ? 'ja' : latinIpaLines > 0 ? latinLang : undefined;
+  return { ...lyrics, lines, annotationsVersion: ANNOTATIONS_VERSION, ipaLang };
 }

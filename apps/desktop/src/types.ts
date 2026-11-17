@@ -93,6 +93,11 @@ export interface TimedLyrics {
   synced: boolean;
   /** Versión del pipeline de anotaciones (furigana, kana, ruby multi-idioma). */
   annotationsVersion?: number;
+  /**
+   * Idioma del que salió el IPA anotado: el detectado en alfabeto latino
+   * (es/it/fr/de/en) o 'ja' cuando la transcripción vino del kana.
+   */
+  ipaLang?: 'ja' | 'es' | 'it' | 'fr' | 'de' | 'en';
   /** Idioma destino de las traducciones cacheadas en `lines[].translation`. */
   translationLang?: string;
   /** Procedencia del motor local y versión del prompt; evita reutilizar otra traducción. */
@@ -182,6 +187,18 @@ export interface DisplaySettings {
   lyricsWindowSize: number;
 }
 
+/**
+ * Metadatos del IPA activo en la canción actual: qué idioma se transcribió,
+ * con qué nombre se muestra, cuánta confianza merece y qué limitaciones
+ * tiene. Lo calcula el main a partir de `TimedLyrics.ipaLang`.
+ */
+export interface IpaInfo {
+  lang: string;
+  label: string;
+  accuracy: 'exacta' | 'aproximada';
+  caveat: string;
+}
+
 /** Estado que el main envía al renderer por IPC ~10 veces por segundo. */
 export interface RenderModel {
   previous_lines: RenderLine[];
@@ -230,6 +247,8 @@ export interface RenderModel {
    * referencia del pitch con los timestamps de las líneas).
    */
   position_ms?: number;
+  /** Idioma/exactitud/salvedad del IPA de la canción (null si no hay IPA). */
+  ipa_info?: IpaInfo | null;
 }
 
 /** Fuente de audio para reconocimiento. */

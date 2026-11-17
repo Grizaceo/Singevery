@@ -2,6 +2,10 @@
 
 Fecha: 2026-08-04
 Estado: **IMPLEMENTADO** (español, italiano, francés, alemán)
+**Actualización 2026-11:** el inglés ya tiene motor IPA propio
+(`electron/services/phonetics/english.ts`): consulta CMUdict (ARPAbet → IPA,
+forma de cita, aproximada) en lugar de reglas, y la app muestra junto al modo
+IPA la etiqueta del idioma, la exactitud y una guía de símbolos IPA.
 Documento hermano: [`PLAN_IPA_2026-08-03.md`](PLAN_IPA_2026-08-03.md) (japonés, Fase 1)
 Contexto de producto: [`REVISION_MERCADO_2026-08-04.md`](REVISION_MERCADO_2026-08-04.md) §2.5
 

@@ -1,0 +1,101 @@
+/* Panel de la guía de símbolos IPA: oscuro semitransparente, como el panel
+   de repaso. Debe seguir al cursor para que se pueda arrastrar la ventana
+   cuando el overlay está en modo fantasma. */
+.ipa-guide {
+  position: fixed;
+  top: 64px;
+  right: 14px;
+  z-index: 1500;
+  width: min(380px, calc(100vw - 28px));
+  max-height: min(480px, calc(100vh - 130px));
+  overflow: hidden;
+  border: 1px solid rgb(255 255 255 / 18%);
+  border-radius: 14px;
+  background: rgb(15 16 20 / 92%);
+  box-shadow: 0 18px 50px rgb(0 0 0 / 45%);
+  color: rgb(255 255 255 / 92%);
+  backdrop-filter: blur(18px);
+  -webkit-app-region: no-drag;
+}
+
+.ipa-guide-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 14px;
+  border-bottom: 1px solid rgb(255 255 255 / 10%);
+}
+
+.ipa-guide-close {
+  border: 1px solid rgb(255 255 255 / 15%);
+  border-radius: 7px;
+  background: rgb(255 255 255 / 7%);
+  color: inherit;
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  padding: 3px 8px;
+}
+
+.ipa-guide-close:hover {
+  background: rgb(255 255 255 / 14%);
+}
+
+.ipa-guide-empty {
+  margin: 0;
+  padding: 14px;
+  color: rgb(255 255 255 / 60%);
+  font-size: 12px;
+}
+
+.ipa-guide-list {
+  max-height: calc(min(480px, calc(100vh - 130px)) - 45px);
+  margin: 0;
+  padding: 6px 12px 10px;
+  list-style: none;
+  overflow-y: auto;
+}
+
+.ipa-guide-row {
+  display: flex;
+  gap: 12px;
+  align-items: baseline;
+  padding: 7px 2px;
+  border-bottom: 1px solid rgb(255 255 255 / 7%);
+}
+
+.ipa-guide-row:last-child {
+  border-bottom: none;
+}
+
+.ipa-guide-sym {
+  flex: 0 0 auto;
+  min-width: 44px;
+  font-size: 24px;
+  line-height: 1.2;
+  color: #b8d7ff;
+  text-align: center;
+}
+
+.ipa-guide-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 12px;
+}
+
+.ipa-guide-info strong {
+  font-weight: 500;
+  color: rgb(255 255 255 / 88%);
+}
+
+.ipa-guide-info em {
+  color: rgb(255 255 255 / 55%);
+  font-size: 11px;
+  font-style: normal;
+}
+
+.ipa-guide-unknown .ipa-guide-sym {
+  color: rgb(255 255 255 / 45%);
+}

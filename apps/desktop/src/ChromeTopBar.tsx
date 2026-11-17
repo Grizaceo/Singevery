@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { WindowControls } from './WindowControls';
 import { ReadingControls } from './ReadingControls';
 import { TrackHeader } from './teleprompter/TrackHeader';
-import type { ReadingMode, RenderModel, TranslationView } from './types';
+import type { IpaInfo, ReadingMode, RenderModel, TranslationView } from './types';
 import type { DesktopApi } from './types';
 import type { ScriptHint } from './scriptDetect';
 import { readWidgetControls } from './widgetPrefs';
@@ -17,6 +17,9 @@ interface ChromeTopBarProps {
   hasAnnotations: boolean;
   hasIpa?: boolean;
   scriptHint?: ScriptHint;
+  ipaInfo?: IpaInfo | null;
+  ipaGuideOpen?: boolean;
+  onIpaGuideToggle?: () => void;
   translationView?: TranslationView;
   onTranslationViewChange?: (view: TranslationView) => void;
   translationLoading?: boolean;
@@ -33,6 +36,9 @@ export function ChromeTopBar({
   hasAnnotations,
   hasIpa,
   scriptHint,
+  ipaInfo,
+  ipaGuideOpen,
+  onIpaGuideToggle,
   translationView,
   onTranslationViewChange,
   translationLoading,
@@ -99,6 +105,9 @@ export function ChromeTopBar({
             hasAnnotations={hasAnnotations}
             hasIpa={hasIpa}
             scriptHint={scriptHint}
+            ipaInfo={ipaInfo}
+            ipaGuideOpen={ipaGuideOpen}
+            onIpaGuideToggle={onIpaGuideToggle}
             translationView={translationView}
             onTranslationViewChange={widgetControls.translate ? onTranslationViewChange : undefined}
             translationLoading={translationLoading}
