@@ -36,6 +36,16 @@ export interface WrongSongStrikes {
  */
 export type AudioBoundaryKind = 'gap' | 'novelty';
 
+/**
+ * Por qué se confirmó (o no) un cambio de pista por reconocimiento:
+ *   - 'sin-letra'   → no había letra que proteger (identificación inicial).
+ *   - 'provisional' → la pista en pantalla era un hint genérico del SO.
+ *   - 'histéresis'  → la misma canción nueva se confirmó N ciclos seguidos.
+ *   - 'insistencia' → el audio rompió el lock pese a que el SO la contradice.
+ * StateStore la loguea como `motivo=` del cambio de pista.
+ */
+export type TrackChangeReason = 'sin-letra' | 'provisional' | 'histéresis' | 'insistencia';
+
 /** Lo que IdentityArbiter necesita del reloj de sincronía: soltar una pausa
  *  que resultó ser de una sesión que ya no es de confianza. */
 export interface ExternalPauseBridge {
@@ -118,6 +128,11 @@ export class IdentityArbiter {
   /** Tope: pasadas estas, insistir no aporta (ver maybeRequestResyncOnMiss). */
   private static readonly MISMATCH_RESYNC_LIMIT = 2;
 
+  /** Motivo de la ÚLTIMA confirmación de cambio de pista (null si la última
+   *  llamada a confirmTrackChange no confirmó o aún no se llamó). Lo lee
+   *  StateStore para el log `[identidad] cambio a ... motivo=`. */
+  private lastDecisionReason_: TrackChangeReason | null = null;
+
   constructor(private readonly pauseBridge: ExternalPauseBridge) {}
 
   // ---- accesores (mismo nombre que los campos originales de StateStore) ----
@@ -188,6 +203,10 @@ export class IdentityArbiter {
 
   get changeConfirmCount(): number {
     return this.CHANGE_CONFIRM_COUNT;
+  }
+  /** Motivo de la última confirmación de confirmTrackChange (solo lectura). */
+  get lastDecisionReason(): TrackChangeReason | null {
+    return this.lastDecisionReason_;
   }
   get wrongSongStrikeLimit(): number {
     return this.WRONG_SONG_STRIKE_LIMIT;
@@ -280,14 +299,17 @@ export class IdentityArbiter {
     trackTitle: string | undefined,
     trackArtist: string | undefined,
   ): boolean {
+    this.lastDecisionReason_ = null;
     if (!hasLyrics) {
       this.wrongSong_ = null;
+      this.lastDecisionReason_ = 'sin-letra';
       return true;
     }
     // La pista en pantalla entró por un título genérico del SO: es un hint, no
     // un lock. El audio sabe qué suena de verdad; no hay nada que proteger.
     if (this.currentTrackProvisional_) {
       this.wrongSong_ = null;
+      this.lastDecisionReason_ = 'provisional';
       return true;
     }
 
@@ -312,6 +334,9 @@ export class IdentityArbiter {
         );
       }
       this.wrongSong_ = null;
+      // Con el SO en contra y 5 insistencias es 'insistencia'; sin segunda
+      // señal en contra la confirmación llegó por la histéresis normal.
+      this.lastDecisionReason_ = osConfirms ? 'insistencia' : 'histéresis';
       return true;
     }
     return false;

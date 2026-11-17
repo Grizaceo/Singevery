@@ -20,6 +20,7 @@ import {
   projectAnchoredPosition,
   computeDrift,
   normalizeTrackKey,
+  DRIFT_SNAP_MS,
 } from './syncTiming';
 import type { RecognitionPhase } from './syncTiming';
 import { looksLikeSameTrack } from '../services/lyrics/normalizeQuery';
@@ -129,6 +130,42 @@ export class StateStore {
   /** Holgura al comparar una posición externa con la duración de la pista: las
    *  duraciones de SMTC y del reconocedor no coinciden al segundo. */
   private static readonly EXTERNAL_POSITION_SLACK_MS = 5_000;
+
+  // ---- Cuarentena de posiciones externas (SMTC/MPRIS) ---------------------
+  // La posición del reproductor del SO es casi siempre la verdad, pero hay
+  // fuentes que alternan valores imposibles (un navegador que reporta el
+  // timeline de la pista anterior, un sidecar con proyección rota: 0,1000,0,
+  // 1000…). Aceptarlas tal cual producía un snap por muestra y la letra
+  // saltaba sin parar. Regla: un retroceso > EXTERNAL_BACKWARD_QUARANTINE_MS
+  // respecto a la última posición aceptada proyectada, o un salto adelante
+  // > DRIFT_SNAP_MS, NO se aplica de inmediato: queda pendiente y solo se
+  // aplica si las muestras siguientes la confirman (ver applyExternalPosition).
+
+  /** Última posición externa ACEPTADA (cruda, con su instante y fuente).
+   *  Se reinicia en cada cambio de pista (externo o por identidad). */
+  private lastExternalAccepted: { positionMs: number; at: number; source: string } | null = null;
+  /** Posición externa en cuarentena a la espera de confirmación. */
+  private pendingExternalPosition: {
+    positionMs: number;
+    at: number;
+    source: string;
+    kind: 'retroceso' | 'salto';
+    /** Posiciones coherentes consecutivas que faltan para aplicarla. */
+    needed: number;
+    seen: number;
+  } | null = null;
+  /** Retroceso (ms) que ya no es jitter: exige confirmación antes de aplicar. */
+  private static readonly EXTERNAL_BACKWARD_QUARANTINE_MS = 1_500;
+  /** Las confirmaciones deben llegar todas dentro de esta ventana. */
+  private static readonly EXTERNAL_QUARANTINE_CONFIRM_MS = 5_000;
+  /** Tolerancia (ms) para considerar coherente una muestra con la pendiente. */
+  private static readonly EXTERNAL_QUARANTINE_TOLERANCE_MS = 1_000;
+  /** Tras un evento de pista nuevo, las posiciones de arranque pasan directo. */
+  private static readonly EXTERNAL_TRACK_START_GRACE_MS = 3_000;
+  /** Instante del último evento de pista externo NUEVO (cambio real de clave). */
+  private lastExternalTrackEventAt = Number.NEGATIVE_INFINITY;
+  /** Clave del último evento 'track' externo registrado (dedupe del log 1c). */
+  private lastExternalEventKey: string | null = null;
 
   /** Pide al renderer re-identificar YA (cambio de pista no confirmable). */
   private resyncRequester: (() => void) | null = null;
@@ -359,6 +396,7 @@ export class StateStore {
     // Letra elegida a mano: no sabemos a qué grabación corresponde, así que no
     // hay duración de referencia contra la que acotar posiciones externas.
     this.trackDurationMs = null;
+    this.resetExternalPositionState();
     this.autoRetry.reset();
     this.clock.setCurrentTrackKey(trackKey);
     this.clock.loadSyncOffset(trackKey);
@@ -441,6 +479,9 @@ export class StateStore {
       this.autoRetry.reset();
       // Pista distinta = la desalineación anterior ya no aplica.
       this.identity.mismatchResyncs = 0;
+      // Y la cuarentena de posiciones externas también: la línea de tiempo
+      // del reproductor acaba de cambiar, la historia anterior no aplica.
+      this.resetExternalPositionState();
     }
     this.autoRetry.cancel();
     this.currentTrackKey = trackKey;
@@ -487,6 +528,17 @@ export class StateStore {
       }
       throw err;
     }
+  }
+
+  /**
+   * Reinicia la memoria de posiciones externas (última aceptada + cuarentena)
+   * en cada cambio de pista, sea por evento del SO o por reconocimiento.
+   * Sin ella, una posición de la pista nueva se compararía contra la proyección
+   * de la anterior y nacería en cuarentena (o peor, en un snap falso).
+   */
+  private resetExternalPositionState(): void {
+    this.lastExternalAccepted = null;
+    this.pendingExternalPosition = null;
   }
 
   /** Programa el reintento automático delegando en AutoRetry. */
@@ -642,6 +694,14 @@ export class StateStore {
     // El reconocimiento por audio identifica lo que SUENA: la pista deja de ser
     // provisional aunque haya entrado por un título genérico del SO.
     this.identity.currentTrackProvisional = false;
+    // Trazabilidad del cambio: dos fuentes (sistema/corte de audio) o el
+    // motivo que dio el árbitro (sin-letra/provisional/histéresis/insistencia).
+    const motivo = corroboratedByOs
+      ? 'sistema'
+      : corroboratedByAudio
+        ? 'corte-de-audio'
+        : (this.identity.lastDecisionReason ?? 'histéresis');
+    console.log(`[identidad] cambio a "${matchKey}" motivo=${motivo}`);
     await this.loadLyricsByMetadata(
       title,
       artist,
@@ -779,6 +839,7 @@ export class StateStore {
 
     console.log('[sync] anchor', JSON.stringify({ provider: match.track.provider, position_ms: match.position_ms,
       sample_offset_ms: match.sample_offset_ms ?? 0, matched_at: match.matched_at, recordStartedAt,
+      trackKey: this.currentTrackKey, matchTitle: match.track.title, matchArtist: match.track.artist,
       ...anchor, estimatedNow, positionTrusted, ...this.clock.getDiagnostics() }));
 
     // Ancla sin timecode: el crudo es 0 y la proyección caería al inicio del
@@ -852,8 +913,13 @@ export class StateStore {
    * Usado por seek (rueda del mouse) y por ajuste fino.
    */
   nudgePosition(deltaMs: number): void {
+    const before = this.clock.getDisplayedPosition();
     this.pendingAnchor = null;
     this.clock.nudgePosition(deltaMs);
+    console.log(
+      `[manual] nudge delta=${deltaMs}ms antes=${Math.round(before)} ` +
+        `después=${Math.round(this.clock.getDisplayedPosition())}`,
+    );
   }
 
   /**
@@ -863,7 +929,15 @@ export class StateStore {
   seekToLine(direction: -1 | 1): boolean {
     const lyrics = this.engine.getLyrics();
     if (!lyrics || lyrics.lines.length === 0) return false;
-    return this.clock.seekToLine(direction, lyrics.lines.map((l) => l.start_ms));
+    const before = this.clock.getDisplayedPosition();
+    const moved = this.clock.seekToLine(direction, lyrics.lines.map((l) => l.start_ms));
+    if (moved) {
+      console.log(
+        `[manual] seek-line direction=${direction} antes=${Math.round(before)} ` +
+          `después=${Math.round(this.clock.getDisplayedPosition())}`,
+      );
+    }
+    return moved;
   }
 
   /**
@@ -906,6 +980,7 @@ export class StateStore {
    */
   adjustSyncOffset(deltaMs: number): void {
     this.clock.adjustSyncOffset(deltaMs, this.currentTrackKey);
+    console.log(`[manual] sync-offset delta=${deltaMs}ms offset=${this.clock.getSyncOffsetMs()}ms`);
   }
 
   /**
@@ -916,6 +991,9 @@ export class StateStore {
    */
   adjustCalibrationOffset(deltaMs: number): void {
     this.clock.adjustCalibrationOffset(deltaMs);
+    console.log(
+      `[manual] calibration delta=${deltaMs}ms calibration=${this.clock.getCalibrationOffsetMs()}ms`,
+    );
   }
 
   /**
@@ -924,7 +1002,9 @@ export class StateStore {
    * global resultante.
    */
   applyOffsetToAllTracks(): number {
-    return this.clock.applyOffsetToAllTracks();
+    const calibration = this.clock.applyOffsetToAllTracks();
+    console.log(`[manual] offset-a-todas calibration=${calibration}ms`);
+    return calibration;
   }
 
   // -------------------------------------------------------------------------
@@ -966,15 +1046,24 @@ export class StateStore {
   }
 
   /**
-   * Posición de alta confianza del reproductor (SMTC): `positionMs` es el
+   * Posición de alta confianza del reproductor (SMTC/MPRIS): `positionMs` es el
    * playhead real en `at`. Si no suena, congela. Si suena, reconcilia:
    *   - ignora diferencias mínimas (anti-jitter, deadband);
-   *   - saltos grandes (seek/skip, > DRIFT_SNAP_MS) → anclaje firme e instantáneo;
+   *   - retrocesos > EXTERNAL_BACKWARD_QUARANTINE_MS o saltos adelante
+   *     > DRIFT_SNAP_MS respecto a la última posición aceptada → CUARENTENA:
+   *     no se aplican hasta que las muestras siguientes las confirmen
+   *     (ver abajo); una fuente que alterna 0/1000 ya no puede mover la letra;
    *   - errores moderados (microsaltos de SMTC justo sobre la deadband) → se
    *     absorben con una rampa suave (igual que la deriva de AudD) en vez de un
    *     reanchor duro, para que la letra no tiemble.
+   * `source` identifica al reproductor ('smtc', 'mpris:spotify', …) para logs.
    */
-  applyExternalPosition(positionMs: number, playing: boolean, at: number = Date.now()): void {
+  applyExternalPosition(
+    positionMs: number,
+    playing: boolean,
+    at: number = Date.now(),
+    source = 'smtc',
+  ): void {
     if (this.identity.externalInputSuppressed) return;
     // Prueba de vida de la sesión del SO: el sidecar manda posición cada ~1s
     // pero el título solo cuando cambia. Sin esta marca no se podría distinguir
@@ -1007,10 +1096,102 @@ export class StateStore {
       return;
     }
     if (this.clock.isClockPaused()) this.clock.resumeClock(at);
+
+    // ---- Cuarentena de saltos externos ------------------------------------
+    // La comparación NO es contra la letra mostrada sino contra la última
+    // posición externa aceptada proyectada a `at`: es la única línea de tiempo
+    // que la fuente externa afirma, y detecta la oscilación 0/1000 aunque la
+    // letra esté desfasada por otro motivo.
+    // Excepción de arranque: los primeros 3 s tras un evento de pista nuevo se
+    // aceptan tal cual (el reproductor está reportando el inicio de la pista;
+    // una "retroceso" ahí es el punto de partida, no una mentira).
+    const inTrackStartGrace =
+      at - this.lastExternalTrackEventAt <= StateStore.EXTERNAL_TRACK_START_GRACE_MS;
+    const accepted = this.lastExternalAccepted;
+    if (!inTrackStartGrace && accepted != null) {
+      const projected = accepted.positionMs + Math.max(0, at - accepted.at);
+      const pending = this.pendingExternalPosition;
+      if (pending != null) {
+        // ¿La muestra nueva es coherente con la posición en cuarentena?
+        // Se proyecta igual que la aceptada (avanza con el reloj de pared).
+        const pendingProjected = pending.positionMs + Math.max(0, at - pending.at);
+        const coherent =
+          Math.abs(positionMs - pendingProjected) <= StateStore.EXTERNAL_QUARANTINE_TOLERANCE_MS;
+        const expired = at - pending.at > StateStore.EXTERNAL_QUARANTINE_CONFIRM_MS;
+        if (!coherent || expired) {
+          console.log(
+            `[smtc] posición descartada (${pending.kind} sin confirmar) ` +
+              `position_ms=${Math.round(positionMs)} pendiente=${Math.round(pending.positionMs)} ` +
+              `proyectada=${Math.round(pendingProjected)} fuente=${pending.source}`,
+          );
+          this.pendingExternalPosition = null;
+          // La muestra actual se reclasifica abajo contra la última aceptada:
+          // puede ser coherente con la pista real y aplicarse normal, o iniciar
+          // una cuarentena nueva si también es un salto.
+        } else {
+          pending.seen += 1;
+          if (pending.seen >= pending.needed) {
+            // Confirmada por muestras consecutivas coherentes: era un seek real.
+            this.pendingExternalPosition = null;
+            this.lastExternalAccepted = { positionMs, at, source };
+            this.clock.reanchor(Math.max(0, positionMs) + this.clock.getSyncOffsetMs(), at);
+            console.log(
+              `[smtc] accepted position_ms=${positionMs} at=${at} action=snap ` +
+                `fuente=${source} (confirmada tras cuarentena)`,
+            );
+            return;
+          }
+          // Aún falta una muestra: la letra no se mueve.
+          return;
+        }
+      }
+      if (this.pendingExternalPosition == null) {
+        const delta = positionMs - projected;
+        if (delta < -StateStore.EXTERNAL_BACKWARD_QUARANTINE_MS) {
+          // Retroceso: exige 2 posiciones coherentes más en <5 s.
+          this.pendingExternalPosition = {
+            positionMs,
+            at,
+            source,
+            kind: 'retroceso',
+            needed: 2,
+            seen: 0,
+          };
+          console.log(
+            `[smtc] posición en cuarentena (retroceso) position_ms=${Math.round(positionMs)} ` +
+              `proyectada=${Math.round(projected)} fuente=${source}`,
+          );
+          return;
+        }
+        if (delta > DRIFT_SNAP_MS) {
+          // Salto adelante: basta 1 posición coherente siguiente.
+          this.pendingExternalPosition = {
+            positionMs,
+            at,
+            source,
+            kind: 'salto',
+            needed: 1,
+            seen: 0,
+          };
+          console.log(
+            `[smtc] posición en cuarentena (salto) position_ms=${Math.round(positionMs)} ` +
+              `proyectada=${Math.round(projected)} fuente=${source}`,
+          );
+          return;
+        }
+      }
+    }
+
     const target = Math.max(0, positionMs) + this.clock.getSyncOffsetMs();
     const decision = computeDrift(target, this.clock.getDisplayedPosition(at));
-    if (decision.action === 'ignore') return;
-    console.log(`[smtc] accepted position_ms=${positionMs} at=${at} action=${decision.action}`);
+    if (decision.action === 'ignore') {
+      this.lastExternalAccepted = { positionMs, at, source };
+      return;
+    }
+    console.log(
+      `[smtc] accepted position_ms=${positionMs} at=${at} action=${decision.action} fuente=${source}`,
+    );
+    this.lastExternalAccepted = { positionMs, at, source };
     if (decision.action === 'snap') {
       this.clock.reanchor(target, at);
       return;
@@ -1032,12 +1213,33 @@ export class StateStore {
       positionMs?: number;
       at?: number;
       playing?: boolean;
+      /** Origen del evento ('smtc', 'mpris:spotify', …) para observabilidad. */
+      source?: string;
     } = {},
   ): Promise<boolean> {
     // Micrófono manejando audio externo: el reproductor del PC no manda.
     if (this.identity.externalInputSuppressed) return false;
-    const { album = null, durationMs = null, positionMs = 0, at = Date.now(), playing = true } = options;
+    const {
+      album = null,
+      durationMs = null,
+      positionMs = 0,
+      at = Date.now(),
+      playing = true,
+      source = 'smtc',
+    } = options;
     const key = normalizeTrackKey(artist, title);
+    // Log de eventos de pista (1c): solo cuando la clave difiere de la del
+    // último evento registrado — el sidecar/MPRIS repite 'track' en cada poll
+    // y loguear cada uno ahogaría la señal.
+    const esNuevoEvento = key !== this.lastExternalEventKey;
+    this.lastExternalEventKey = key;
+    const logPistaExterna = (decision: string): void => {
+      if (!esNuevoEvento) return;
+      console.log(
+        `[smtc] pista externa title="${title}" artist="${artist}" ` +
+          `fuente=${source} decisión=${decision}`,
+      );
+    };
     // Se registra SIEMPRE, coincida o no: es la segunda señal del arbitraje.
     // Que el SO siga diciendo la misma canción es información, no ruido.
     this.identity.lastExternalTitle = { title, artist, at };
@@ -1047,6 +1249,7 @@ export class StateStore {
     // son la MISMA pista; sin esto, cada fuente "cambiaba" la canción de la
     // otra y la letra entraba en un loop de recarga (bug YouTube vs Spotify).
     if (this.matchesCurrentTrack(key, title, artist)) {
+      logPistaExterna('coincide');
       // La sesión SMTC coincide con la pista en curso: vuelve a ser confiable
       // (sus posiciones y play/pausa aplican).
       this.identity.externalTrusted = true;
@@ -1056,7 +1259,7 @@ export class StateStore {
       // anterior). Recogerla aquí habilita la cota de applyExternalPosition.
       if (durationMs != null && durationMs > 0) this.trackDurationMs = durationMs;
       if (this.engine.getLyrics()) {
-        this.applyExternalPosition(positionMs, playing, at);
+        this.applyExternalPosition(positionMs, playing, at, source);
         return false;
       }
       // Misma pista sin letra: ya se buscó (o se está buscando). SMTC repite
@@ -1084,6 +1287,7 @@ export class StateStore {
       // Se guarda para corroborar el próximo match de AudD (cambio real de
       // canción confirma rápido) y la sesión queda como NO confiable: sus
       // posiciones dejan de tirar la letra hacia otra pista.
+      logPistaExterna('bloqueada');
       this.identity.externalTrusted = false;
       this.clock.releaseExternalPause();
       const isNewSignal =
@@ -1099,6 +1303,7 @@ export class StateStore {
       // Una sesión EN PAUSA no roba la letra de lo que está sonando: Windows a
       // veces parpadea la "sesión actual" entre apps (navegador ↔ Spotify) y
       // ese flip transitorio no debe recargar nada.
+      logPistaExterna('en-pausa-ignorada');
       return false;
     }
     // SMTC no lleva histéresis por conteo: el sidecar emite 'track' una sola
@@ -1116,7 +1321,17 @@ export class StateStore {
           `(distintividad ${scoreTitleDistinctiveness(title).toFixed(2)}) → hint, no lock`,
       );
     }
+    logPistaExterna('nueva');
+    // Cambio de pista real: abre la ventana de gracia para las posiciones de
+    // arranque y deja la posición del evento como línea base del historial
+    // (loadLyricsByMetadata ya reinició la cuarentena por ser pista nueva).
+    this.lastExternalTrackEventAt = at;
     await this.loadLyricsByMetadata(title, artist, positionMs, at, album, durationMs);
+    // Línea base solo si la pista cargada sigue siendo la del evento (otra
+    // fuente pudo cambiarla mientras tanto).
+    if (this.currentTrackKey === key) {
+      this.lastExternalAccepted = { positionMs, at, source };
+    }
     this.identity.externalTrusted = true;
     this.identity.lastUnmatchedExternal = null;
     if (!playing) this.clock.pauseClock(at);

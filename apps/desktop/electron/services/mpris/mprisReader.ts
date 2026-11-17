@@ -170,6 +170,12 @@ export function pickMprisPlayer(snapshots: MprisSnapshot[], current: string | nu
   return usable.find((s) => s.status === 'Paused')?.name ?? null;
 }
 
+/** Sufijo del nombre MPRIS como fuente legible: 'org.mpris.MediaPlayer2.spotify' → 'mpris:spotify'. */
+export function mprisSourceName(name: string): string {
+  const suffix = name.startsWith(MPRIS_PREFIX) ? name.slice(MPRIS_PREFIX.length) : name;
+  return `mpris:${suffix || 'desconocido'}`;
+}
+
 /**
  * Traduce un snapshot del reproductor seguido a eventos SMTC. Pura: devuelve
  * los eventos y el tracker actualizado.
@@ -184,6 +190,7 @@ export function mprisEvents(
 ): { events: SmtcEvent[]; tracker: MprisTracker } {
   const playing = snap.status === 'Playing';
   const events: SmtcEvent[] = [];
+  const source = mprisSourceName(snap.name);
   let positionMs = snap.positionMs;
   if (positionMs != null && snap.durationMs != null && positionMs > snap.durationMs) {
     positionMs = snap.durationMs;
@@ -215,13 +222,14 @@ export function mprisEvents(
         // corrige en ≤1 s ya con el timeline fresco.
         positionMs: stale ? 0 : (positionMs ?? 0),
         playing,
+        source,
       });
     }
     return { events, tracker: next };
   }
 
   if (tracker.playing != null && playing !== tracker.playing) {
-    events.push({ type: 'playback', playing });
+    events.push({ type: 'playback', playing, source });
   }
   if (positionMs != null) {
     const stillStale = tracker.staleUntil > 0 && snap.at < tracker.staleUntil && continuesPrevious(positionMs);
@@ -231,7 +239,7 @@ export function mprisEvents(
       return { events, tracker: next };
     }
     next.staleUntil = 0;
-    events.push({ type: 'position', positionMs, playing });
+    events.push({ type: 'position', positionMs, playing, source });
   }
   return { events, tracker: next };
 }

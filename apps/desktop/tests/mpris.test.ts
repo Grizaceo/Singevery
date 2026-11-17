@@ -4,6 +4,7 @@ import {
   MPRIS_STALE_GRACE_MS,
   emptyMprisTracker,
   mprisEvents,
+  mprisSourceName,
   parseMprisNames,
   parseMprisProperties,
   pickMprisPlayer,
@@ -146,6 +147,15 @@ describe('pickMprisPlayer', () => {
   });
 });
 
+describe('mprisSourceName', () => {
+  it('deriva la fuente del sufijo del nombre del bus', () => {
+    expect(mprisSourceName('org.mpris.MediaPlayer2.spotify')).toBe('mpris:spotify');
+    expect(mprisSourceName('org.mpris.MediaPlayer2.firefox.instance_1_128')).toBe(
+      'mpris:firefox.instance_1_128',
+    );
+  });
+});
+
 describe('mprisEvents', () => {
   it('primera lectura emite track con posición y duración', () => {
     const { events } = mprisEvents(snap({}), emptyMprisTracker());
@@ -158,6 +168,7 @@ describe('mprisEvents', () => {
         durationMs: 200_000,
         positionMs: 10_000,
         playing: true,
+        source: 'mpris:spotify',
       },
     ]);
   });
@@ -165,15 +176,15 @@ describe('mprisEvents', () => {
   it('misma pista: solo posición (dedupe de metadata repetida)', () => {
     const first = mprisEvents(snap({}), emptyMprisTracker());
     const { events } = mprisEvents(snap({ positionMs: 11_000, at: 1_001_000 }), first.tracker);
-    expect(events).toEqual([{ type: 'position', positionMs: 11_000, playing: true }]);
+    expect(events).toEqual([{ type: 'position', positionMs: 11_000, playing: true, source: 'mpris:spotify' }]);
   });
 
   it('pausa: emite playback y la posición con playing=false', () => {
     const first = mprisEvents(snap({}), emptyMprisTracker());
     const { events } = mprisEvents(snap({ status: 'Paused', at: 1_001_000 }), first.tracker);
     expect(events).toEqual([
-      { type: 'playback', playing: false },
-      { type: 'position', positionMs: 10_000, playing: false },
+      { type: 'playback', playing: false, source: 'mpris:spotify' },
+      { type: 'position', positionMs: 10_000, playing: false, source: 'mpris:spotify' },
     ]);
   });
 
@@ -196,14 +207,14 @@ describe('mprisEvents', () => {
       a.tracker,
     );
     expect(b.events).toEqual([
-      { type: 'track', title: 'Otra', artist: 'Otro', album: null, durationMs: 200_000, positionMs: 0, playing: true },
+      { type: 'track', title: 'Otra', artist: 'Otro', album: null, durationMs: 200_000, positionMs: 0, playing: true, source: 'mpris:spotify' },
     ]);
     // Siguiente tick todavía viejo (122 s): sin evento de posición.
     const c = mprisEvents(snap({ title: 'Otra', artist: 'Otro', album: null, positionMs: 122_000, at: 1_002_000 }), b.tracker);
     expect(c.events).toEqual([]);
     // El reproductor refresca: 2 s de la pista nueva → vuelve a fluir.
     const d = mprisEvents(snap({ title: 'Otra', artist: 'Otro', album: null, positionMs: 2_000, at: 1_003_000 }), c.tracker);
-    expect(d.events).toEqual([{ type: 'position', positionMs: 2_000, playing: true }]);
+    expect(d.events).toEqual([{ type: 'position', positionMs: 2_000, playing: true, source: 'mpris:spotify' }]);
   });
 
   it('pasado el plazo de gracia se acepta la posición aunque siga pareciendo vieja', () => {
@@ -211,7 +222,7 @@ describe('mprisEvents', () => {
     const b = mprisEvents(snap({ title: 'Otra', positionMs: 121_000, at: 1_001_000 }), a.tracker);
     const late = 1_001_000 + MPRIS_STALE_GRACE_MS + 1;
     const c = mprisEvents(snap({ title: 'Otra', positionMs: 121_000 + (late - 1_001_000), at: late }), b.tracker);
-    expect(c.events).toEqual([{ type: 'position', positionMs: 121_000 + (late - 1_001_000), playing: true }]);
+    expect(c.events).toEqual([{ type: 'position', positionMs: 121_000 + (late - 1_001_000), playing: true, source: 'mpris:spotify' }]);
   });
 
   it('una pista que empieza cerca de 0 nunca se toma por vieja', () => {
