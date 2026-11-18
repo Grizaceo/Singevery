@@ -22,6 +22,9 @@ import {
 import { DisplayTab } from './settings/DisplayTab';
 import { AudioTab } from './settings/AudioTab';
 import { OtherTab } from './settings/OtherTab';
+import { LanguageSelect } from './settings/LanguageSelect';
+import { useT } from './i18n/useT';
+import type { MessageKey } from './i18n';
 import type { TeacherReferenceApi } from './useTeacherReference';
 import './SettingsPanel.css';
 
@@ -63,6 +66,7 @@ export function SettingsPanel({
   trackTitle,
   trackArtist,
 }: SettingsPanelProps) {
+  const t = useT();
   const [settingsTab, setSettingsTab] = useState<SettingsTab>('display');
   const [display, setDisplay] = useState<DisplaySettings>(DEFAULT_DISPLAY);
   const [provider, setProvider] = useState<RecognitionProviderMode>('auto');
@@ -161,23 +165,23 @@ export function SettingsPanel({
         className="settings-panel"
         onClick={(e) => e.stopPropagation()}
         role="dialog"
-        aria-label="Ajustes del teleprompter"
+        aria-label={t('settings.dialogLabel')}
       >
         <header className="settings-header">
-          <h2>Ajustes</h2>
-          <button type="button" className="chrome-button" onClick={onClose} aria-label="Cerrar ajustes">
+          <h2>{t('settings.title')}</h2>
+          <button type="button" className="chrome-button" onClick={onClose} aria-label={t('settings.close')}>
             ×
           </button>
         </header>
 
         {/* F6: navegación por categorías en vez de una lista interminable. */}
-        <nav className="settings-tabs" aria-label="Categorías de ajustes">
+        <nav className="settings-tabs" aria-label={t('settings.tabsLabel')}>
           {(
             [
-              ['display', 'Display'],
-              ['audio', 'Audio'],
-              ['other', 'Otros'],
-            ] as [SettingsTab, string][]
+              ['display', 'settings.tab.display'],
+              ['audio', 'settings.tab.audio'],
+              ['other', 'settings.tab.other'],
+            ] as [SettingsTab, MessageKey][]
           ).map(([tab, label]) => (
             <button
               key={tab}
@@ -186,10 +190,12 @@ export function SettingsPanel({
               onClick={() => setSettingsTab(tab)}
               aria-pressed={settingsTab === tab}
             >
-              {label}
+              {t(label)}
             </button>
           ))}
         </nav>
+
+        {settingsTab === 'display' && <LanguageSelect />}
 
         {settingsTab === 'display' && (
           <DisplayTab

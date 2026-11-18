@@ -6,7 +6,16 @@
 // compilación y `tests/i18n.test.ts` lo verifica en runtime.
 // ============================================================================
 
-export const en = {
+import { enSettingsDisplay } from './ui/settingsDisplay';
+import { enSettingsMore } from './ui/settingsMore';
+import { enChrome } from './ui/chrome';
+import { enApp } from './ui/app';
+import { enReading } from './ui/reading';
+import { enPractice } from './ui/practice';
+import { enTeleprompter } from './ui/teleprompter';
+import { enHooks } from './ui/hooks';
+
+const core = {
   // ---- Estado del widget (RenderModel.current_line) ------------------------
   'status.idle': 'Waiting for music...',
   'status.listening': 'Listening...',
@@ -180,4 +189,26 @@ export const en = {
     'Dictionary pronunciation (CMUdict, general American English) in citation form: it does not reflect reductions of fast speech or the flap t, and words missing from the dictionary are left untranscribed.',
   'ipa.caveat.ja':
     'Standard phonological convention from kana: it does not reflect each singer\'s realization, and kanji readings depend on the morphological analyzer (it can be wrong).',
+
+  // ---- Ajustes: contenedor y pestañas (SettingsPanel) ---------------------------
+  'settings.dialogLabel': 'Teleprompter settings',
+  'settings.title': 'Settings',
+  'settings.close': 'Close settings',
+  'settings.tabsLabel': 'Settings categories',
+  'settings.tab.display': 'Display',
+  'settings.tab.audio': 'Audio',
+  'settings.tab.other': 'Other',
+} as const;
+
+// Catálogo completo: núcleo + un archivo por área de la interfaz (src/i18n/ui/).
+export const en = {
+  ...core,
+  ...enSettingsDisplay,
+  ...enSettingsMore,
+  ...enChrome,
+  ...enApp,
+  ...enReading,
+  ...enPractice,
+  ...enTeleprompter,
+  ...enHooks,
 } as const;

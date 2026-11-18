@@ -7,8 +7,16 @@
 // ============================================================================
 
 import type { MessageKey } from './index';
+import { esSettingsDisplay } from './ui/settingsDisplay';
+import { esSettingsMore } from './ui/settingsMore';
+import { esChrome } from './ui/chrome';
+import { esApp } from './ui/app';
+import { esReading } from './ui/reading';
+import { esPractice } from './ui/practice';
+import { esTeleprompter } from './ui/teleprompter';
+import { esHooks } from './ui/hooks';
 
-export const es: Record<MessageKey, string> = {
+const core = {
   // ---- Estado del widget (RenderModel.current_line) ------------------------
   'status.idle': 'Esperando música...',
   'status.listening': 'Escuchando...',
@@ -182,4 +190,26 @@ export const es: Record<MessageKey, string> = {
     'Pronunciación de diccionario (CMUdict, inglés general estadounidense) en forma de cita: no refleja las reducciones del habla rápida ni el flap de la t, y las palabras que no están en el diccionario quedan sin transcribir.',
   'ipa.caveat.ja':
     'Convención fonológica estándar a partir del kana: no refleja la realización de cada cantante, y la lectura de los kanji depende del analizador morfológico (puede equivocarse).',
+
+  // ---- Ajustes: contenedor y pestañas (SettingsPanel) ---------------------------
+  'settings.dialogLabel': 'Ajustes del teleprompter',
+  'settings.title': 'Ajustes',
+  'settings.close': 'Cerrar ajustes',
+  'settings.tabsLabel': 'Categorías de ajustes',
+  'settings.tab.display': 'Display',
+  'settings.tab.audio': 'Audio',
+  'settings.tab.other': 'Otros',
+};
+
+// Catálogo completo: núcleo + un archivo por área de la interfaz (src/i18n/ui/).
+export const es: Record<MessageKey, string> = {
+  ...core,
+  ...esSettingsDisplay,
+  ...esSettingsMore,
+  ...esChrome,
+  ...esApp,
+  ...esReading,
+  ...esPractice,
+  ...esTeleprompter,
+  ...esHooks,
 };
