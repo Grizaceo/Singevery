@@ -198,6 +198,15 @@ const core = {
   'settings.tab.display': 'Display',
   'settings.tab.audio': 'Audio',
   'settings.tab.other': 'Other',
+  // ---- Guía de símbolos IPA (IpaGuide) --------------------------------------------
+  'ipaGuide.dialogLabel': 'IPA symbol guide',
+  'ipaGuide.title': 'Symbol guide',
+  'ipaGuide.close': 'Close IPA guide',
+  'ipaGuide.closeTitle': 'Close',
+  'ipaGuide.noIpa':
+    'The current line has no IPA transcription. Pick an IPA reading mode when the song has one.',
+  'ipaGuide.noSymbols': 'This line has no IPA symbols.',
+  'ipaGuide.unknownSymbol': 'This character is not in the guide',
 } as const;
 
 // Catálogo completo: núcleo + un archivo por área de la interfaz (src/i18n/ui/).

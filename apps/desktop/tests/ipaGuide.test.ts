@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, it } from 'vitest';
-import { IPA_GUIDE, ipaSymbolsIn } from '../src/ipaGuide';
+import { IPA_GUIDE, ipaGuideText, ipaSymbolsIn } from '../src/ipaGuide';
 import { kanaToIpa } from '../electron/services/ipa';
 import { spanishToIpa } from '../electron/services/phonetics/spanish';
 import { italianToIpa } from '../electron/services/phonetics/italian';
@@ -48,6 +48,27 @@ describe('ipaSymbolsIn — tokenización', () => {
   it('devuelve también los caracteres sin ficha (para detectarlos)', () => {
     expect(ipaSymbolsIn('qx')).toEqual(['q', 'x']);
     expect(IPA_GUIDE['q']).toBeUndefined();
+  });
+});
+
+describe('IPA_GUIDE — fichas bilingües', () => {
+  it('cada ficha tiene texto en inglés y en español, sin campos vacíos', () => {
+    for (const [sym, entry] of Object.entries(IPA_GUIDE)) {
+      expect(entry.es.desc.trim(), `es.desc de ${sym}`).not.toBe('');
+      expect(entry.es.ejemplo.trim(), `es.ejemplo de ${sym}`).not.toBe('');
+      expect(entry.en.desc.trim(), `en.desc de ${sym}`).not.toBe('');
+      expect(entry.en.example.trim(), `en.example de ${sym}`).not.toBe('');
+    }
+  });
+
+  it('ipaGuideText devuelve la ficha del idioma pedido', () => {
+    expect(ipaGuideText(IPA_GUIDE['θ'], 'en').desc).toContain("'th' in 'think'");
+    expect(ipaGuideText(IPA_GUIDE['ɾ'], 'en').desc).toContain("'tt' in American 'butter'");
+    expect(ipaGuideText(IPA_GUIDE['r'], 'en').desc).toContain("Spanish 'perro'");
+    expect(ipaGuideText(IPA_GUIDE['θ'], 'es')).toEqual({
+      desc: IPA_GUIDE['θ'].es.desc,
+      example: IPA_GUIDE['θ'].es.ejemplo,
+    });
   });
 });
 
