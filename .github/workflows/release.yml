@@ -4,6 +4,10 @@ on:
   push:
     tags:
       - 'v*'
+  # Ensayo manual (Actions → Release → Run workflow): compila, verifica y
+  # prueba el arranque en Windows sin publicar nada. Sirve para validar un
+  # cambio de empaquetado antes de subir un tag, que no se puede reutilizar.
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -104,6 +108,7 @@ jobs:
           Start-Sleep -Seconds 2
 
       - name: Publish GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
           draft: false
