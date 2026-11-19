@@ -1,4 +1,4 @@
-<!-- vitrina:translation-of README.md sha256=5977fe1c4299d4e67086974b9def16e9d10261df7c0b21bc07be285914e5d049 -->
+<!-- vitrina:translation-of README.md sha256=0ed47ea8d65ae8f1e19bf6d07a396c4176ce3d17eaa73761e0062d17991c1360 -->
 # Singevery
 
 Singevery es un overlay transparente de escritorio que reconoce la canción que suena y muestra la letra sincronizada, estilo karaoke, encima de cualquier app o juego.
@@ -9,7 +9,7 @@ Singevery es un overlay transparente de escritorio que reconoce la canción que 
   <img src="docs/demo.gif" alt="Singevery sobre un juego: letra sincronizada tipo karaoke, japonés romanizado, traducción lado a lado, IPA y un color de letra personalizado" width="760" />
 </p>
 
-<p align="center"><a href="https://github.com/Grizaceo/Singevery/releases/download/v0.2.1-beta.3/singevery-trailer.mp4">▶ Ver el tráiler completo con sonido (68 s, MP4)</a></p>
+<p align="center"><a href="https://github.com/Grizaceo/Singevery/releases/download/v0.2.1-beta.4/singevery-trailer.mp4">▶ Ver el tráiler completo con sonido (68 s, MP4)</a></p>
 
 ## Estado
 

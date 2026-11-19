@@ -8,7 +8,7 @@ Singevery is a transparent desktop overlay that recognizes the song you are play
   <img src="docs/demo.gif" alt="Singevery over a game: synced karaoke lyrics, romanized Japanese, side-by-side translation, IPA and a custom lyric color" width="760" />
 </p>
 
-<p align="center"><a href="https://github.com/Grizaceo/Singevery/releases/download/v0.2.1-beta.3/singevery-trailer.mp4">▶ Watch the full trailer with sound (68 s, MP4)</a></p>
+<p align="center"><a href="https://github.com/Grizaceo/Singevery/releases/download/v0.2.1-beta.4/singevery-trailer.mp4">▶ Watch the full trailer with sound (68 s, MP4)</a></p>
 
 ## Status
 
