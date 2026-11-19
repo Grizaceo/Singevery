@@ -1,5 +1,6 @@
 import * as path from 'node:path';
 import type { TimedLyrics } from '../../src/types';
+import { t } from '../../src/i18n';
 import { parseLrc, plainTextToLyrics } from './lrcParser';
 
 const TITLE_TAG_RE = /^\s*\[ti:([^\]]*)\]\s*$/im;
@@ -20,10 +21,10 @@ function metadataValue(content: string, expression: RegExp): string | null {
 }
 
 function filenameMetadata(fileName: string): { title: string; artist: string } {
-  const base = path.basename(fileName, path.extname(fileName)).trim() || 'Letra importada';
+  const base = path.basename(fileName, path.extname(fileName)).trim() || t('common.importedLyricsTitle');
   const separator = base.indexOf(' - ');
   if (separator <= 0 || separator >= base.length - 3) {
-    return { title: base, artist: 'Archivo local' };
+    return { title: base, artist: t('common.localFile') };
   }
   return {
     artist: base.slice(0, separator).trim(),
@@ -49,7 +50,7 @@ export function parseImportedLyrics(content: string, fileName: string): Imported
     .join('\n');
   const lines = synced ? parsedLrc : plainTextToLyrics(plainContent);
   if (lines.length === 0) {
-    throw new Error('El archivo no contiene líneas de letra');
+    throw new Error(t('errors.lyricsFileNoLines'));
   }
 
   return {

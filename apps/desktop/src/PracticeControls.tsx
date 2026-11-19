@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import type { DesktopApi, RenderModel } from './types';
 import { savedLineFromModel, savedLinesToCsv, useSavedLines } from './useSavedLines';
+import { useT } from './i18n/useT';
 
 interface PracticeControlsProps {
   api: DesktopApi | undefined;
@@ -22,6 +23,7 @@ export function PracticeControls({
   recallHidden,
   onRecallHiddenChange,
 }: PracticeControlsProps) {
+  const t = useT();
   const { lines, toggle, remove } = useSavedLines();
   const [open, setOpen] = useState(false);
   const [exporting, setExporting] = useState(false);
@@ -35,9 +37,9 @@ export function PracticeControls({
     setStatus(null);
     try {
       const result = await api.exportPracticeCsv(savedLinesToCsv(lines));
-      if (!result.canceled) setStatus(result.ok ? 'CSV exportado' : result.error ?? 'Error al exportar');
+      if (!result.canceled) setStatus(result.ok ? t('practice.csvExported') : result.error ?? t('practice.exportError'));
     } catch {
-      setStatus('Error al exportar');
+      setStatus(t('practice.exportError'));
     } finally {
       setExporting(false);
     }
@@ -50,8 +52,8 @@ export function PracticeControls({
         className={`chrome-button${recallHidden ? ' active' : ''}`}
         disabled={model.status !== 'DISPLAYING'}
         onClick={() => onRecallHiddenChange(!recallHidden)}
-        title={recallHidden ? 'Revelar letra actual' : 'Ocultar letra para practicar de oído'}
-        aria-label={recallHidden ? 'Revelar letra actual' : 'Ocultar letra para practicar de oído'}
+        title={recallHidden ? t('practice.revealLyrics') : t('practice.hideLyricsForEar')}
+        aria-label={recallHidden ? t('practice.revealLyrics') : t('practice.hideLyricsForEar')}
       >
         {recallHidden ? '◉' : '◌'}
       </button>
@@ -60,8 +62,8 @@ export function PracticeControls({
         className={`chrome-button${currentSaved ? ' active' : ''}`}
         disabled={!current}
         onClick={() => current && toggle(current)}
-        title={currentSaved ? 'Quitar línea de repaso' : 'Guardar línea para repasar'}
-        aria-label={currentSaved ? 'Quitar línea de repaso' : 'Guardar línea para repasar'}
+        title={currentSaved ? t('practice.removeLineFromReview') : t('practice.saveLineForReview')}
+        aria-label={currentSaved ? t('practice.removeLineFromReview') : t('practice.saveLineForReview')}
       >
         {currentSaved ? '★' : '☆'}
       </button>
@@ -70,24 +72,24 @@ export function PracticeControls({
         className={`chrome-button practice-review-button${open ? ' active' : ''}`}
         disabled={lines.length === 0}
         onClick={() => setOpen((value) => !value)}
-        title="Repasar líneas guardadas"
-        aria-label={`Repasar ${lines.length} líneas guardadas`}
+        title={t('practice.reviewSavedLines')}
+        aria-label={t('practice.reviewSavedLinesAria', { count: lines.length })}
       >
-        Repaso {lines.length}
+        {t('practice.reviewCount', { count: lines.length })}
       </button>
 
       {open && (
-        <section className="practice-panel" aria-label="Líneas guardadas para repaso">
+        <section className="practice-panel" aria-label={t('practice.savedLinesAria')}>
           <header className="practice-panel-header">
             <div>
-              <strong>Repaso local</strong>
-              <span>{lines.length} de 200 líneas</span>
+              <strong>{t('practice.localReview')}</strong>
+              <span>{t('practice.lineCountOf200', { count: lines.length })}</span>
             </div>
             <div className="practice-panel-actions">
               <button type="button" onClick={() => void exportCsv()} disabled={!api || exporting}>
-                {exporting ? 'Exportando…' : 'Exportar CSV'}
+                {exporting ? t('practice.exporting') : t('practice.exportCsv')}
               </button>
-              <button type="button" onClick={() => setOpen(false)} aria-label="Cerrar repaso">
+              <button type="button" onClick={() => setOpen(false)} aria-label={t('practice.closeReview')}>
                 ×
               </button>
             </div>
@@ -100,8 +102,8 @@ export function PracticeControls({
                   type="button"
                   className="practice-remove"
                   onClick={() => remove(line.id)}
-                  aria-label={`Quitar ${line.text}`}
-                  title="Quitar del repaso"
+                  aria-label={t('practice.removeLineAria', { text: line.text })}
+                  title={t('practice.removeFromReview')}
                 >
                   ×
                 </button>
@@ -115,7 +117,7 @@ export function PracticeControls({
               </article>
             ))}
           </div>
-          <p className="practice-privacy">Se guarda sólo en este equipo.</p>
+          <p className="practice-privacy">{t('practice.localOnly')}</p>
         </section>
       )}
     </div>

@@ -3,6 +3,7 @@ import { recordChunk, SystemAudioSession } from './audio/capture';
 import { extractMelody, smoothMelody, toReferencePoints, type MelodyPoint } from './audio/melody';
 import { pointsToCurve, curveToPoints } from './useTeacherReference';
 import { assembleReferenceBuffer, chunksToSegments } from './audio/referenceAssembly';
+import { t } from './i18n';
 
 /**
  * useMelodyReference — captura y cachea la melodía de referencia de la canción
@@ -207,9 +208,7 @@ export function useMelodyReference(
       }
       if (!signalSeen) {
         setStatus('error');
-        setError(
-          'No llegó audio del sistema (30 s). La referencia se captura sola de la canción sonando — reproduce la canción y pulsa ♪ de nuevo (no usa tu micrófono).',
-        );
+        setError(t('hooks.melodyNoSystemAudio'));
         return;
       }
       if (gen !== captureGenRef.current) return; // cancelada durante warmup (F5)
@@ -251,8 +250,8 @@ export function useMelodyReference(
         setStatus('error');
         setError(
           silentChunks > 0
-            ? 'No se capturó audio del sistema (silencio). La referencia sale del audio de la canción — reprodúcela y vuelve a intentar.'
-            : 'No se pudo capturar el audio del sistema. Revisa que la app tenga permiso de captura.',
+            ? t('hooks.melodySilentCapture')
+            : t('hooks.systemAudioCapturePermission'),
         );
         return;
       }
@@ -281,9 +280,7 @@ export function useMelodyReference(
       const ref = toReferencePoints(melody);
       if (ref.length < 10) {
         setStatus('error');
-        setError(
-          'No se pudo extraer una melodía clara de la captura. Reintenta en una parte con voz prominente.',
-        );
+        setError(t('hooks.melodyNoClearMelody'));
         return;
       }
 
@@ -297,14 +294,14 @@ export function useMelodyReference(
       if (api?.saveReference) {
         const saved = await api.saveReference({
           trackKey: key,
-          label: 'Karaoke automático',
+          label: t('hooks.autoKaraokeLabel'),
           instrument: 'voz',
           curve: pointsToCurve(ref),
         });
         if (gen !== captureGenRef.current) return; // cancelada (F5)
         if (!saved.ok) {
           setStatus('error');
-          setError(saved.error ?? 'No se pudo guardar la referencia en disco.');
+          setError(saved.error ?? t('hooks.referenceSaveDiskError'));
           return;
         }
       }
@@ -315,7 +312,7 @@ export function useMelodyReference(
       setStatus('ready');
     } catch (err) {
       setStatus('error');
-      setError(err instanceof Error ? err.message : 'Error al capturar la referencia.');
+      setError(err instanceof Error ? err.message : t('hooks.melodyCaptureError'));
     } finally {
       session.release();
       busyRef.current = false;

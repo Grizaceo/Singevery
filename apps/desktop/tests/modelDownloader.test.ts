@@ -3,6 +3,12 @@ import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { downloadModel } from '../electron/services/llm/modelDownloader';
+import { setLocale } from '../src/i18n';
+
+// Estas pruebas comparan los textos en español que la app ya mostraba:
+// se fija el idioma local y se restaura el inglés al terminar.
+beforeEach(() => setLocale('es'));
+afterEach(() => setLocale('en'));
 
 const url = 'https://example.invalid/model';
 const model = 'GGUFabcdefgh';

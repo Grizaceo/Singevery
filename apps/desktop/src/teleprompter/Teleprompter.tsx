@@ -4,6 +4,7 @@ import { LineView } from './LineView';
 import { splitPreviousTiers, splitNextTiers, tierSizes } from './teleprompterHelpers';
 import { computeLegibility } from './legibility';
 import { useFitScale } from './fitScale';
+import { useT } from '../i18n/useT';
 import type { MelodyPoint } from '../audio/melody';
 import type { PitchResult } from '../audio/pitch';
 import '../Teleprompter.css';
@@ -39,6 +40,7 @@ export const Teleprompter = React.memo(function Teleprompter({
   livePitch = null,
   pitchScore = null,
 }: Props) {
+  const t = useT();
   // Transparencia separada: la letra ya no arrastra a la viñeta. Los valores
   // concretos (pisos de legibilidad, boost de contorno) salen de legibility.ts.
   const legibility = computeLegibility({
@@ -116,8 +118,8 @@ export const Teleprompter = React.memo(function Teleprompter({
           >
             {sideBySide && (
               <div className="lyrics-side-header" aria-hidden="true">
-                <span>Letra</span>
-                <span>Traducción</span>
+                <span>{t('teleprompter.sideBySide.lyrics')}</span>
+                <span>{t('teleprompter.sideBySide.translation')}</span>
               </div>
             )}
 

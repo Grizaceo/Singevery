@@ -3,6 +3,7 @@ import type { ReadingMode, RenderLine, TranslationView } from '../types';
 import { splitAtFraction, splitSegmentsAtFraction } from '../lineHighlight';
 import { WordsView } from './WordsView';
 import { MelodyStrip } from '../MelodyStrip';
+import { useT } from '../i18n/useT';
 import type { MelodyPoint } from '../audio/melody';
 import type { PitchResult } from '../audio/pitch';
 
@@ -56,6 +57,7 @@ export const LineView = React.memo(function LineView({
   livePitch = null,
   pitchScore = null,
 }: LineViewProps) {
+  const t = useT();
   const hasFurigana = !!line.furigana && line.furigana.length > 0;
   const hasRomaji = !!line.romaji;
   const hasKana = !!line.kana;
@@ -146,7 +148,7 @@ export const LineView = React.memo(function LineView({
   }
 
   if (concealed) {
-    mainContent = <span className="line-concealed" aria-label="Letra oculta">••••••</span>;
+    mainContent = <span className="line-concealed" aria-label={t('teleprompter.hiddenLyrics')}>••••••</span>;
   }
 
   // Vista de texto paralelo: columnas alineadas por línea. La traducción se
@@ -215,7 +217,7 @@ export const LineView = React.memo(function LineView({
         <p className="line-main">{mainContent}</p>
         {showRomajiBelow && !concealed && <p className="line-romaji">{line.romaji}</p>}
         {showIpaBelow && !concealed && <p className="line-romaji line-ipa">{line.ipa}</p>}
-        {showTranslationBelow && <p className="line-translation">Traducción: {translation}</p>}
+        {showTranslationBelow && <p className="line-translation">{t('teleprompter.translationLine', { text: translation })}</p>}
       </div>
       {melodyCol}
     </div>

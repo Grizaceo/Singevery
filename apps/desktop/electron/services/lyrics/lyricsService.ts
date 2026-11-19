@@ -11,6 +11,7 @@
 
 import { createHash } from 'crypto';
 import type { TimedLyrics } from '../../../src/types';
+import { t } from '../../../src/i18n';
 import type {
   CachedLyricsInfo,
   LyricsCache,
@@ -290,7 +291,9 @@ export class LyricsService {
         clearTimeout(timeoutId);
       }
     }
-    throw lastError instanceof Error ? lastError : new Error(String(lastError ?? 'presupuesto agotado'));
+    throw lastError instanceof Error
+      ? lastError
+      : new Error(String(lastError ?? t('errors.lyricsBudgetExhausted')));
   }
 
   private async fetchAndStore(
@@ -405,7 +408,7 @@ export class LyricsService {
       // (null) — antes cualquier proveedor caído (p. ej. Musixmatch con
       // captcha) convertía todo en ERROR aunque LRCLIB hubiera respondido bien.
       if (lastError && !sawNotFound) {
-        throw new LyricsLookupError('No se pudo consultar ninguna fuente de letras.', lastError);
+        throw new LyricsLookupError(t('errors.lyricsAllSourcesFailed'), lastError);
       }
       // Cachear "no encontrada" solo tras un barrido completo y limpio; con
       // errores, presupuesto agotado o vetos por idioma no se puede afirmar que

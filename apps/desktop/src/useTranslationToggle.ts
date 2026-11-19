@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { TranslationView } from './types';
+import { t } from './i18n';
 
 const STORAGE_KEY = 'espejo.translationView';
 /** Clave previa (booleana). Se migra a 'below' para no perder la preferencia. */
@@ -31,10 +32,7 @@ export async function ensureExternalTranslationConsent(): Promise<boolean> {
     if (settings.translation.provider === 'local') return true;
     const alreadyAccepted = localStorage.getItem(EXTERNAL_CONSENT_KEY) === '1';
     if (alreadyAccepted) return true;
-    const accepted = window.confirm(
-      'Para traducir, el texto completo de la letra se enviará al proveedor externo ' +
-        'configurado. No se envía audio. ¿Quieres continuar y recordar esta decisión?',
-    );
+    const accepted = window.confirm(t('hooks.translateConsent'));
     if (accepted) localStorage.setItem(EXTERNAL_CONSENT_KEY, '1');
     return accepted;
   } catch {
@@ -73,12 +71,12 @@ export function useTranslationView(): [
     try {
       const result = await window.api.requestTranslation();
       if (!result.ok) {
-        setError(result.error ?? 'No se pudo traducir');
+        setError(result.error ?? t('hooks.translationFailed'));
         return false;
       }
       return true;
     } catch {
-      setError('Error al solicitar traducción');
+      setError(t('hooks.translationRequestError'));
       return false;
     } finally {
       setLoading(false);

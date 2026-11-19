@@ -18,6 +18,7 @@ import { frenchToIpa } from './french';
 import { germanToIpa } from './german';
 import { italianToIpa } from './italian';
 import { spanishToIpa, type SpanishVariant } from './spanish';
+import { t, type MessageKey } from '../../../src/i18n';
 import type { IpaLang } from './langDetect';
 
 export { detectLatinLanguage, scoreLanguages, hasIpaEngine, IPA_LANGS } from './langDetect';
@@ -30,38 +31,47 @@ export interface LatinIpaOptions {
   spanishVariant?: SpanishVariant;
 }
 
-/** Nombre legible del idioma, para la UI y los tooltips. */
-export const LANG_LABEL: Record<IpaLang, string> = {
-  es: 'español',
-  it: 'italiano',
-  fr: 'francés',
-  de: 'alemán',
-  en: 'inglés (EE. UU.)',
+const IPA_LABEL_KEYS: Record<IpaLang, MessageKey> = {
+  es: 'ipa.lang.es',
+  it: 'ipa.lang.it',
+  fr: 'ipa.lang.fr',
+  de: 'ipa.lang.de',
+  en: 'ipa.lang.en',
+};
+
+const IPA_CAVEAT_KEYS: Record<IpaLang, MessageKey> = {
+  es: 'ipa.caveat.es',
+  it: 'ipa.caveat.it',
+  fr: 'ipa.caveat.fr',
+  de: 'ipa.caveat.de',
+  en: 'ipa.caveat.en',
 };
 
 /**
- * Cuánto se puede confiar en la transcripción de cada idioma.
- *
- * Esto NO es decoración: la app se va a usar para aprender, y presentar una
- * aproximación con la misma autoridad que una regla exacta es exactamente el
- * tipo de afirmación que no se debe hacer. La UI muestra este valor.
+ * Etiqueta legible del idioma para la UI. Se resuelve con t() en el momento:
+ * el idioma de la interfaz puede cambiar sin reiniciar la app.
  */
-export const LANG_ACCURACY: Record<IpaLang, 'exacta' | 'aproximada'> = {
-  es: 'exacta',
-  it: 'exacta',
-  fr: 'aproximada',
-  de: 'aproximada',
-  en: 'aproximada',
-};
+export function ipaLangLabel(lang: IpaLang): string {
+  return t(IPA_LABEL_KEYS[lang]);
+}
+
+/** Idiomas cuya transcripción IPA es exacta por regla (el resto, aproximada). */
+const EXACT_IPA_LANGS: ReadonlySet<IpaLang> = new Set(['es', 'it']);
+
+/**
+ * Cuánto se puede confiar en la transcripción de cada idioma, como texto ya
+ * traducido. NO es decoración: la app se va a usar para aprender, y presentar
+ * una aproximación con la misma autoridad que una regla exacta es
+ * exactamente el tipo de afirmación que no se debe hacer. La UI lo muestra.
+ */
+export function ipaLangAccuracy(lang: IpaLang): string {
+  return t(EXACT_IPA_LANGS.has(lang) ? 'ipa.accuracy.exact' : 'ipa.accuracy.approx');
+}
 
 /** Qué queda fuera en cada idioma, en una línea, para mostrarlo al usuario. */
-export const LANG_CAVEAT: Record<IpaLang, string> = {
-  es: 'Norma configurable en Ajustes (seseo o distinción). Sin marca de acento tónico ni encadenamiento entre palabras.',
-  it: 'e/o abiertas o cerradas solo se distinguen cuando la palabra lleva tilde; z se transcribe sorda.',
-  fr: 'Sin liaison entre palabras; el final -ent verbal y algunos timbres son aproximados.',
-  de: 'La cantidad de la vocal ante ⟨ch⟩ es léxica y se resuelve breve; los préstamos conservan su fonética original.',
-  en: 'Pronunciación de diccionario (CMUdict, inglés general estadounidense) en forma de cita: no refleja las reducciones del habla rápida ni el flap de la t, y las palabras que no están en el diccionario quedan sin transcribir.',
-};
+export function ipaLangCaveat(lang: IpaLang): string {
+  return t(IPA_CAVEAT_KEYS[lang]);
+}
 
 /**
  * Transcribe una línea al IPA del idioma indicado.

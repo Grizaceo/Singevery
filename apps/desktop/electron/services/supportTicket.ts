@@ -1,5 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import type { SupportTicketCategory, SupportTicketDraft } from '../../src/types';
+import { t } from '../../src/i18n';
 
 const CATEGORIES: Record<SupportTicketCategory, string> = {
   installation: 'Instalación o actualización',
@@ -28,13 +29,13 @@ export function validateSupportTicketDraft(
   input: unknown,
 ): { ok: true; value: SupportTicketDraft } | { ok: false; error: string } {
   if (!input || typeof input !== 'object') {
-    return { ok: false, error: 'El reporte no tiene un formato válido' };
+    return { ok: false, error: t('errors.supportInvalidFormat') };
   }
 
   const raw = input as Record<string, unknown>;
   const category = raw.category as SupportTicketCategory;
   if (!Object.hasOwn(CATEGORIES, category)) {
-    return { ok: false, error: 'Selecciona una categoría válida' };
+    return { ok: false, error: t('errors.supportInvalidCategory') };
   }
 
   const value: SupportTicketDraft = {
@@ -48,10 +49,10 @@ export function validateSupportTicketDraft(
   };
 
   if (value.summary.length < 5) {
-    return { ok: false, error: 'Resume el problema en al menos 5 caracteres' };
+    return { ok: false, error: t('errors.supportSummaryTooShort') };
   }
   if (value.actual.length < 3) {
-    return { ok: false, error: 'Describe qué ocurrió' };
+    return { ok: false, error: t('errors.supportDescribeRequired') };
   }
   return { ok: true, value };
 }

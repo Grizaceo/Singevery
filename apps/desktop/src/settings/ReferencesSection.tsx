@@ -9,10 +9,11 @@
 import { useState } from 'react';
 import {
   DEFAULT_TAKE_SECONDS,
-  INSTRUMENT_LABELS,
   type TeacherReferenceApi,
 } from '../useTeacherReference';
 import type { ReferenceInstrumentDto } from '../types';
+import type { MessageKey } from '../i18n';
+import { useT } from '../i18n/useT';
 
 interface ReferencesSectionProps {
   teacherRef: TeacherReferenceApi;
@@ -23,6 +24,14 @@ interface ReferencesSectionProps {
 }
 
 const INSTRUMENTS: ReferenceInstrumentDto[] = ['voz', 'bajo', 'guitarra', 'teclado', 'otro'];
+
+const INSTRUMENT_LABEL_KEYS: Record<ReferenceInstrumentDto, MessageKey> = {
+  voz: 'settingsMore.instrumentVoice',
+  bajo: 'settingsMore.instrumentBass',
+  guitarra: 'settingsMore.instrumentGuitar',
+  teclado: 'settingsMore.instrumentKeyboard',
+  otro: 'settingsMore.instrumentOther',
+};
 
 function formatRange(startMs: number, endMs: number): string {
   const mmss = (ms: number): string => {
@@ -38,6 +47,7 @@ export function ReferencesSection({
   trackArtist,
   hasTrack,
 }: ReferencesSectionProps) {
+  const t = useT();
   const [label, setLabel] = useState('');
   const [instrument, setInstrument] = useState<ReferenceInstrumentDto>('voz');
   const [author, setAuthor] = useState('');
@@ -48,7 +58,7 @@ export function ReferencesSection({
 
   const startTake = (): void => {
     void teacherRef.record({
-      label: label.trim() || 'Referencia',
+      label: label.trim() || t('settingsMore.defaultRefName'),
       instrument,
       author: author.trim() || undefined,
       seconds,
@@ -59,28 +69,27 @@ export function ReferencesSection({
 
   return (
     <section className="settings-section">
-      <h3>Melodías de referencia</h3>
+      <h3>{t('settingsMore.refTitle')}</h3>
       <p className="settings-hint">
-        Graba la línea tocada o cantada bien una vez y queda como referencia del alumno, en
-        lugar de la melodía que la app deduce sola. <strong>Se guarda solo la curva de
-        notas, nunca el audio</strong>, y no sale de este computador: para pasársela a alguien,
-        expórtala y mándale el archivo.
+        {t('settingsMore.refHintPre')}
+        <strong>{t('settingsMore.refHintStrong')}</strong>
+        {t('settingsMore.refHintPost')}
       </p>
 
       <label className="settings-row">
-        <span>Nombre de la toma</span>
+        <span>{t('settingsMore.takeName')}</span>
         <input
           type="text"
           value={label}
           maxLength={60}
-          placeholder="Estribillo, compases 12-20…"
+          placeholder={t('settingsMore.takeNamePlaceholder')}
           onChange={(e) => setLabel(e.target.value)}
           disabled={recording}
         />
       </label>
 
       <label className="settings-row">
-        <span>Instrumento</span>
+        <span>{t('settingsMore.instrument')}</span>
         <select
           value={instrument}
           onChange={(e) => setInstrument(e.target.value as ReferenceInstrumentDto)}
@@ -88,26 +97,26 @@ export function ReferencesSection({
         >
           {INSTRUMENTS.map((key) => (
             <option key={key} value={key}>
-              {INSTRUMENT_LABELS[key]}
+              {t(INSTRUMENT_LABEL_KEYS[key])}
             </option>
           ))}
         </select>
       </label>
 
       <label className="settings-row">
-        <span>Quién graba (opcional)</span>
+        <span>{t('settingsMore.recordedBy')}</span>
         <input
           type="text"
           value={author}
           maxLength={60}
-          placeholder="Profe Marcelo"
+          placeholder={t('settingsMore.authorPlaceholder')}
           onChange={(e) => setAuthor(e.target.value)}
           disabled={recording}
         />
       </label>
 
       <label className="settings-row">
-        <span>Duración de la toma</span>
+        <span>{t('settingsMore.takeDuration')}</span>
         <input
           type="range"
           min={3}
@@ -123,44 +132,43 @@ export function ReferencesSection({
       <div className="settings-actions">
         <button type="button" onClick={startTake} disabled={recording}>
           {status === 'recording'
-            ? `Grabando… ${remainingSeconds}s`
+            ? t('settingsMore.recording', { seconds: remainingSeconds })
             : status === 'analyzing'
-              ? 'Analizando…'
-              : 'Grabar referencia'}
+              ? t('settingsMore.analyzing')
+              : t('settingsMore.recordRef')}
         </button>
         <button type="button" onClick={() => void teacherRef.importOne()} disabled={recording}>
-          Importar archivo
+          {t('settingsMore.importFile')}
         </button>
       </div>
 
       {!hasTrack && (
-        <p className="settings-hint">
-          Sin canción reconocida la toma se guarda como ejercicio suelto, sin quedar asociada a
-          ningún tema.
-        </p>
+        <p className="settings-hint">{t('settingsMore.noTrackHint')}</p>
       )}
-      {status === 'saved' && !error && <p className="settings-ok">Referencia guardada.</p>}
+      {status === 'saved' && !error && <p className="settings-ok">{t('settingsMore.refSaved')}</p>}
       {error && <p className="settings-error">{error}</p>}
 
       {reference && (
         <p className="settings-hint">
-          Para esta canción está activa <strong>{reference.label}</strong>
-          {reference.author ? ` (${reference.author})` : ''}. Reemplaza a la melodía automática.
+          {t('settingsMore.refActivePre')}
+          <strong>{reference.label}</strong>
+          {reference.author ? ` (${reference.author})` : ''}
+          {t('settingsMore.refActivePost')}
         </p>
       )}
 
-      <h4>Guardadas en este equipo ({all.length})</h4>
+      <h4>{t('settingsMore.savedOnDevice', { count: all.length })}</h4>
       <div className="settings-actions">
         <button
           type="button"
           onClick={() => void window.api?.openReferencesFolder()}
-          title="Abre en el explorador la carpeta donde se guardan las melodías de referencia (profesor + karaoke automático)"
+          title={t('settingsMore.openFolderTitle')}
         >
-          Abrir carpeta de referencias
+          {t('settingsMore.openFolder')}
         </button>
       </div>
       {all.length === 0 ? (
-        <p className="settings-hint">Todavía no hay ninguna.</p>
+        <p className="settings-hint">{t('settingsMore.noneYet')}</p>
       ) : (
         <ul className="reference-list">
           {all.map((item) => (
@@ -168,8 +176,10 @@ export function ReferencesSection({
               <div className="reference-info">
                 <strong>{item.label}</strong>
                 <span>
-                  {INSTRUMENT_LABELS[item.instrument]}
-                  {item.title ? ` · ${item.artist ? `${item.artist} — ` : ''}${item.title}` : ' · ejercicio suelto'}
+                  {t(INSTRUMENT_LABEL_KEYS[item.instrument])}
+                  {item.title
+                    ? ` · ${item.artist ? `${item.artist} — ` : ''}${item.title}`
+                    : t('settingsMore.standaloneExercise')}
                   {' · '}
                   {formatRange(item.startMs, item.endMs)}
                   {item.author ? ` · ${item.author}` : ''}
@@ -177,10 +187,10 @@ export function ReferencesSection({
               </div>
               <div className="reference-buttons">
                 <button type="button" onClick={() => void teacherRef.exportOne(item.id)}>
-                  Exportar
+                  {t('settingsMore.export')}
                 </button>
                 <button type="button" onClick={() => void teacherRef.remove(item.id)}>
-                  Borrar
+                  {t('settingsMore.delete')}
                 </button>
               </div>
             </li>

@@ -1,4 +1,5 @@
 import type { TrackMatch } from '../../../src/types';
+import { t } from '../../../src/i18n';
 import type { ShazamApiResponse } from './shazamApi';
 import type { RecognitionProvider } from './provider';
 
@@ -82,7 +83,9 @@ export async function identifyFromShazam(
     }>;
   } catch (err) {
     throw new Error(
-      `Shazam: no se pudo generar huella (${err instanceof Error ? err.message : 'error desconocido'})`,
+      t('errors.shazamFingerprint', {
+        detail: err instanceof Error ? err.message : t('common.unknownError'),
+      }),
     );
   }
 

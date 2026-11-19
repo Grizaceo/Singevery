@@ -1,15 +1,17 @@
 import { useState } from 'react';
 import type { FormEvent } from 'react';
 import type { SupportTicketCategory, SupportTicketDraft } from './types';
+import type { MessageKey } from './i18n';
+import { useT } from './i18n/useT';
 
-const CATEGORY_OPTIONS: { value: SupportTicketCategory; label: string }[] = [
-  { value: 'installation', label: 'Instalación o actualización' },
-  { value: 'startup', label: 'Inicio o ventana' },
-  { value: 'recognition', label: 'Reconocimiento de canción' },
-  { value: 'lyrics', label: 'Letra o sincronización' },
-  { value: 'pitch', label: 'Afinación o práctica' },
-  { value: 'translation', label: 'Traducción o lectura' },
-  { value: 'other', label: 'Otro' },
+const CATEGORY_OPTIONS: { value: SupportTicketCategory; label: MessageKey }[] = [
+  { value: 'installation', label: 'practice.cat.installation' },
+  { value: 'startup', label: 'practice.cat.startup' },
+  { value: 'recognition', label: 'practice.cat.recognition' },
+  { value: 'lyrics', label: 'practice.cat.lyrics' },
+  { value: 'pitch', label: 'practice.cat.pitch' },
+  { value: 'translation', label: 'practice.cat.translation' },
+  { value: 'other', label: 'practice.cat.other' },
 ];
 
 const EMPTY_DRAFT: SupportTicketDraft = {
@@ -27,6 +29,7 @@ interface SupportTicketFormProps {
 }
 
 export function SupportTicketForm({ onStatus }: SupportTicketFormProps) {
+  const t = useT();
   const [draft, setDraft] = useState<SupportTicketDraft>(EMPTY_DRAFT);
   const [submitting, setSubmitting] = useState(false);
 
@@ -39,20 +42,24 @@ export function SupportTicketForm({ onStatus }: SupportTicketFormProps) {
     event.preventDefault();
     if (!window.api || submitting) return;
     setSubmitting(true);
-    onStatus('Preparando ticket…');
+    onStatus(t('practice.preparingTicket'));
     try {
       const result = await window.api.createSupportTicket(draft);
       if (result.canceled) {
         onStatus(null);
       } else if (!result.ok) {
-        onStatus(result.error ?? 'No se pudo preparar el ticket');
+        onStatus(result.error ?? t('practice.ticketFailed'));
       } else if (result.issueOpened) {
         onStatus(
-          `Ticket ${result.ticketId ?? ''} guardado. GitHub y la carpeta del archivo están abiertos: revisa el JSON y adjúntalo sólo si estás de acuerdo.`,
+          t('practice.ticketSavedOpened', { id: result.ticketId ?? '' }),
         );
       } else {
         onStatus(
-          `Ticket ${result.ticketId ?? ''} guardado en ${result.path ?? 'el archivo elegido'}. ${result.warning ?? 'No se pudo abrir GitHub; puedes enviarlo manualmente.'}`,
+          t('practice.ticketSavedPath', {
+            id: result.ticketId ?? '',
+            path: result.path ?? t('practice.chosenFile'),
+            warning: result.warning ?? t('practice.githubOpenFailed'),
+          }),
         );
       }
     } finally {
@@ -64,14 +71,13 @@ export function SupportTicketForm({ onStatus }: SupportTicketFormProps) {
 
   return (
     <details className="support-ticket-form">
-      <summary>Reportar un problema</summary>
+      <summary>{t('practice.reportProblem')}</summary>
       <p className="settings-hint">
-        Crea un JSON local y abre un issue prellenado en GitHub. Nada se adjunta por sí solo: revisa
-        el archivo antes de compartirlo. El issue será público si el repositorio es público.
+        {t('practice.formHint')}
       </p>
       <form onSubmit={(event) => void submit(event)}>
         <label className="settings-label" htmlFor="support-tester">
-          Nombre o alias del tester (sólo en el archivo)
+          {t('practice.testerLabel')}
         </label>
         <input
           id="support-tester"
@@ -79,12 +85,12 @@ export function SupportTicketForm({ onStatus }: SupportTicketFormProps) {
           type="text"
           maxLength={60}
           value={draft.testerAlias}
-          placeholder="Ej. Profe Ana"
+          placeholder={t('practice.testerPlaceholder')}
           onChange={(event) => patch('testerAlias', event.target.value)}
         />
 
         <label className="settings-label" htmlFor="support-category">
-          Categoría
+          {t('practice.categoryLabel')}
         </label>
         <select
           id="support-category"
@@ -94,13 +100,13 @@ export function SupportTicketForm({ onStatus }: SupportTicketFormProps) {
         >
           {CATEGORY_OPTIONS.map((option) => (
             <option key={option.value} value={option.value}>
-              {option.label}
+              {t(option.label)}
             </option>
           ))}
         </select>
 
         <label className="settings-label" htmlFor="support-summary">
-          Resumen
+          {t('practice.summaryLabel')}
         </label>
         <input
           id="support-summary"
@@ -110,12 +116,12 @@ export function SupportTicketForm({ onStatus }: SupportTicketFormProps) {
           minLength={5}
           maxLength={120}
           value={draft.summary}
-          placeholder="Ej. El afinador salta una octava"
+          placeholder={t('practice.summaryPlaceholder')}
           onChange={(event) => patch('summary', event.target.value)}
         />
 
         <label className="settings-label" htmlFor="support-actual">
-          ¿Qué ocurrió?
+          {t('practice.actualLabel')}
         </label>
         <textarea
           id="support-actual"
@@ -129,7 +135,7 @@ export function SupportTicketForm({ onStatus }: SupportTicketFormProps) {
         />
 
         <label className="settings-label" htmlFor="support-steps">
-          Pasos para repetirlo (opcional)
+          {t('practice.stepsLabel')}
         </label>
         <textarea
           id="support-steps"
@@ -137,12 +143,12 @@ export function SupportTicketForm({ onStatus }: SupportTicketFormProps) {
           maxLength={4_000}
           rows={3}
           value={draft.steps}
-          placeholder={'1. Abrí…\n2. Pulsé…\n3. Ocurrió…'}
+          placeholder={t('practice.stepsPlaceholder')}
           onChange={(event) => patch('steps', event.target.value)}
         />
 
         <label className="settings-label" htmlFor="support-expected">
-          ¿Qué esperabas? (opcional)
+          {t('practice.expectedLabel')}
         </label>
         <textarea
           id="support-expected"
@@ -159,14 +165,14 @@ export function SupportTicketForm({ onStatus }: SupportTicketFormProps) {
             checked={draft.includeDiagnostics}
             onChange={(event) => patch('includeDiagnostics', event.target.checked)}
           />
-          Incluir diagnóstico y logs recientes redactados en el JSON
+          {t('practice.diagnosticsLabel')}
         </label>
         <p className="settings-hint">
-          Puede incluir metadatos de canciones, nunca audio ni letras completas.
+          {t('practice.diagnosticsHint')}
         </p>
 
         <button type="submit" className="chrome-button" disabled={!ready || submitting}>
-          {submitting ? 'Preparando…' : 'Guardar ticket y abrir GitHub'}
+          {submitting ? t('practice.preparing') : t('practice.submitTicket')}
         </button>
       </form>
     </details>

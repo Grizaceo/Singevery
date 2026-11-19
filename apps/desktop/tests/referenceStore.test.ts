@@ -15,6 +15,12 @@ import {
   REFERENCE_FORMAT,
   type ReferenceCurve,
 } from '../electron/services/references/referenceTypes';
+import { setLocale } from '../src/i18n';
+
+// Estas pruebas comparan los textos en español que la app ya mostraba:
+// se fija el idioma local y se restaura el inglés al terminar.
+beforeEach(() => setLocale('es'));
+afterEach(() => setLocale('en'));
 
 let dir: string;
 beforeEach(() => {

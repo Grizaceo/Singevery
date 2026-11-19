@@ -1,15 +1,17 @@
 import { SILENCE_PEAK } from './audio/capture';
 import type { RecognitionState } from './useRecognition';
+import { useT } from './i18n/useT';
 import './RecognitionControls.css';
 
 /** Medidor de nivel: 5 bloques llenados según el pico medido (0..1). */
 function LevelMeter({ level }: { level: number }) {
+  const t = useT();
   const filled = Math.round(Math.min(1, level * 4) * 5);
   return (
     <span
       className={`level-meter${level < SILENCE_PEAK ? ' silent' : ''}`}
-      title={`Nivel de entrada: ${Math.round(level * 100)}%`}
-      aria-label="Nivel de audio de entrada"
+      title={t('reading.rec.inputLevel', { value: Math.round(level * 100) })}
+      aria-label={t('reading.rec.inputLevelAria')}
     >
       {'▰'.repeat(filled)}
       {'▱'.repeat(5 - filled)}
@@ -39,6 +41,7 @@ interface RecognitionControlsProps {
  *    el reconocimiento falló (feedback wrong + buscador manual).
  */
 export function RecognitionControls({ recognition, hasTrack, onManualSearch, recognitionWarning }: RecognitionControlsProps) {
+  const t = useT();
   const { activeSource, hint, error, level, start, stop } = recognition;
 
   if (!window.api) {
@@ -61,8 +64,8 @@ export function RecognitionControls({ recognition, hasTrack, onManualSearch, rec
         className={`chrome-button${activeSource === 'system' ? ' active' : ''}`}
         onClick={() => void start('system')}
         disabled={localDisabled}
-        title="Captura el audio que suena en el sistema (altavoces)"
-        aria-label="Capturar audio del sistema"
+        title={t('reading.rec.systemTitle')}
+        aria-label={t('reading.rec.systemAria')}
       >
         💻
       </button>
@@ -71,13 +74,13 @@ export function RecognitionControls({ recognition, hasTrack, onManualSearch, rec
         className={`chrome-button${activeSource === 'microphone' ? ' active' : ''}`}
         onClick={() => void start('microphone')}
         disabled={localDisabled}
-        title="Captura audio desde el micrófono"
-        aria-label="Capturar micrófono"
+        title={t('reading.rec.micTitle')}
+        aria-label={t('reading.rec.micAria')}
       >
         🎤
       </button>
       {activeSource && (
-        <button type="button" className="chrome-button stop" onClick={() => void stop()} aria-label="Detener reconocimiento">
+        <button type="button" className="chrome-button stop" onClick={() => void stop()} aria-label={t('reading.rec.stopAria')}>
           ⏹
         </button>
       )}
@@ -89,8 +92,8 @@ export function RecognitionControls({ recognition, hasTrack, onManualSearch, rec
           type="button"
           className="chrome-button search-link"
           onClick={onManualSearch}
-          title="La app no reconoce la canción — búscala por título/artista"
-          aria-label="Buscar canción manualmente"
+          title={t('reading.rec.searchTitle')}
+          aria-label={t('reading.search.title')}
         >
           🔍
         </button>
@@ -102,8 +105,8 @@ export function RecognitionControls({ recognition, hasTrack, onManualSearch, rec
           type="button"
           className="chrome-button wrong"
           onClick={handleWrongTrack}
-          title="La canción mostrada no es la que suena — buscar manualmente"
-          aria-label="Señalar que la canción no es la correcta y buscar"
+          title={t('reading.rec.wrongTitle')}
+          aria-label={t('reading.rec.wrongAria')}
         >
           ✗
         </button>
@@ -113,9 +116,9 @@ export function RecognitionControls({ recognition, hasTrack, onManualSearch, rec
       {recognitionWarning === 'audd_invalid_token' && (
         <span
           className="recognition-warning"
-          title="AudD rechazó la credencial (error #900). Revisa AUDD_API_TOKEN en el .env junto a la app o quítalo para reconocer solo con Shazam."
+          title={t('reading.rec.auddWarningTitle')}
         >
-          Token de AudD inválido: revisa .env o usa solo Shazam
+          {t('reading.rec.auddWarning')}
         </span>
       )}
     </div>

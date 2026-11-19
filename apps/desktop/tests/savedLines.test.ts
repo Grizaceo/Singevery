@@ -1,6 +1,10 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, beforeEach, afterEach } from 'vitest';
 import { savedLineFromModel, savedLinesToCsv, toggleSavedLine } from '../src/useSavedLines';
 import type { RenderModel } from '../src/types';
+import { setLocale } from '../src/i18n';
+
+beforeEach(() => setLocale('es'));
+afterEach(() => setLocale('en'));
 
 const model: RenderModel = {
   previous_lines: [],

@@ -21,6 +21,7 @@ import type {
   ReferenceMelodyDto,
   ReferenceMetaDto,
 } from './types';
+import { t, type MessageKey } from './i18n';
 
 /** Rango de análisis por instrumento (Hz). Debe coincidir con el del main. */
 export const INSTRUMENT_RANGE: Record<ReferenceInstrumentDto, { min: number; max: number }> = {
@@ -31,12 +32,12 @@ export const INSTRUMENT_RANGE: Record<ReferenceInstrumentDto, { min: number; max
   otro: { min: 38, max: 2100 },
 };
 
-export const INSTRUMENT_LABELS: Record<ReferenceInstrumentDto, string> = {
-  voz: 'Voz',
-  bajo: 'Bajo',
-  guitarra: 'Guitarra',
-  teclado: 'Teclado',
-  otro: 'Otro',
+export const INSTRUMENT_LABELS: Record<ReferenceInstrumentDto, MessageKey> = {
+  voz: 'hooks.instrument.voice',
+  bajo: 'hooks.instrument.bass',
+  guitarra: 'hooks.instrument.guitar',
+  teclado: 'hooks.instrument.keyboard',
+  otro: 'hooks.instrument.other',
 };
 
 /** Duración por defecto de la toma. Suficiente para una frase o dos compases. */
@@ -190,9 +191,7 @@ export function useTeacherReference(
         const curve = pointsToCurve(melody);
         if (curve.t.length < MIN_POINTS) {
           setStatus('error');
-          setError(
-            'No se detectó una melodía clara. Revisa el micrófono y toca o canta más fuerte y sostenido.',
-          );
+          setError(t('hooks.teacherNoMelody'));
           return;
         }
 
@@ -207,14 +206,14 @@ export function useTeacherReference(
         });
         if (!saved.ok) {
           setStatus('error');
-          setError(saved.error ?? 'No se pudo guardar la referencia.');
+          setError(saved.error ?? t('hooks.referenceSaveError'));
           return;
         }
         setStatus('saved');
         await refresh();
       } catch (err) {
         setStatus('error');
-        setError(err instanceof Error ? err.message : 'Error al grabar la referencia.');
+        setError(err instanceof Error ? err.message : t('hooks.referenceRecordError'));
       } finally {
         window.clearInterval(ticker);
         setRemainingSeconds(0);
@@ -236,7 +235,7 @@ export function useTeacherReference(
     const result = await window.api?.exportReference(id);
     if (result && !result.ok && !result.canceled) {
       setStatus('error');
-      setError(result.error ?? 'No se pudo exportar.');
+      setError(result.error ?? t('hooks.referenceExportError'));
     }
   }, []);
 
@@ -244,7 +243,7 @@ export function useTeacherReference(
     const result = await window.api?.importReference();
     if (result && !result.ok && !result.canceled) {
       setStatus('error');
-      setError(result.error ?? 'No se pudo importar.');
+      setError(result.error ?? t('hooks.referenceImportError'));
       return;
     }
     if (result?.ok) {

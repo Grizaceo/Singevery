@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { openMicrophoneStream } from './audio/capture';
 import { detectPitch, type PitchResult } from './audio/pitch';
 import type { MelodyPoint } from './audio/melody';
+import { t } from './i18n';
 
 /**
  * usePitchMonitor — monitor continuo de pitch del micrófono (P0 de
@@ -88,7 +89,7 @@ export function usePitchMonitor(): {
         window.AudioContext ??
         (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
       if (!Ctx) {
-        setError('Web Audio no disponible');
+        setError(t('hooks.webAudioUnavailable'));
         stream.getTracks().forEach((track) => track.stop());
         return;
       }
@@ -146,11 +147,11 @@ export function usePitchMonitor(): {
     } catch (err) {
       const name = err instanceof DOMException ? err.name : '';
       if (name === 'NotAllowedError' || name === 'SecurityError') {
-        setError('Permiso de micrófono denegado — habilítalo para el widget.');
+        setError(t('hooks.micPermissionDenied'));
       } else if (name === 'NotFoundError' || name === 'OverconstrainedError') {
-        setError('No se encontró un micrófono disponible.');
+        setError(t('hooks.micNotFound'));
       } else {
-        setError(err instanceof Error ? err.message : 'No se pudo abrir el micrófono.');
+        setError(err instanceof Error ? err.message : t('hooks.micOpenFailed'));
       }
       setActive(false);
     }

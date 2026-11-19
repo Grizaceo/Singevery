@@ -1,6 +1,8 @@
 import React, { useMemo, useRef, useState } from 'react';
 import type { IpaInfo, ReadingMode, TranslationView } from './types';
 import type { ScriptHint } from './scriptDetect';
+import { useT } from './i18n/useT';
+import type { MessageKey } from './i18n';
 import './ReadingControls.css';
 
 interface Props {
@@ -40,53 +42,53 @@ const TRANSLATION_LABEL: Record<TranslationView, string> = {
   side: 'T⇉',
 };
 
-const TRANSLATION_TITLE: Record<TranslationView, string> = {
-  off: 'Traducción: desactivada — clic para mostrarla bajo la línea actual',
-  below: 'Traducción bajo la línea actual — clic para verla lado a lado',
-  side: 'Texto paralelo: letra y traducción en columnas — clic para desactivar',
+const TRANSLATION_TITLE: Record<TranslationView, MessageKey> = {
+  off: 'reading.translateOff',
+  below: 'reading.translateBelow',
+  side: 'reading.translateSide',
 };
 
 interface ModeOption {
   key: ReadingMode;
   label: string;
-  title: string;
+  title: MessageKey;
   needsAnnotations: boolean;
   scripts?: ScriptHint[];
 }
 
 const JAPANESE_OPTIONS: ModeOption[] = [
-  { key: 'original', label: '原', title: 'Original (kanji/kana sin ayudas)', needsAnnotations: false },
+  { key: 'original', label: '原', title: 'reading.mode.jaOriginal.title', needsAnnotations: false },
   {
     key: 'kana',
     label: 'か',
-    title: 'Kana (todo en hiragana — ideal si aún no lees kanji)',
+    title: 'reading.mode.jaKana.title',
     needsAnnotations: true,
     scripts: ['japanese'],
   },
   {
     key: 'furigana',
     label: 'ふ',
-    title: 'Furigana (hiragana encima de kanji, no es romaji)',
+    title: 'reading.mode.jaFurigana.title',
     needsAnnotations: true,
   },
-  { key: 'romaji', label: 'A', title: 'Romaji (latín debajo del japonés)', needsAnnotations: true },
+  { key: 'romaji', label: 'A', title: 'reading.mode.jaRomaji.title', needsAnnotations: true },
   {
     key: 'furigana_romaji',
     label: 'ふ+A',
-    title: 'Furigana + romaji (kanji con kana arriba y latín abajo)',
+    title: 'reading.mode.jaFuriganaRomaji.title',
     needsAnnotations: true,
   },
   {
     key: 'ipa',
     label: 'IPA',
-    title: 'IPA (fonética real: し → /ɕi/, no "shi")',
+    title: 'reading.mode.jaIpa.title',
     needsAnnotations: true,
     scripts: ['japanese'],
   },
   {
     key: 'furigana_ipa',
     label: 'ふ+IPA',
-    title: 'Furigana + IPA (kanji con kana arriba y fonética IPA abajo)',
+    title: 'reading.mode.jaFuriganaIpa.title',
     needsAnnotations: true,
     scripts: ['japanese'],
   },
@@ -99,38 +101,46 @@ const JAPANESE_OPTIONS: ModeOption[] = [
  * reconoció la canción.
  */
 const LATIN_OPTIONS: ModeOption[] = [
-  { key: 'original', label: 'Orig', title: 'Texto original', needsAnnotations: false },
+  { key: 'original', label: 'Orig', title: 'reading.mode.latinOriginal.title', needsAnnotations: false },
   {
     key: 'ipa',
     label: 'IPA',
-    title: 'IPA (fonética: cómo suena de verdad cada letra al cantarla)',
+    title: 'reading.mode.latinIpa.title',
     needsAnnotations: true,
   },
 ];
 
 const GENERIC_OPTIONS: ModeOption[] = [
-  { key: 'original', label: 'Orig', title: 'Original (sin lecturas)', needsAnnotations: false },
+  { key: 'original', label: 'Orig', title: 'reading.mode.genericOriginal.title', needsAnnotations: false },
   {
     key: 'furigana',
     label: 'Ruby',
-    title: 'Ruby (lectura encima: pinyin, romanización, etc.)',
+    title: 'reading.mode.ruby.title',
     needsAnnotations: true,
   },
-  { key: 'romaji', label: 'A', title: 'Romanización latina', needsAnnotations: true },
+  { key: 'romaji', label: 'A', title: 'reading.mode.genericRomaji.title', needsAnnotations: true },
   {
     key: 'furigana_romaji',
     label: 'R+A',
-    title: 'Ruby + romanización latina',
+    title: 'reading.mode.rubyRomaji.title',
     needsAnnotations: true,
   },
 ];
 
-const HELP_EXAMPLES: Record<ScriptHint, { title: string; rows: { label: string; sample: React.ReactNode }[] }> = {
+interface HelpRow {
+  label: MessageKey;
+  /** Texto traducible del ejemplo (va en la columna de muestra). */
+  sampleKey?: MessageKey;
+  /** Ejemplo literal (letra de muestra, romanización, IPA…). */
+  sample?: React.ReactNode;
+}
+
+const HELP_EXAMPLES: Record<ScriptHint, { title: MessageKey; rows: HelpRow[] }> = {
   japanese: {
-    title: 'Modos de lectura (japonés)',
+    title: 'reading.help.ja',
     rows: [
       {
-        label: 'Original',
+        label: 'reading.helpLabel.original',
         sample: (
           <>
             <ruby>
@@ -141,50 +151,50 @@ const HELP_EXAMPLES: Record<ScriptHint, { title: string; rows: { label: string; 
           </>
         ),
       },
-      { label: 'Kana', sample: 'わたしはひとり' },
-      { label: 'Furigana', sample: <>私 con わたし encima del kanji</> },
-      { label: 'Romaji', sample: 'watashi wa hitori' },
-      { label: 'IPA', sample: 'ɰatasaɕi ɰa çitoɾi' },
-      { label: 'Furigana + IPA', sample: <>私 con わたし encima y ɰatasaɕi debajo</> },
+      { label: 'reading.helpLabel.kana', sample: 'わたしはひとり' },
+      { label: 'reading.helpLabel.furigana', sampleKey: 'reading.helpSample.furiganaJa' },
+      { label: 'reading.helpLabel.romaji', sample: 'watashi wa hitori' },
+      { label: 'reading.helpLabel.ipa', sample: 'ɰatasaɕi ɰa çitoɾi' },
+      { label: 'reading.helpLabel.furiganaIpa', sampleKey: 'reading.helpSample.furiganaIpaJa' },
     ],
   },
   korean: {
-    title: 'Modos de lectura (coreano)',
+    title: 'reading.help.ko',
     rows: [
-      { label: 'Original', sample: '안녕하세요' },
-      { label: 'Ruby', sample: <>안녕하세요 con annyeonghaseyo encima</> },
-      { label: 'Romanización', sample: 'annyeonghaseyo' },
+      { label: 'reading.helpLabel.original', sample: '안녕하세요' },
+      { label: 'reading.helpLabel.ruby', sampleKey: 'reading.helpSample.koRuby' },
+      { label: 'reading.helpLabel.romanization', sample: 'annyeonghaseyo' },
     ],
   },
   chinese: {
-    title: 'Modos de lectura (chino)',
+    title: 'reading.help.zh',
     rows: [
-      { label: 'Original', sample: '你好' },
-      { label: 'Ruby', sample: <>你 con nǐ encima</> },
-      { label: 'Pinyin', sample: 'ni hao' },
+      { label: 'reading.helpLabel.original', sample: '你好' },
+      { label: 'reading.helpLabel.ruby', sampleKey: 'reading.helpSample.zhRuby' },
+      { label: 'reading.helpLabel.pinyin', sample: 'ni hao' },
     ],
   },
   cyrillic: {
-    title: 'Modos de lectura (ruso/cirílico)',
+    title: 'reading.help.cyrillic',
     rows: [
-      { label: 'Original', sample: 'Привет' },
-      { label: 'Ruby', sample: <>Привет con Privet encima</> },
-      { label: 'Romanización', sample: 'Privet' },
+      { label: 'reading.helpLabel.original', sample: 'Привет' },
+      { label: 'reading.helpLabel.ruby', sampleKey: 'reading.helpSample.cyrillicRuby' },
+      { label: 'reading.helpLabel.romanization', sample: 'Privet' },
     ],
   },
   other: {
-    title: 'Modos de lectura',
+    title: 'reading.help.generic',
     rows: [
-      { label: 'Original', sample: 'Texto original' },
-      { label: 'Ruby', sample: 'Lectura latina encima cuando es posible' },
-      { label: 'Romanización', sample: 'Transliteración latina' },
+      { label: 'reading.helpLabel.original', sampleKey: 'reading.helpSample.otherOriginal' },
+      { label: 'reading.helpLabel.ruby', sampleKey: 'reading.helpSample.otherRuby' },
+      { label: 'reading.helpLabel.romanization', sampleKey: 'reading.helpSample.otherRomaji' },
     ],
   },
   latin: {
-    title: 'Modos de lectura',
+    title: 'reading.help.generic',
     rows: [
-      { label: 'Original', sample: 'Letra tal cual' },
-      { label: 'Nota', sample: 'En idiomas latinos no hay ruby ni romanización' },
+      { label: 'reading.helpLabel.original', sampleKey: 'reading.helpSample.latinOriginal' },
+      { label: 'reading.helpLabel.note', sampleKey: 'reading.helpSample.latinNote' },
     ],
   },
 };
@@ -207,6 +217,7 @@ export function ReadingControls({
   ipaGuideOpen = false,
   onIpaGuideToggle,
 }: Props) {
+  const t = useT();
   const [helpOpen, setHelpOpen] = useState(false);
   const helpRef = useRef<HTMLDivElement>(null);
 
@@ -230,7 +241,7 @@ export function ReadingControls({
 
   return (
     <div className="reading-controls-wrap">
-      <div className="reading-controls" title="Modo de lectura">
+      <div className="reading-controls" title={t('reading.modeTitle')}>
         {showReadingModes &&
           options.map((opt) => {
           const unavailable = opt.needsAnnotations && !hasAnnotations;
@@ -248,12 +259,12 @@ export function ReadingControls({
               onClick={() => onChange(opt.key)}
               title={
                 unavailable
-                  ? `${opt.title} — no disponible para esta canción`
+                  ? t('reading.modeUnavailable', { title: t(opt.title) })
                   : (opt.key === 'ipa' || opt.key === 'furigana_ipa') && ipaInfo
-                    ? `${opt.title}${ipaMetaSuffix}`
-                    : opt.title
+                    ? `${t(opt.title)}${ipaMetaSuffix}`
+                    : t(opt.title)
               }
-              aria-label={opt.title}
+              aria-label={t(opt.title)}
               aria-pressed={mode === opt.key}
             >
               {opt.label}
@@ -271,8 +282,8 @@ export function ReadingControls({
                 type="button"
                 className={`chrome-button reading-btn reading-btn-ipa-guide${ipaGuideOpen ? ' active' : ''}`}
                 onClick={onIpaGuideToggle}
-                title="Guía de símbolos IPA"
-                aria-label="Guía de símbolos IPA"
+                title={t('reading.ipaGuideButton')}
+                aria-label={t('reading.ipaGuideButton')}
                 aria-pressed={ipaGuideOpen}
               >
                 ?
@@ -295,9 +306,9 @@ export function ReadingControls({
             onClick={() => onTranslationViewChange(TRANSLATION_CYCLE[translationView])}
             title={
               translationError ??
-              (translationLoading ? 'Traduciendo…' : TRANSLATION_TITLE[translationView])
+              (translationLoading ? t('reading.translating') : t(TRANSLATION_TITLE[translationView]))
             }
-            aria-label={TRANSLATION_TITLE[translationView]}
+            aria-label={t(TRANSLATION_TITLE[translationView])}
             aria-pressed={translationView !== 'off'}
             disabled={translationLoading}
           >
@@ -310,8 +321,8 @@ export function ReadingControls({
           type="button"
           className={`chrome-button reading-btn reading-btn-help${helpOpen ? ' active' : ''}`}
           onClick={() => setHelpOpen((v) => !v)}
-          title="Ayuda sobre modos de lectura"
-          aria-label="Ayuda modos de lectura"
+          title={t('reading.helpTitle')}
+          aria-label={t('reading.helpAria')}
           aria-expanded={helpOpen}
         >
           ?
@@ -320,19 +331,21 @@ export function ReadingControls({
         </div>
 
       {helpOpen && (
-        <div className="reading-help-popover" ref={helpRef} role="dialog" aria-label={help.title}>
-          <strong>{help.title}</strong>
+        <div className="reading-help-popover" ref={helpRef} role="dialog" aria-label={t(help.title)}>
+          <strong>{t(help.title)}</strong>
           <ul>
             {help.rows.map((row) => (
               <li key={row.label}>
-                <span className="reading-help-label">{row.label}</span>
-                <span className="reading-help-sample">{row.sample}</span>
+                <span className="reading-help-label">{t(row.label)}</span>
+                <span className="reading-help-sample">
+                  {row.sampleKey ? t(row.sampleKey) : row.sample}
+                </span>
               </li>
             ))}
           </ul>
           {scriptHint === 'japanese' && (
             <p className="reading-help-link">
-              Repasa tus kanas en{' '}
+              {t('reading.helpHiragana')}{' '}
               <a
                 href="https://www.tofugu.com/japanese/learn-hiragana/"
                 target="_blank"
@@ -346,7 +359,7 @@ export function ReadingControls({
             <p className="reading-help-error">
               {translationError}{' '}
               <button type="button" className="reading-help-settings-link" onClick={onOpenSettings}>
-                Configurar API key
+                {t('reading.configureApiKey')}
               </button>
             </p>
           )}

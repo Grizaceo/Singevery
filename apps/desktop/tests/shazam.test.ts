@@ -1,10 +1,16 @@
-import { describe, it, expect, vi, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { mapShazamResponse, parseShazamPositionMs } from '../electron/services/recognition/shazamProvider';
 import {
   sendShazamRecognizeRequest,
   SHAZAM_TIMEOUT_MS,
   type ShazamApiResponse,
 } from '../electron/services/recognition/shazamApi';
+import { setLocale } from '../src/i18n';
+
+// Estas pruebas comparan los textos en español que la app ya mostraba:
+// se fija el idioma local y se restaura el inglés al terminar.
+beforeEach(() => setLocale('es'));
+afterEach(() => setLocale('en'));
 
 describe('parseShazamPositionMs', () => {
   it('convierte offset en segundos a ms', () => {

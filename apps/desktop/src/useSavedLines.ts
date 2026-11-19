@@ -1,5 +1,6 @@
 import { useCallback, useState } from 'react';
 import type { RenderLine, RenderModel } from './types';
+import { t } from './i18n';
 
 const STORAGE_KEY = 'singevery.saved-lines.v1';
 const MAX_SAVED_LINES = 200;
@@ -25,8 +26,8 @@ function lineReading(line: RenderLine): string | undefined {
 export function savedLineFromModel(model: RenderModel, now = new Date()): SavedLine | null {
   const text = model.current_line.text.trim();
   if (model.status !== 'DISPLAYING' || !text) return null;
-  const trackTitle = model.track_title?.trim() || 'Pista sin título';
-  const trackArtist = model.track_artist?.trim() || 'Artista desconocido';
+  const trackTitle = model.track_title?.trim() || t('hooks.untitledTrack');
+  const trackArtist = model.track_artist?.trim() || t('hooks.unknownArtist');
   const positionMs = Math.max(0, model.current_line.start_ms ?? model.position_ms ?? 0);
   const id = [trackArtist, trackTitle, positionMs, text].join('\u001f').toLocaleLowerCase();
   return {
@@ -56,7 +57,16 @@ function csvCell(value: string | number | undefined): string {
 }
 
 export function savedLinesToCsv(lines: SavedLine[]): string {
-  const header = ['Artista', 'Canción', 'Posición (ms)', 'Letra', 'Lectura', 'IPA', 'Traducción', 'Guardada'];
+  const header = [
+    t('hooks.csv.artist'),
+    t('hooks.csv.track'),
+    t('hooks.csv.positionMs'),
+    t('hooks.csv.lyrics'),
+    t('hooks.csv.reading'),
+    t('hooks.csv.ipa'),
+    t('hooks.csv.translation'),
+    t('hooks.csv.savedAt'),
+  ];
   const rows = lines.map((line) =>
     [
       line.trackArtist,

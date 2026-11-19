@@ -8,6 +8,7 @@ import { app, safeStorage } from 'electron';
 import type { RecognitionProviderMode } from './recognition/provider';
 import type { ReadingSettings, TranslationSettings } from '../../src/types';
 import { DEFAULT_LOCAL_ENDPOINT, DEFAULT_LOCAL_MODEL } from './translate';
+import { DEFAULT_LOCALE, normalizeLocale, type Locale } from '../../src/i18n';
 
 /** Almacén de offsets por pista. El StateStore depende de esta interfaz. */
 export interface OffsetStore {
@@ -78,6 +79,12 @@ export interface ReadingStore {
   set(partial: Partial<ReadingSettings>): void;
 }
 
+/** Idioma de la interfaz (ajuste `uiLanguage`). */
+export interface UiLanguageStore {
+  get(): Locale;
+  set(locale: Locale): void;
+}
+
 export interface WindowBounds {
   x: number;
   y: number;
@@ -97,6 +104,7 @@ export interface AppSettings {
   recognitionProviderStore: RecognitionProviderStore;
   translationStore: TranslationStore;
   readingStore: ReadingStore;
+  uiLanguageStore: UiLanguageStore;
   windowBoundsStore: WindowBoundsStore;
 }
 
@@ -167,6 +175,11 @@ export const NULL_READING_STORE: ReadingStore = {
   set: () => {},
 };
 
+export const NULL_UI_LANGUAGE_STORE: UiLanguageStore = {
+  get: () => DEFAULT_LOCALE,
+  set: () => {},
+};
+
 export const NULL_WINDOW_BOUNDS_STORE: WindowBoundsStore = {
   get: () => null,
   set: () => {},
@@ -182,6 +195,7 @@ interface SettingsShape {
   translation?: Partial<TranslationSettings>;
   translationSecret?: string;
   reading?: Partial<ReadingSettings>;
+  uiLanguage?: unknown;
   windowBounds?: WindowBounds | null;
 }
 
@@ -346,6 +360,7 @@ export function createPersistentSettings(): AppSettings {
   let recognitionProvider: RecognitionProviderMode = DEFAULT_RECOGNITION_PROVIDER;
   let translation = { ...DEFAULT_TRANSLATION_SETTINGS };
   let reading = { ...DEFAULT_READING_SETTINGS };
+  let uiLanguage: Locale = DEFAULT_LOCALE;
   let windowBounds: WindowBounds | null = null;
   let translationSecret: string | undefined;
   let loaded = false;
@@ -371,6 +386,8 @@ export function createPersistentSettings(): AppSettings {
           catch { canProtectCredentials = false; console.warn('[settings] No se pudo desbloquear la clave de traducción'); }
         }
         reading = normalizeReadingSettings(parsed.reading);
+        // Archivos de ajustes viejos no traen el campo: caen al inglés.
+        uiLanguage = normalizeLocale(parsed.uiLanguage);
         windowBounds = normalizeWindowBounds(parsed.windowBounds);
         loaded = true;
         break;
@@ -394,6 +411,7 @@ export function createPersistentSettings(): AppSettings {
       translation: { ...translation, apiKey: paidKey ? '' : translation.apiKey },
       translationSecret: paidKey ? translationSecret : undefined,
       reading,
+      uiLanguage,
       windowBounds,
     };
     return JSON.stringify(payload, null, 2);
@@ -480,6 +498,14 @@ export function createPersistentSettings(): AppSettings {
     },
   };
 
+  const uiLanguageStore: UiLanguageStore = {
+    get: () => uiLanguage,
+    set: (locale) => {
+      uiLanguage = normalizeLocale(locale);
+      persist();
+    },
+  };
+
   const windowBoundsStore: WindowBoundsStore = {
     get: () => (windowBounds ? { ...windowBounds } : null),
     set: (bounds) => {
@@ -495,6 +521,7 @@ export function createPersistentSettings(): AppSettings {
     recognitionProviderStore,
     translationStore,
     readingStore,
+    uiLanguageStore,
     windowBoundsStore,
   };
 }

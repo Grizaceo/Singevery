@@ -1,4 +1,5 @@
 import { deadline, isAbortError, seconds } from '../http';
+import { t } from '../../../src/i18n';
 
 /**
  * Tope para la llamada a Shazam. Sin él, una red que no responde deja el IPC
@@ -102,9 +103,9 @@ export async function sendShazamRecognizeRequest(
     return data;
   } catch (err) {
     if (dl.timedOut) {
-      throw new Error(`Shazam no respondió en ${seconds(SHAZAM_TIMEOUT_MS)} s`);
+      throw new Error(t('errors.shazamTimeout', { seconds: seconds(SHAZAM_TIMEOUT_MS) }));
     }
-    if (isAbortError(err)) throw new Error('Reconocimiento cancelado');
+    if (isAbortError(err)) throw new Error(t('errors.recognitionCancelled'));
     throw err;
   } finally {
     dl.dispose();

@@ -1,6 +1,7 @@
 import React from 'react';
 import type { RenderModel } from '../types';
 import { STATUS_LABEL } from './teleprompterHelpers';
+import { useT } from '../i18n/useT';
 
 interface TrackHeaderProps {
   model: RenderModel;
@@ -21,9 +22,11 @@ export const TrackHeader = React.memo(function TrackHeader({
   model,
   chromeHidden = false,
 }: TrackHeaderProps) {
+  const t = useT();
   const title = model.track_title?.trim();
   const artist = model.track_artist?.trim();
-  const statusLabel = STATUS_LABEL[model.status] ?? model.status;
+  const statusKey = STATUS_LABEL[model.status];
+  const statusLabel = statusKey ? t(statusKey) : '';
   const hasTrack = !!(title || artist);
 
   if (!hasTrack && !statusLabel) return null;

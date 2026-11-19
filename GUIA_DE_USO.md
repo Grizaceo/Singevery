@@ -4,6 +4,8 @@ Singevery es un widget transparente que flota sobre tu pantalla, **reconoce la c
 
 No necesitas saber nada de programación. Esta guía cubre todo, desde instalar hasta cantar.
 
+**Idioma:** la interfaz viene en inglés. Para verla en español, abre **Settings** (Ajustes) y, arriba de la pestaña **Display**, elige **Español** en *Interface language / Idioma de la interfaz*; el cambio se aplica al instante.
+
 ## 1. Requisitos
 
 * Windows 10 (versión 1809 o más nueva) o Windows 11, de 64 bits, **o** Linux de 64 bits (Wayland o X11, con PipeWire o PulseAudio).

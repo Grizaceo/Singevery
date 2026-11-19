@@ -1,4 +1,5 @@
 import { useRenderModel } from './renderModelContext';
+import { useT } from './i18n/useT';
 import './SyncHoldBadge.css';
 
 /**
@@ -12,6 +13,7 @@ import './SyncHoldBadge.css';
  * ahora en la barra inferior (SyncControls), que aparece al pasar el mouse.
  */
 export function SyncHoldBadge() {
+  const t = useT();
   const model = useRenderModel();
   const hold = model.sync_hold === true;
   const unsynced = model.status === 'DISPLAYING' && model.lyrics_synced === false;
@@ -26,11 +28,11 @@ export function SyncHoldBadge() {
   return (
     <div className="sync-hold-badge" aria-live="polite">
       {hold && (
-        <span className="sync-hold-tag" title="Modo manual: la letra no se mueve sola hasta pulsar Sincronizar">
-          manual{driftText ? ` · ${driftText}` : ''}
+        <span className="sync-hold-tag" title={t('app.syncHold.manualTitle')}>
+          {t('app.syncHold.manual')}{driftText ? ` · ${driftText}` : ''}
         </span>
       )}
-      {unsynced && <span className="lyrics-unsynced-tag">letra sin sincronía</span>}
+      {unsynced && <span className="lyrics-unsynced-tag">{t('app.syncHold.unsynced')}</span>}
     </div>
   );
 }

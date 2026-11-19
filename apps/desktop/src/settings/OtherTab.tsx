@@ -7,6 +7,8 @@ import type { MatchStats, TranslationSettings } from '../types';
 import { SupportTicketForm } from '../SupportTicketForm';
 import { ReferencesSection } from './ReferencesSection';
 import type { TeacherReferenceApi } from '../useTeacherReference';
+import type { MessageKey } from '../i18n';
+import { useT } from '../i18n/useT';
 
 export interface OtherTabProps {
   translation: TranslationSettings;
@@ -20,13 +22,13 @@ export interface OtherTabProps {
 
 const TRANSLATION_PROVIDERS: {
   value: TranslationSettings['provider'];
-  label: string;
-  hint: string;
+  labelKey: MessageKey;
+  hintKey: MessageKey;
 }[] = [
-  { value: 'mymemory', label: 'MyMemory', hint: 'Sin clave, listo para usar' },
-  { value: 'local', label: 'Modelo local', hint: 'En tu equipo, sin límites' },
-  { value: 'deepl', label: 'DeepL', hint: 'Mejor calidad, con tu clave' },
-  { value: 'google', label: 'Google', hint: 'Con tu clave' },
+  { value: 'mymemory', labelKey: 'settingsMore.providerMymemoryLabel', hintKey: 'settingsMore.providerMymemoryHint' },
+  { value: 'local', labelKey: 'settingsMore.providerLocalLabel', hintKey: 'settingsMore.providerLocalHint' },
+  { value: 'deepl', labelKey: 'settingsMore.providerDeeplLabel', hintKey: 'settingsMore.providerDeeplHint' },
+  { value: 'google', labelKey: 'settingsMore.providerGoogleLabel', hintKey: 'settingsMore.providerGoogleHint' },
 ];
 
 export function OtherTab({
@@ -38,6 +40,7 @@ export function OtherTab({
   trackTitle,
   trackArtist,
 }: OtherTabProps) {
+  const t = useT();
   // MyMemory no pide credenciales: el campo pasa a ser un email opcional que
   // solo sirve para subir la cuota diaria.
   const isKeyless = translation.provider === 'mymemory';
@@ -45,11 +48,16 @@ export function OtherTab({
 
   const exportDiagnostics = async () => {
     if (!window.api) return;
-    setDiagnosticStatus('Preparando diagnóstico…');
+    setDiagnosticStatus(t('settingsMore.diagPreparing'));
     const result = await window.api.exportDiagnostics();
-    if (result.ok) setDiagnosticStatus(`Guardado en ${result.path ?? 'el archivo elegido'}`);
+    if (result.ok)
+      setDiagnosticStatus(
+        t('settingsMore.diagSaved', {
+          path: result.path ?? t('settingsMore.diagSavedFallback'),
+        }),
+      );
     else if (result.canceled) setDiagnosticStatus(null);
-    else setDiagnosticStatus(result.error ?? 'No se pudo exportar el diagnóstico');
+    else setDiagnosticStatus(result.error ?? t('settingsMore.diagExportError'));
   };
 
   const [accuracyStats, setAccuracyStats] = useState<MatchStats | null>(null);
@@ -87,12 +95,12 @@ export function OtherTab({
       if (result.ok) {
         setAccuracyStatus(
           correct
-            ? 'Gracias — quedó registrado como acierto.'
-            : 'Gracias — quedó registrado y la app está re-identificando.',
+            ? t('settingsMore.feedbackCorrectMsg')
+            : t('settingsMore.feedbackWrongMsg'),
         );
         await refreshAccuracyStats();
       } else {
-        setAccuracyStatus(result.error ?? 'No se pudo guardar el feedback');
+        setAccuracyStatus(result.error ?? t('settingsMore.feedbackSaveError'));
       }
     } finally {
       setAccuracyBusy(false);
@@ -102,13 +110,13 @@ export function OtherTab({
   const openPrivacy = async () => {
     if (!window.api) return;
     const result = await window.api.openPrivacyNotice();
-    if (!result.ok) setDiagnosticStatus(result.error ?? 'No se pudo abrir el aviso de privacidad');
+    if (!result.ok) setDiagnosticStatus(result.error ?? t('settingsMore.privacyOpenError'));
   };
 
   const openBetaGuide = async () => {
     if (!window.api) return;
     const result = await window.api.openBetaGuide();
-    if (!result.ok) setDiagnosticStatus(result.error ?? 'No se pudo abrir la guía beta');
+    if (!result.ok) setDiagnosticStatus(result.error ?? t('settingsMore.betaOpenError'));
   };
 
   return (
@@ -123,22 +131,19 @@ export function OtherTab({
 
       {/* ---------------- Traducción ---------------- */}
       <section className="settings-section">
-        <span className="settings-label settings-group-title">Traducción</span>
-        <p className="settings-hint">
-          Afecta solo al botón T del widget. Reconocer la canción y mostrar la letra funciona sin
-          configurar nada.
-        </p>
+        <span className="settings-label settings-group-title">{t('settingsMore.translationSection')}</span>
+        <p className="settings-hint">{t('settingsMore.translationHint')}</p>
         <div className="settings-provider-list">
           {TRANSLATION_PROVIDERS.map((opt) => (
             <button
               key={opt.value}
               type="button"
               className={`settings-provider-btn${translation.provider === opt.value ? ' active' : ''}`}
-              title={opt.hint}
+              title={t(opt.hintKey)}
               onClick={() => patchTranslation({ provider: opt.value })}
             >
-              <strong>{opt.label}</strong>
-              <span>{opt.hint}</span>
+              <strong>{t(opt.labelKey)}</strong>
+              <span>{t(opt.hintKey)}</span>
             </button>
           ))}
         </div>
@@ -146,14 +151,12 @@ export function OtherTab({
         {isLocal ? (
           <>
             <p className="settings-hint">
-              Traduce con un modelo en tu propio equipo: sin límite diario, sin internet y sin
-              mandar las letras a nadie. El modelo principal es <strong>Hy-MT2 1.8B Q4_K_M</strong>
-              {' '}(descarga inicial de unos 1,13 GB). El runtime integrado lo usa cuando está
-              preparado. También puedes configurar llama.cpp, LM Studio, Jan u Ollama con otro
-              modelo; se respetan tus ajustes manuales.
+              {t('settingsMore.localModelHintPre')}
+              <strong>Hy-MT2 1.8B Q4_K_M</strong>
+              {t('settingsMore.localModelHintPost')}
             </p>
             <label className="settings-label" htmlFor="local-model">
-              Modelo
+              {t('settingsMore.fieldModel')}
             </label>
             <input
               id="local-model"
@@ -164,7 +167,7 @@ export function OtherTab({
               onChange={(e) => patchTranslation({ localModel: e.target.value })}
             />
             <label className="settings-label" htmlFor="local-endpoint">
-              Dirección del runtime
+              {t('settingsMore.fieldRuntimeAddress')}
             </label>
             <input
               id="local-endpoint"
@@ -174,29 +177,22 @@ export function OtherTab({
               placeholder="http://localhost:11434/v1/chat/completions"
               onChange={(e) => patchTranslation({ localEndpoint: e.target.value })}
             />
-            <p className="settings-hint">
-              Sin runtime integrado disponible, configura la dirección y el alias de tu servidor
-              local. La velocidad depende de tu CPU/GPU y de la longitud de la letra.
-            </p>
+            <p className="settings-hint">{t('settingsMore.localModelHint2')}</p>
           </>
         ) : isKeyless ? (
           <>
             <label className="settings-label" htmlFor="translation-key">
-              Tu email (opcional)
+              {t('settingsMore.fieldYourEmail')}
             </label>
             <input
               id="translation-key"
               className="settings-text-input"
               type="email"
               value={translation.apiKey}
-              placeholder="tucorreo@ejemplo.com"
+              placeholder={t('settingsMore.emailPlaceholder')}
               onChange={(e) => patchTranslation({ apiKey: e.target.value })}
             />
-            <p className="settings-hint">
-              MyMemory funciona sin nada, con un tope de ~5.000 caracteres al día (unas 3
-              canciones). Poner un email válido lo sube a 50.000 (~30 canciones). No se envía a
-              ningún otro sitio.
-            </p>
+            <p className="settings-hint">{t('settingsMore.mymemoryHint')}</p>
           </>
         ) : (
           <>
@@ -213,14 +209,14 @@ export function OtherTab({
             />
             <p className="settings-hint">
               {translation.credentialStorage === 'secure'
-                ? 'La clave se guarda cifrada con el almacén seguro de tu sistema.'
-                : 'La clave se usa sólo durante esta sesión. Para conservarla, habilita el almacén seguro de tu sistema.'}
+                ? t('settingsMore.keySecure')
+                : t('settingsMore.keySession')}
             </p>
           </>
         )}
 
         <label className="settings-label" htmlFor="translation-lang">
-          Idioma destino
+          {t('settingsMore.targetLang')}
         </label>
         <input
           id="translation-lang"
@@ -234,12 +230,8 @@ export function OtherTab({
 
       {/* ---------------- Precisión del reconocimiento ---------------- */}
       <section className="settings-section settings-accuracy">
-        <span className="settings-label settings-group-title">Precisión</span>
-        <p className="settings-hint">
-          ¿La canción identificada era la que sonaba? Tu feedback se guarda en la bitácora local
-          (matchlog.jsonl) y sirve para medir y mejorar el reconocimiento en las próximas
-          versiones. Si te equivocaste, la app re-identifica al momento.
-        </p>
+        <span className="settings-label settings-group-title">{t('settingsMore.accuracySection')}</span>
+        <p className="settings-hint">{t('settingsMore.accuracyHint')}</p>
         <div className="settings-row settings-accuracy-actions">
           <button
             type="button"
@@ -247,7 +239,7 @@ export function OtherTab({
             disabled={accuracyBusy}
             onClick={() => void sendAccuracyFeedback(true)}
           >
-            Estaba bien
+            {t('settingsMore.feedbackYes')}
           </button>
           <button
             type="button"
@@ -255,14 +247,19 @@ export function OtherTab({
             disabled={accuracyBusy}
             onClick={() => void sendAccuracyFeedback(false)}
           >
-            Se equivocó
+            {t('settingsMore.feedbackNo')}
           </button>
         </div>
         {accuracyStats && (
           <p className="settings-hint">
             {accuracyStats.total > 0
-              ? `${Math.round(accuracyStats.accuracy * 100)}% de acierto · ${accuracyStats.matched} identificaciones · ${accuracyStats.correctFeedback} bien / ${accuracyStats.wrongFeedback} mal (tu feedback)`
-              : 'Aún no hay datos: identifica una canción y vuelve aquí.'}
+              ? t('settingsMore.accuracyStats', {
+                  pct: Math.round(accuracyStats.accuracy * 100),
+                  matched: accuracyStats.matched,
+                  correct: accuracyStats.correctFeedback,
+                  wrong: accuracyStats.wrongFeedback,
+                })
+              : t('settingsMore.accuracyEmpty')}
           </p>
         )}
         {accuracyStatus && (
@@ -274,22 +271,19 @@ export function OtherTab({
 
       {/* ---------------- Ayuda y beta ---------------- */}
       <section className="settings-section settings-support">
-        <span className="settings-label settings-group-title">Ayuda y beta</span>
+        <span className="settings-label settings-group-title">{t('settingsMore.helpSection')}</span>
         <div className="settings-row settings-support-actions">
           <button type="button" className="chrome-button" onClick={() => void openBetaGuide()}>
-            Guía para testers
+            {t('settingsMore.betaGuide')}
           </button>
           <button type="button" className="chrome-button" onClick={() => void exportDiagnostics()}>
-            Exportar diagnóstico
+            {t('settingsMore.exportDiag')}
           </button>
           <button type="button" className="chrome-button" onClick={() => void openPrivacy()}>
-            Privacidad
+            {t('settingsMore.privacy')}
           </button>
         </div>
-        <p className="settings-hint">
-          El diagnóstico guarda versión, estado técnico y logs redactados. No incluye audio ni
-          letras completas.
-        </p>
+        <p className="settings-hint">{t('settingsMore.diagHint')}</p>
         <SupportTicketForm onStatus={setDiagnosticStatus} />
         {diagnosticStatus && (
           <p className="settings-hint settings-support-status" role="status">

@@ -5,6 +5,8 @@
 import { useEffect, useRef, useState } from 'react';
 import type { RecognitionProviderMode } from '../types';
 import type { MicrophonePrefs } from '../audio/micPrefs';
+import type { MessageKey } from '../i18n';
+import { useT } from '../i18n/useT';
 
 export interface AudioTabProps {
   autoStart: boolean;
@@ -15,10 +17,10 @@ export interface AudioTabProps {
   patchMicPrefs: (partial: Partial<MicrophonePrefs>) => void;
 }
 
-const PROVIDER_OPTIONS: { value: RecognitionProviderMode; label: string; hint: string }[] = [
-  { value: 'auto', label: 'Auto', hint: 'Shazam gratis primero, AudD como respaldo' },
-  { value: 'shazam', label: 'Shazam', hint: 'Cliente no oficial, sin API key' },
-  { value: 'audd', label: 'AudD', hint: 'Requiere AUDD_API_TOKEN' },
+const PROVIDER_OPTIONS: { value: RecognitionProviderMode; label: string; hint: MessageKey }[] = [
+  { value: 'auto', label: 'Auto', hint: 'settingsMore.providerAutoHint' },
+  { value: 'shazam', label: 'Shazam', hint: 'settingsMore.providerShazamHint' },
+  { value: 'audd', label: 'AudD', hint: 'settingsMore.providerAuddHint' },
 ];
 
 export function AudioTab({
@@ -29,6 +31,7 @@ export function AudioTab({
   micPrefs,
   patchMicPrefs,
 }: AudioTabProps) {
+  const t = useT();
   // F4: dispositivos de micrófono disponibles.
   const [micDevices, setMicDevices] = useState<MediaDeviceInfo[]>([]);
   const [micLevel, setMicLevel] = useState(0);
@@ -103,9 +106,9 @@ export function AudioTab({
         setMicError(
           err instanceof DOMException && err.name === 'NotAllowedError'
             ? window.api?.platform === 'linux'
-              ? 'Permiso de micrófono denegado. Revisa que la entrada no esté bloqueada en la configuración de audio del sistema.'
-              : 'Permiso de micrófono denegado. Concede acceso en Ajustes de Windows.'
-            : 'No se pudo abrir el micrófono. Revisa que no esté en uso por otra app.',
+              ? t('settingsMore.micErrorLinuxDenied')
+              : t('settingsMore.micErrorDenied')
+            : t('settingsMore.micErrorOpen'),
         );
       }
     };
@@ -115,37 +118,31 @@ export function AudioTab({
       cancelled = true;
       stop();
     };
-  }, [micPrefs]);
+  }, [micPrefs, t]);
 
   return (
     <>
       {/* ---------------- Al abrir ---------------- */}
       <section className="settings-section">
-        <span className="settings-label settings-group-title">Al abrir</span>
+        <span className="settings-label settings-group-title">{t('settingsMore.onOpen')}</span>
         <label className="settings-check">
           <input
             type="checkbox"
             checked={autoStart}
             onChange={(e) => onAutoStartChange(e.target.checked)}
           />
-          Empezar a escuchar el audio del sistema
+          {t('settingsMore.autoStartLabel')}
         </label>
-        <p className="settings-hint">
-          Si lo desactivas, tendrás que pulsar SING (o Ctrl+Alt+S) cada vez. El micrófono nunca
-          se activa solo. En una instalación nueva esta opción viene desactivada.
-        </p>
+        <p className="settings-hint">{t('settingsMore.autoStartHint')}</p>
       </section>
 
       {/* ---------------- Micrófono (F4) ---------------- */}
       <section className="settings-section">
-        <span className="settings-label settings-group-title">Micrófono</span>
-        <p className="settings-hint">
-          El dispositivo elegido se usa para la práctica con micrófono y el medidor de tono. El
-          reconocimiento de canciones usa el audio del sistema, no este micrófono.
-        </p>
+        <span className="settings-label settings-group-title">{t('settingsMore.micSection')}</span>
+        <p className="settings-hint">{t('settingsMore.micHint')}</p>
 
         <label className="settings-label" htmlFor="mic-device">
-          Dispositivo
+          {t('settingsMore.micDevice')}
         </label>
         <select
           id="mic-device"
@@ -153,28 +150,25 @@ export function AudioTab({
           value={micPrefs.deviceId ?? ''}
           onChange={(e) => patchMicPrefs({ deviceId: e.target.value || undefined })}
         >
-          <option value="">Predeterminado del sistema</option>
+          <option value="">{t('settingsMore.micDefault')}</option>
           {micDevices.map((d) => (
             <option key={d.deviceId} value={d.deviceId}>
-              {d.label || `Micrófono ${d.deviceId.slice(0, 8)}`}
+              {d.label || t('settingsMore.micFallback', { value: d.deviceId.slice(0, 8) })}
             </option>
           ))}
         </select>
         {micDevices.length === 0 && (
-          <p className="settings-hint">
-            No se ven dispositivos: el listado requiere permiso de micrófono (se pide al usar la
-            práctica por primera vez).
-          </p>
+          <p className="settings-hint">{t('settingsMore.micNoDevices')}</p>
         )}
 
-        <span className="settings-label">Ajustes de oclusión ambiental</span>
+        <span className="settings-label">{t('settingsMore.micNoiseGroup')}</span>
         <label className="settings-check">
           <input
             type="checkbox"
             checked={micPrefs.noiseSuppression}
             onChange={(e) => patchMicPrefs({ noiseSuppression: e.target.checked })}
           />
-          Reducción de ruido
+          {t('settingsMore.micNoiseReduction')}
         </label>
         <label className="settings-check">
           <input
@@ -182,7 +176,7 @@ export function AudioTab({
             checked={micPrefs.echoCancellation}
             onChange={(e) => patchMicPrefs({ echoCancellation: e.target.checked })}
           />
-          Cancelación de eco
+          {t('settingsMore.micEchoCancellation')}
         </label>
         <label className="settings-check">
           <input
@@ -190,11 +184,11 @@ export function AudioTab({
             checked={micPrefs.autoGainControl}
             onChange={(e) => patchMicPrefs({ autoGainControl: e.target.checked })}
           />
-          Ganancia automática
+          {t('settingsMore.micAutoGain')}
         </label>
 
-        <span className="settings-label">Nivel en vivo</span>
-        <div className="settings-mic-meter" role="meter" aria-label="Nivel de micrófono">
+        <span className="settings-label">{t('settingsMore.micLiveLevel')}</span>
+        <div className="settings-mic-meter" role="meter" aria-label={t('settingsMore.micLevelAria')}>
           <div
             className="settings-mic-meter-fill"
             style={{ width: `${Math.min(100, Math.round(micLevel * 100))}%` }}
@@ -205,18 +199,18 @@ export function AudioTab({
 
       {/* ---------------- Motor de reconocimiento ---------------- */}
       <section className="settings-section">
-        <span className="settings-label settings-group-title">Motor de reconocimiento</span>
+        <span className="settings-label settings-group-title">{t('settingsMore.engine')}</span>
         <div className="settings-provider-list">
           {PROVIDER_OPTIONS.map((opt) => (
             <button
               key={opt.value}
               type="button"
               className={`settings-provider-btn${provider === opt.value ? ' active' : ''}`}
-              title={opt.hint}
+              title={t(opt.hint)}
               onClick={() => changeProvider(opt.value)}
             >
               <strong>{opt.label}</strong>
-              <span>{opt.hint}</span>
+              <span>{t(opt.hint)}</span>
             </button>
           ))}
         </div>

@@ -8,6 +8,7 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from 'react';
 import type { DesktopApi } from './types';
+import { useT } from './i18n/useT';
 
 interface WidgetHandleProps {
   api: DesktopApi | undefined;
@@ -52,6 +53,7 @@ export function WidgetHandle({
   scale = 1,
   positionX = 0.5,
 }: WidgetHandleProps) {
+  const t = useT();
   const handleElRef = useRef<HTMLDivElement>(null);
   const frameRef = useRef<number | null>(null);
   const pendingRef = useRef<{ x: number; y: number } | null>(null);
@@ -247,12 +249,8 @@ export function WidgetHandle({
       ref={handleElRef}
       className={`widget-handle${ghost ? ' ghost' : ''}`}
       style={style}
-      title={
-        compositorDrag
-          ? 'Arrastra para mover · click para modo transparente'
-          : 'Arrastra para mover · doble click para modo transparente'
-      }
-      aria-label="Mover widget y mostrar controles"
+      title={t(compositorDrag ? 'chrome.handle.dragClickTitle' : 'chrome.handle.dragDoubleTitle')}
+      aria-label={t('chrome.handle.aria')}
       onPointerDown={onPointerDown}
       onClick={onGhostClick}
       onDoubleClick={onDoubleClick}

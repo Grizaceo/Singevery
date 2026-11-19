@@ -42,10 +42,11 @@ import { NULL_OFFSET_STORE, NULL_CALIBRATION_STORE, NULL_DISPLAY_STORE, NULL_TRA
 import type { OffsetStore, CalibrationStore, DisplayStore, TranslationStore, ReadingStore } from '../services/settings';
 import { translateLines, localTranslationEngineKey } from '../services/translate';
 import type { RenderModel, Status, TimedLyrics, TrackMatch } from '../../src/types';
+import { t } from '../../src/i18n';
 
 export type { RecognitionPhase, WrongSongStrikes, AudioBoundaryKind };
 
-const IDLE_MESSAGE = 'Esperando música...';
+const IDLE_MESSAGE_KEY = 'status.idle' as const;
 
 /** Estado interno expuesto al endpoint de diagnóstico (solo lectura). */
 export interface StateDiagnostics {
@@ -472,7 +473,7 @@ export class StateStore {
   async requestTranslation(): Promise<{ ok: boolean; error?: string }> {
     const lyrics = this.engine.getLyrics();
     if (!lyrics || !this.currentTrackKey) {
-      return { ok: false, error: 'No hay letra cargada' };
+      return { ok: false, error: t('errors.noLyricsLoaded') };
     }
 
     // F1: identidad capturada al INICIO. Si durante el fetch de traducción el
@@ -496,12 +497,12 @@ export class StateStore {
       config,
     );
     if (!result.ok || !result.translations) {
-      return { ok: false, error: result.error ?? 'Error de traducción' };
+      return { ok: false, error: result.error ?? t('translation.failed') };
     }
 
     // La canción cambió mientras traducíamos: descartar (F1).
     if (this.currentTrackKey !== trackKeyAtStart) {
-      return { ok: false, error: 'La canción cambió durante la traducción' };
+      return { ok: false, error: t('errors.trackChangedDuringTranslation') };
     }
 
     const updated: TimedLyrics = {
@@ -1714,17 +1715,17 @@ export class StateStore {
   private overrideMessage(status: Status): string {
     switch (status) {
       case 'LISTENING':
-        return 'Escuchando...';
+        return t('status.listening');
       case 'IDENTIFYING':
-        return 'Identificando...';
+        return t('status.identifying');
       case 'FETCHING_LYRICS':
-        return 'Buscando letra...';
+        return t('status.fetchingLyrics');
       case 'NO_LYRICS':
-        return this.autoRetry.isPending ? 'Sin letra aún · reintentando...' : 'Sin letra disponible';
+        return this.autoRetry.isPending ? t('status.noLyricsRetrying') : t('status.noLyrics');
       case 'ERROR':
-        return this.autoRetry.isPending ? 'Error al buscar letra · reintentando...' : 'Error al buscar letra';
+        return this.autoRetry.isPending ? t('status.errorRetrying') : t('status.error');
       default:
-        return IDLE_MESSAGE;
+        return t(IDLE_MESSAGE_KEY);
     }
   }
 
@@ -1757,7 +1758,7 @@ export class StateStore {
 
     const lyrics = this.engine.getLyrics();
     if (!lyrics) {
-      this.emit(this.buildBaseModel('IDLE', IDLE_MESSAGE));
+      this.emit(this.buildBaseModel('IDLE', t(IDLE_MESSAGE_KEY)));
       return;
     }
 

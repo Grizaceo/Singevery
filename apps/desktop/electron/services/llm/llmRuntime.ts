@@ -30,6 +30,7 @@
 import { spawn } from 'child_process';
 import type { ChildProcess } from 'child_process';
 import * as fs from 'fs';
+import { t } from '../../../src/i18n';
 import { LLM_HOST, LLM_PORT } from './llmPath';
 
 /** Frecuencia del chequeo del watchdog. */
@@ -181,7 +182,7 @@ export class LlmRuntime {
       });
     } catch (err) {
       this.proc = null;
-      this.setState('error', `No se pudo lanzar el runtime: ${String(err)}`);
+      this.setState('error', t('errors.llmLaunchFailed', { detail: String(err) }));
       return false;
     }
 
@@ -196,7 +197,7 @@ export class LlmRuntime {
       if (!this.stopping) {
         // El watchdog detecta la ausencia de /health y decide el reintento.
         // Un solo camino de reintento evita bucles apretados.
-        this.setState('starting', `El runtime se cerró (code ${code})`);
+        this.setState('starting', t('errors.llmClosed', { code: code ?? 'null' }));
       }
     });
 
@@ -217,7 +218,7 @@ export class LlmRuntime {
         return;
       }
       if (Date.now() - startedAt > timeoutMs) {
-        this.setState('error', `El runtime no respondió en ${Math.round(timeoutMs / 1000)} s`);
+        this.setState('error', t('errors.llmHealthTimeout', { seconds: Math.round(timeoutMs / 1000) }));
         return;
       }
       this.startupTimer = setTimeout(poll, 1000);
@@ -260,7 +261,7 @@ export class LlmRuntime {
     }
     if (this.restarts >= LLM_MAX_RESTARTS) {
       console.error('[llm] se agotaron los reintentos; runtime deshabilitado (queda el proveedor local manual)');
-      this.setState('error', 'El runtime se cerró repetidamente; revisa el modelo o usa Ollama/LM Studio');
+      this.setState('error', t('errors.llmRepeatedClose'));
       this.stop();
       return;
     }

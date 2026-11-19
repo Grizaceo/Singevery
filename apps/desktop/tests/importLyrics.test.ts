@@ -1,5 +1,11 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, beforeEach, afterEach } from 'vitest';
 import { parseImportedLyrics } from '../electron/services/importLyrics';
+import { setLocale } from '../src/i18n';
+
+// Estas pruebas comparan los textos en español que la app ya mostraba:
+// se fija el idioma local y se restaura el inglés al terminar.
+beforeEach(() => setLocale('es'));
+afterEach(() => setLocale('en'));
 
 describe('parseImportedLyrics', () => {
   it('importa LRC sincronizado y respeta su metadata', () => {

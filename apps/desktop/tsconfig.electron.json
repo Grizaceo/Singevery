@@ -19,6 +19,6 @@
     "noUnusedParameters": true,
     "noFallthroughCasesInSwitch": true
   },
-  "include": ["electron/**/*.ts", "src/types.ts"],
-  "exclude": ["node_modules", "dist", "dist-electron", "src/**/*.tsx", "src/**/*.ts"]
+  "include": ["electron/**/*.ts", "src/types.ts", "src/i18n/**/*.ts"],
+  "exclude": ["node_modules", "dist", "dist-electron", "src/**/*.tsx"]
 }

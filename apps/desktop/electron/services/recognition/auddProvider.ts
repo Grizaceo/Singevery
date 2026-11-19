@@ -1,4 +1,5 @@
 import type { TrackMatch } from '../../../src/types';
+import { t } from '../../../src/i18n';
 import { getAuddToken } from '../env';
 import { deadline, isAbortError, seconds } from '../http';
 import type { RecognitionProvider } from './provider';
@@ -73,7 +74,7 @@ export async function identifyFromAudd(
   const form = new FormData();
   const token = getAuddToken();
   if (invalidToken != null && invalidToken === token) {
-    throw new Error('AudD #900: credencial inválida (cache de sesión; cambia el token o reinicia)');
+    throw new Error(t('errors.auddInvalidCredential'));
   }
   invalidToken = null;
   if (token) form.append('api_token', token);
@@ -91,9 +92,9 @@ export async function identifyFromAudd(
     raw = await response.text();
   } catch (err) {
     if (dl.timedOut) {
-      throw new Error(`AudD no respondió en ${seconds(AUDD_TIMEOUT_MS)} s`);
+      throw new Error(t('errors.auddTimeout', { seconds: seconds(AUDD_TIMEOUT_MS) }));
     }
-    if (isAbortError(err)) throw new Error('Reconocimiento cancelado');
+    if (isAbortError(err)) throw new Error(t('errors.recognitionCancelled'));
     throw err;
   } finally {
     dl.dispose();
@@ -107,12 +108,12 @@ export async function identifyFromAudd(
   try {
     data = JSON.parse(raw) as AuddResponse;
   } catch {
-    throw new Error(`AudD respondió con un formato inválido: ${raw.slice(0, 120)}`);
+    throw new Error(t('errors.auddInvalidFormat', { detail: raw.slice(0, 120) }));
   }
   if (data.status === 'error') {
     const code = data.error?.error_code;
     if (code === 900 && token) invalidToken = token;
-    const msg = data.error?.error_message ?? 'Error de AudD';
+    const msg = data.error?.error_message ?? t('errors.auddError');
     throw new Error(code ? `AudD #${code}: ${msg}` : msg);
   }
 

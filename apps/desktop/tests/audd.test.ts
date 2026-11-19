@@ -1,9 +1,15 @@
-import { describe, it, expect, vi, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
   parseAuddTimecode,
   identifyFromAudd,
   AUDD_TIMEOUT_MS,
 } from '../electron/services/recognition/auddProvider';
+import { setLocale } from '../src/i18n';
+
+// Estas pruebas comparan los textos en español que la app ya mostraba:
+// se fija el idioma local y se restaura el inglés al terminar.
+beforeEach(() => setLocale('es'));
+afterEach(() => setLocale('en'));
 
 describe('parseAuddTimecode', () => {
   it('parsea segundos numéricos', () => {
