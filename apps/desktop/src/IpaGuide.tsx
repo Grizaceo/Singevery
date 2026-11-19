@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { IPA_GUIDE, ipaGuideText, ipaSymbolsIn } from './ipaGuide';
+import { IPA_GUIDE, ipaGuideText, ipaSymbolsIn } from './ipaGuideData';
 import { useLocale, useT } from './i18n/useT';
 import './IpaGuide.css';
 

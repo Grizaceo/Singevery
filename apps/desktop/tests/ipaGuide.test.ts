@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, it } from 'vitest';
-import { IPA_GUIDE, ipaGuideText, ipaSymbolsIn } from '../src/ipaGuide';
+import { IPA_GUIDE, ipaGuideText, ipaSymbolsIn } from '../src/ipaGuideData';
 import { kanaToIpa } from '../electron/services/ipa';
 import { spanishToIpa } from '../electron/services/phonetics/spanish';
 import { italianToIpa } from '../electron/services/phonetics/italian';

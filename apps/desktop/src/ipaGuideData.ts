@@ -1,5 +1,5 @@
 // ============================================================================
-// ipaGuide.ts — catálogo de símbolos IPA, en español (para hispanohablantes)
+// ipaGuideData.ts — catálogo de símbolos IPA, en español (para hispanohablantes)
 // y en inglés (para angloparlantes: cada sonido se explica desde el inglés
 // cuando existe equivalente).
 //
