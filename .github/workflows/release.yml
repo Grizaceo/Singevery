@@ -109,7 +109,7 @@ jobs:
           draft: false
           generate_release_notes: true
           body_path: release-notes.md
+          # Los binarios de Linux (AppImage y tar.gz) y el video de demo se suben
+          # después a esta misma release con `gh release upload` (ver docs/RELEASING.md).
           files: |
             apps/desktop/release/Singevery-Setup-*.exe
-            docs/demo-readme.mp4
-            docs/demo.mp4

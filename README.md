@@ -1,261 +1,92 @@
 # Singevery
 
-> Teleprompter transparente para cantar: reconoce la canción que suena y muestra la letra sincronizada con karaoke en tiempo real.
+Singevery is a transparent desktop overlay that recognizes the song you are playing and shows synced, karaoke-style lyrics on top of any app or game.
 
-**Repositorio:** https://github.com/Grizaceo/Singevery
-
-Widget de escritorio transparente para **cantar con la letra sincronizada**: reconoce la canción que suena, muestra la letra con karaoke (palabra a palabra) y ofrece **ayudas de lectura por idioma** (furigana, romaji, ruby, romanización) más **traducción línea a línea** opcional.
-
-App activa: **[`apps/desktop`](apps/desktop)** — Electron + React 19 + TypeScript.
-
-## Descargas
-
-**Página del proyecto: [grizaceo.github.io/Singevery](https://grizaceo.github.io/Singevery/)** — qué hace, capturas y descarga directa.
-
-[![Latest release](https://img.shields.io/github/v/release/Grizaceo/Singevery?label=latest)](https://github.com/Grizaceo/Singevery/releases/latest)
-
-Descarga el instalador de Windows desde **[GitHub Releases](https://github.com/Grizaceo/Singevery/releases/latest)** (`Singevery-Setup-x.y.z.exe`).
-
-> **SmartScreen:** el instalador no está firmado con certificado de código. Windows puede mostrar *"Windows protegió tu PC"*. Pulsa **Más información → Ejecutar de todos modos** para continuar.
-
-**Linux:** `Singevery-x.y.z-x86_64.AppImage` (Wayland o X11). Integración con Hyprland, MPRIS y diferencias con Windows en [`apps/desktop/LINUX.md`](apps/desktop/LINUX.md).
-
-## Demo
+[Español](README.es.md) · [![Latest release](https://img.shields.io/github/v/release/Grizaceo/Singevery?include_prereleases&label=release)](https://github.com/Grizaceo/Singevery/releases/latest) [![CI](https://github.com/Grizaceo/Singevery/actions/workflows/ci.yml/badge.svg)](https://github.com/Grizaceo/Singevery/actions/workflows/ci.yml)
 
 <p align="center">
-  <img src="docs/demo.gif" alt="Demo de Singevery — reconocimiento, letra sincronizada y modos de lectura" width="760" />
+  <img src="docs/demo.gif" alt="Singevery over a game: synced karaoke lyrics, romanized Japanese, side-by-side translation, IPA and a custom lyric color" width="760" />
 </p>
 
-[▶ Ver video (MP4)](https://github.com/Grizaceo/Singevery/releases/download/v0.1.0/demo-readme.mp4) · [HD](https://github.com/Grizaceo/Singevery/releases/download/v0.1.0/demo.mp4)
+<p align="center"><a href="https://github.com/Grizaceo/Singevery/releases/download/v0.2.1-beta.3/singevery-trailer.mp4">▶ Watch the full trailer with sound (68 s, MP4)</a></p>
 
-En la grabación:
+## Status
 
-1. Pill **SING** o atajo **Ctrl+Alt+S** con música sonando (Spotify / navegador).
-2. Letra sincronizada sobre el escritorio (overlay transparente + click-through).
-3. Modos de lectura (原 / ふ / か / A / T) y ajustes (⚙).
+Public beta. It runs on **Windows (x64)** and **Linux (x64, Wayland or X11)**; the Linux build is tested on Hyprland. The interface is in English by default, with Spanish available in Settings. Free and open source.
 
-## Qué hace
+## Quickstart
 
-- **Reconoce música** desde el audio del sistema o el micrófono (Shazam gratuito en modo auto, con fallback a AudD).
-- **Sincroniza la letra** en tiempo real con resaltado karaoke y corrección de deriva.
-- **Overlay transparente** sobre el escritorio: modo pill (SING), click-through mientras cantas, arrastrable.
-- **Windows:** integración con el reproductor del SO vía SMTC (Spotify, navegador, etc.) como reloj maestro cuando está disponible.
-- **Linux:** lo mismo vía MPRIS (D-Bus): Spotify, Firefox/Zen, Chromium, VLC, mpv…
+1. Download the latest build from **[Releases](https://github.com/Grizaceo/Singevery/releases/latest)**:
+   - **Windows:** `Singevery-Setup-x.y.z.exe`. The installer is not code-signed, so SmartScreen may say *"Windows protected your PC"*: click **More info → Run anyway**.
+   - **Linux:** `Singevery-x.y.z-x86_64.AppImage` (`chmod +x` it and run it), or the `.tar.gz`. Details in [`apps/desktop/LINUX.md`](apps/desktop/LINUX.md) (Spanish).
+2. Play music (Spotify, a browser, a game…) and click the **SING** pill, or press **Ctrl+Alt+S**.
+3. The song is recognized in a few seconds and the lyrics follow it. Open **⚙ Settings** to change color, size, opacity and more.
 
-## Ayudas de lectura (cantar en idiomas que no lees)
-
-La app detecta el script del texto y genera lecturas **sin destruir la letra original**. El render `<ruby>` sirve igual para furigana japonés que para pinyin o romanización sobre cirílico.
-
-| Idioma / script | Qué genera |
-|-----------------|------------|
-| **Japonés** | Furigana (kana sobre kanji), romaji Hepburn, modo **kana** (todo en hiragana) |
-| **Coreano** | Romanización Revisada + ruby por palabra |
-| **Chino** | Pinyin por carácter + ruby (tonos opcionales en Ajustes) |
-| **Cirílico** (ruso, etc.) | Romanización latina por palabra + ruby (el “romaji” del cirílico) |
-| **Español · italiano · francés · alemán** | **Transcripción IPA** (fonética real, no aproximación de teclado) |
-| **Inglés (EE. UU.)** | **Transcripción IPA** desde el diccionario CMUdict (forma de cita; aproximada) |
-| **Otros** | Transliteración latina + ruby por token cuando hay espacios |
-
-### IPA: cómo suena de verdad
-
-El romaji te dice qué teclas pulsar; el **IPA** te dice qué hacer con la boca. En
-japonés し es `/ɕi/`, no “shi”. En alemán *ich* es `/ʔɪç/` y *Nacht* es `/naxt/`:
-la misma ⟨ch⟩ escrita, dos sonidos distintos según la vocal anterior. En italiano
-*notte* es `/notːe/` con la consonante larga que ocupa tiempo musical.
-
-Para las lenguas de alfabeto latino la app **identifica el idioma sola** a
-partir de la letra completa (palabras funcionales, diacríticos y secuencias
-ortográficas). Si no hay evidencia suficiente, o la canción está en un idioma sin
-motor —portugués—, **no anota nada**: es preferible no responder a
-transcribir con las reglas equivocadas.
-
-| Idioma | Precisión | Qué queda fuera |
-|--------|-----------|-----------------|
-| Español | Exacta | Sin acento tónico ni encadenamiento entre palabras. Norma seseo/distinción configurable en Ajustes |
-| Italiano | Exacta | e/o abiertas o cerradas solo con tilde; z se transcribe sorda |
-| Alemán | Aproximada | La cantidad de la vocal ante ⟨ch⟩ es léxica y se resuelve breve |
-| Francés | Aproximada | Sin liaison; el final `-ent` verbal y algunos timbres son aproximados |
-| Inglés (EE. UU.) | Aproximada | Pronunciación de diccionario (CMUdict) en forma de cita: sin reducciones del habla rápida ni flap de la t; las palabras fuera del diccionario quedan sin transcribir |
-| Japonés | Exacta | Tabla kana→IPA exhaustiva (ver `docs/PLAN_IPA_2026-08-03.md`) |
-
-Detalle de las reglas y de cada límite: [`docs/IPA_LENGUAS_LATINAS_2026-08-04.md`](docs/IPA_LENGUAS_LATINAS_2026-08-04.md).
-
-### Modos en el widget
-
-| Control | Función |
-|---------|---------|
-| **原 / Orig** | Texto original |
-| **ふ / Ruby** | Lectura encima (furigana, pinyin, romanización…) |
-| **か** | Solo hiragana (japonés; ideal si aún no lees kanji/katakana) |
-| **A** | Romanización latina |
-| **ふ+A / R+A** | Ruby + romanización debajo de la línea actual |
-| **IPA** | Transcripción fonética (japonés, español, italiano, francés, alemán, inglés) |
-| **ふ+IPA** | Furigana arriba + IPA debajo (japonés) |
-| **T** | Traducción de la línea actual |
-| **?** | Ayuda con ejemplos por idioma (+ enlace a [Tofugu Hiragana](https://www.tofugu.com/japanese/learn-hiragana/) en japonés). En modo IPA abre además la **guía de símbolos** del idioma activo |
-
-Las etiquetas se adaptan al idioma de la canción (p. ej. 原/ふ/A en japonés, Orig/Ruby/A en el resto).
-
-## Color de letra
-
-En **Ajustes (⚙) → Color de letra** puedes personalizar cómo se ve el texto del teleprompter:
-
-| Opción | Descripción |
-|--------|-------------|
-| **Presets** | Blanco, amarillo, cian, verde, rosa, negro |
-| **Color personalizado** | Selector libre (`#hex`) |
-| **Ajuste automático (experimental)** | Mide el brillo del fondo bajo el widget y elige texto claro u oscuro para mantener contraste |
-
-El color elegido se aplica a toda la jerarquía visual (línea actual, adyacentes, lejanas, karaoke cantado, romaji y traducción). En modo automático se **conserva tu color preferido** mientras contraste con el fondo; si no, cae a blanco u oscuro puro.
-
-> **Experimental:** el ajuste automático captura una miniatura de pantalla cada ~3 s (procesada en memoria, sin almacenar ni enviar). Puede producir un ligero parpadeo en Windows. Mientras está activo, el widget no aparece en grabaciones ni en compartir pantalla (`setContentProtection`).
-
-## Traducción
-
-Al activar **T** se traduce la canción completa y el resultado se cachea en disco.
-El botón cicla entre tres vistas: sin traducción → bajo la línea actual → **texto
-paralelo** (letra y traducción en columnas, iluminándose a la par).
-
-**Funciona sin configurar nada.** El proveedor por defecto es **MyMemory**, que no
-pide registro ni clave. Su cuota gratuita es de ~5.000 caracteres al día (unas 3
-canciones); poniendo un email en Ajustes sube a 50.000 (~30 canciones).
-
-Configura en **Ajustes (⚙) → Traducción**:
-
-| Campo | Descripción |
-|-------|-------------|
-| **Proveedor** | MyMemory (default, sin clave) · **Modelo local** · DeepL o Google con tu clave |
-| **Email / API key** | En MyMemory, email opcional para subir la cuota. En DeepL/Google, tu clave |
-| **Idioma destino** | Código ISO (default `es`) |
-
-### Modelo local (sin límites y sin internet)
-
-Traduce con un modelo en tu propio equipo: **sin cuota diaria y sin mandar
-las letras a un tercero**. El modelo principal del runtime integrado es
-**Hy-MT2-1.8B Q4_K_M**, GGUF oficial de Tencent (~1,13 GB, Apache-2.0).
-La descarga inicial requiere internet; la inferencia posterior es local.
-
-El runtime carga `userData/models/hymt2-1.8b-q4_k_m.gguf`. No reutiliza ni
-borra el archivo anterior de TranslateGemma. Para desarrollo también se puede
-usar `LLM_SERVER_BIN=/ruta/llama-server` y `LLM_MODEL_PATH=/ruta/Hy-MT2-1.8B-Q4_K_M.gguf`.
-El modelo se obtiene desde:
-https://huggingface.co/tencent/Hy-MT2-1.8B-GGUF/resolve/main/Hy-MT2-1.8B-Q4_K_M.gguf
-
-**Disponibilidad:** los paquetes beta.3 generados en esta revisión no incluyen
-`llama-server`. El modelo local requiere preparar ese runtime y el GGUF o
-configurar un servidor local externo. La interfaz actual permite configurar
-endpoint/modelo; no ofrece un asistente de instalación/descarga del runtime.
-MyMemory sigue disponible sin esa preparación.
-
-En **Ajustes → Traducción → Modelo local**, el runtime integrado preparado
-redirige automáticamente el endpoint predeterminado. Su alias es
-`hymt2-singevery`; ese alias NO es un nombre descargable de Ollama.
-Sin runtime integrado preparado, configura el endpoint y el alias que sirva
-tu llama.cpp, LM Studio, Jan u Ollama. Se conservan las configuraciones
-persistidas y endpoints personalizados; TranslateGemma sigue siendo una
-alternativa manual (`ollama pull translategemma:4b`).
-
-La caché local distingue modelo, endpoint y versión del prompt: las traducciones
-anteriores sin procedencia se recalculan al solicitar traducción local, sin borrar letras.
-
-El prompt usa contexto entre líneas, conserva negaciones/tiempos y traduce
-líneas bilingües. La validación rechaza numeración duplicada/desordenada,
-texto extra y omisiones de líneas con contenido. No garantiza fidelidad
-semántica. Por ahora se espera la respuesta de la canción completa: esta
-migración no implementa publicación progresiva. El rendimiento depende del
-equipo y la longitud de la letra; no requiere GPU, pero CPU puede ser lento.
-El proveedor gratuito predeterminado se conserva para equipos sin runtime local.
-
-DeepL y Google dan buena calidad sin instalar nada, pero requieren que consigas
-una credencial.
-
-## Estructura del repo
-
-```
-apps/desktop/     App Electron (main + renderer React)
-native/smtc/      Sidecar C# (.NET 8) — metadata del reproductor Windows
-native/wakeword/  Referencia para activación por voz (opt-in)
-legacy/           Código archivado (Python/kiosk) — no se mantiene
-```
-
-## Puesta en marcha
+From source (needs a recent Node.js LTS):
 
 ```bash
-cd apps/desktop
-npm install
-npm run dev:electron      # Windows: GPU on · Linux: GPU off (auto)
-npm run dev:electron:win  # Windows explícito
-npm run dev:kill          # Si no abre tras Ctrl+C: mata Electron + puerto 5173
+git clone https://github.com/Grizaceo/Singevery.git
+cd Singevery/apps/desktop && npm install
+npm run dev:electron
 ```
 
-### Windows (recomendado)
+## What it does
 
-1. Compila el sidecar SMTC (sincronización precisa con Spotify, etc.):
+- **Recognizes the song** from system audio or the microphone. Shazam goes first (free, no key), and [AudD](https://audd.io) is the fallback if you add your own token. It also reads your player (SMTC on Windows, MPRIS on Linux) to know the exact position.
+- **Synced karaoke lyrics**, word by word, with drift correction and manual sync controls (jump lines, offset, global calibration).
+- **Reading aids** for languages you can't read yet, shown on top of the original lyrics:
 
-   ```powershell
-   .\native\smtc\build.ps1
-   ```
+| Language / script | What you get |
+|---|---|
+| Japanese | Furigana, romaji (Hepburn), kana-only mode, IPA |
+| Korean | Revised Romanization, per word |
+| Chinese | Pinyin per character (tone marks optional) |
+| Cyrillic | Latin romanization, per word |
+| Spanish · Italian · French · German · English (US) | IPA transcription, with a guide for every symbol |
 
-2. Opcional: crea `apps/desktop/.env` con tu token de AudD (fallback):
+- **Live translation**, under the current line or side by side with the lyrics. MyMemory works with no setup, with a small free daily quota (more if you add an email). DeepL or Google work with your own key. You can also translate offline with a local model ([Hy-MT2](docs/HYMT2_TRANSLATION.md)) served by your own llama.cpp, LM Studio or Ollama.
+- **Make it yours:** lyric color (presets, any custom color, or automatic contrast), text size, separate lyric and background opacity, visible lines and alignment. You can also change the handle's color, size and position, pick which buttons are shown, and turn on a mirror mode for projecting onto glass.
+- **Stays out of your way:** a click-through mode lets your clicks reach the game or app behind the lyrics. Toggle it with **Ctrl+Alt+T**, or let it turn on after a while without touching the widget. The window also collapses into a small **SING** pill.
+- **Practice tools:** a pitch monitor against the song's melody, saved lines for review, and CSV export.
 
-   ```env
-   AUDD_API_TOKEN=tu_token
-   ```
+## How it works
 
-3. Opcional: en **Ajustes → Traducción**, pon tu email (sube la cuota gratuita) o una clave de DeepL/Google para mejor calidad.
-
-4. Atajo global **Ctrl+Alt+S** o clic en la pill **SING** para expandir e identificar.
-
-Guía completa: [`apps/desktop/WINDOWS.md`](apps/desktop/WINDOWS.md).
-
-## Reconocimiento de música
-
-| Modo | Descripción |
-|------|-------------|
-| **Auto** (default) | Shazam (gratis, sin API key) → AudD si hay token y Shazam no reconoce |
-| **Shazam** | Solo cliente no oficial |
-| **AudD** | Requiere `AUDD_API_TOKEN` en `.env` |
-
-Selector en **Ajustes (⚙)** del widget. También ahí: opacidad, **color de letra**, fuente, traducción (MyMemory sin clave, o DeepL/Google) y pinyin con/sin tonos.
-
-## Scripts útiles
-
-```bash
-npm test              # Vitest — pruebas unitarias y de regresión
-npm run build         # Build producción
-npm run package       # Instalador Windows (electron-builder)
+```mermaid
+flowchart LR
+  A[System audio or mic] --> R[Recognition<br/>Shazam, AudD]
+  P[OS media session<br/>SMTC or MPRIS] --> S
+  R --> S[Song + position]
+  S --> L[Lyrics<br/>LRCLIB, NetEase, Letras<br/>+ local cache]
+  L --> E[Sync engine<br/>drift correction]
+  E --> O[Transparent overlay<br/>karaoke, reading aids,<br/>translation]
 ```
 
-## Generar el instalador (Windows)
+The app is Electron + React + TypeScript and lives in [`apps/desktop`](apps/desktop). The main process captures audio, talks to the recognizers and lyric providers, keeps a local cache and runs the sync engine; the renderer draws the overlay. Reading aids are computed locally: kuromoji for Japanese, CMUdict for English IPA, and rule-based engines for the other IPA languages. Audio clips are sent to the recognizer only to identify the song; the app never saves recordings to disk.
 
-Desde `apps/desktop`, con Node y el SDK de .NET 8 instalados:
-
-```bash
-npm run package:full
+```
+apps/desktop/   Electron app (main process + React renderer), tests in apps/desktop/tests
+native/smtc/    C# (.NET 8) sidecar that reads the Windows media session
+docs/           Guides, design notes and audits (docs/archive/ holds older plans)
+legacy/         Archived Python prototype, not maintained
 ```
 
-Esto (1) publica el sidecar SMTC **autocontenido** (`npm run build:smtc` — el
-equipo destino no necesita .NET instalado), (2) hace el build de producción,
-(3) regenera `build/THIRD-PARTY-NOTICES.txt` con las licencias de las
-dependencias y (4) produce `release/Singevery-Setup-<version>.exe`.
+## How this was built
 
-El instalador muestra la licencia (`build/license.txt`) y deja junto al
-ejecutable `GUIA_DE_USO.md`, `AVISO_LEGAL.md`, `LICENSE.txt` y
-`THIRD-PARTY-NOTICES.txt`. Si solo cambiaste código de la app (no el sidecar),
-basta `npm run package`.
+Cristóbal (GitHub: Grizaceo) designed Singevery and decided what it does and what gets merged. He reviewed each change by using the app, testing it by hand on his own Windows and Linux (Hyprland) machines. A large part of the code was written by AI coding assistants, including Claude Code and Devin, working from his instructions.
 
-> El instalador no va firmado con certificado de código (SmartScreen avisará
-> la primera vez). Para distribución seria, considerar un certificado OV/EV
-> más adelante.
+What was verified: the unit and regression tests run in CI on every push, and the Windows installer is only published when lint, tests and a launch smoke test pass. What was not verified automatically: there are no end-to-end tests of song recognition or of the overlay on screen, so those were only checked by hand.
 
-## Documentación para usuarios
+## Limits
 
-* **[Guía de uso](GUIA_DE_USO.md)** — instalación y uso paso a paso, sin
-  conocimientos técnicos.
-* **[Aviso legal](AVISO_LEGAL.md)** — licencia, letras y servicios de
-  terceros, marcas y privacidad.
+- **Beta.** Expect rough edges; please [open an issue](https://github.com/Grizaceo/Singevery/issues) when something breaks. Settings → Other → Help & beta prepares a report you review before sending.
+- **Unsigned installer.** Windows SmartScreen warns the first time. Each release lists the installer's SHA-256 so you can verify the download.
+- **Linux click-through needs Hyprland.** On other Wayland compositors the overlay works, but clicks don't pass through it. macOS is not supported.
+- **Recognition depends on third-party services.** Shazam is used through an unofficial client and may stop working; AudD needs your own token.
+- **Lyrics are not always available or synced**: they come from public providers and coverage varies by song and language.
+- **IPA is exact for Spanish, Italian and Japanese and approximate for French, German and English**: details in [`docs/IPA_LENGUAS_LATINAS_2026-08-04.md`](docs/IPA_LENGUAS_LATINAS_2026-08-04.md) (Spanish).
+- **The local translation model is not bundled**: you need to run your own llama.cpp, LM Studio or Ollama server.
+- **Some documentation is only in Spanish** for now: the [user guide](GUIA_DE_USO.md), the [legal notice](AVISO_LEGAL.md) and the Linux and Windows notes.
 
-## Licencia
+## License
 
-[Apache-2.0](LICENSE) — Copyright © 2026 Gris. Licencias de terceros: se generan en
-`apps/desktop/build/THIRD-PARTY-NOTICES.txt` y se instalan con la app.
+[Apache-2.0](LICENSE) © 2026 Gris. Third-party licenses are generated in `apps/desktop/build/THIRD-PARTY-NOTICES.txt` and installed with the app. How releases are made: [`docs/RELEASING.md`](docs/RELEASING.md).

@@ -26,12 +26,19 @@
    - `npm ci` in `apps/desktop`
    - `npm run lint` + `npm test` (quality gate — no red tests reach users)
    - `npm run package:full` → self-contained SMTC sidecar + NSIS installer
-   - verifies `native/smtc/dist/espejo-smtc.exe` exists before publishing
-   - Uploads `Singevery-Setup-X.Y.Z.exe` plus `docs/demo-readme.mp4` and `docs/demo.mp4` to [GitHub Releases](https://github.com/Grizaceo/Singevery/releases) (linked from the README; the inline demo is the GIF in `docs/demo.gif`).
+   - verifies `apps/desktop/build/smtc-dist/espejo-smtc.exe` exists and smoke-tests the packaged app before publishing
+   - Uploads `Singevery-Setup-X.Y.Z.exe` to [GitHub Releases](https://github.com/Grizaceo/Singevery/releases).
+5. **Linux and the demo video** are added to the same release from a Linux machine:
+   ```bash
+   cd apps/desktop && npm run install:linux   # builds, verifies and installs; artifacts stay in release/
+   gh release upload vX.Y.Z \
+     release/Singevery-X.Y.Z-x86_64.AppImage \
+     release/Singevery-X.Y.Z-x86_64.AppImage.sha256.txt \
+     release/Singevery-X.Y.Z-x64.tar.gz \
+     path/to/singevery-trailer.mp4
+   ```
 
-The README embeds **`docs/demo.gif`** inline (GitHub does not play MP4 from release URLs without downloading). For a native MP4 player in the README, edit it once on github.com and drag `docs/demo-readme.mp4` into the editor — GitHub uploads it to `user-attachments` and inserts a playable URL.
-
-If you add or replace demo videos on an **existing** release without cutting a new tag, run the **Upload demo assets** workflow (`Actions → Upload demo assets → Run workflow`) or push a change under `docs/demo-readme.mp4`.
+The README embeds **`docs/demo.gif`** inline (GitHub does not play MP4 from release URLs without downloading) and links to the full trailer attached to the release. Videos are never committed: anything over a few MB lives as a release asset. Older demos stay attached to the release they shipped with (the v0.1.0 videos are on [v0.1.0](https://github.com/Grizaceo/Singevery/releases/tag/v0.1.0)); the old GIF is in `docs/archive/`.
 
 ## Local builds
 
