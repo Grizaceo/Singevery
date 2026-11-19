@@ -17,6 +17,11 @@ type FetchLike = (input: string | URL, init?: RequestInit) => Promise<Response>;
 let electronFetch: FetchLike | null | undefined;
 
 async function resolveElectronFetch(): Promise<FetchLike | null> {
+  // Fuera de Electron (vitest, Node puro) ni siquiera se intenta el import:
+  // en el CI, con decenas de workers en paralelo, ese primer `import('electron')`
+  // llegó a tardar más de 5 s y tumbaba por timeout el primer test de red de
+  // cada archivo (lyricsService, lyricsProviders), de forma intermitente.
+  if (typeof process === 'undefined' || !process.versions?.electron) return null;
   try {
     // En Node puro el paquete `electron` exporta un string (ruta al binario):
     // `.net` no existe y caemos al fetch global. En el main de Electron sí.
