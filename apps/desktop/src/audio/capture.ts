@@ -1,5 +1,6 @@
 import type { AudioSource } from '../types';
 import { readMicrophonePrefs, writeMicrophonePrefs } from './micPrefs';
+import { t } from '../i18n';
 
 const RECORD_MS = 6000;
 const PAUSE_MS = 2000;
@@ -155,7 +156,7 @@ export class SystemAudioSession implements AudioCaptureSession {
     const audioTracks = displayStream.getAudioTracks();
     if (audioTracks.length === 0) {
       displayStream.getTracks().forEach((track) => track.stop());
-      throw new Error('No se pudo capturar audio del sistema (sin tracks de audio)');
+      throw new Error(t('hooks.systemAudioNoTracks'));
     }
 
     this.displayStream = displayStream;
@@ -184,7 +185,7 @@ export async function openMicrophoneStream(): Promise<MediaStream> {
       // Mensajes accionables según el motivo (permiso vs ausencia de micrófono).
       const name = err instanceof DOMException ? err.name : '';
       if (name === 'NotAllowedError' || name === 'SecurityError') {
-        throw new Error('Permiso de micrófono denegado — habilítalo para el widget.');
+        throw new Error(t('hooks.micPermissionDenied'));
       }
       if (name === 'NotFoundError' || name === 'OverconstrainedError') {
         if (withDevice) {
@@ -194,9 +195,9 @@ export async function openMicrophoneStream(): Promise<MediaStream> {
           writeMicrophonePrefs({ ...prefs, deviceId: undefined });
           return request(false);
         }
-        throw new Error('No se encontró un micrófono disponible.');
+        throw new Error(t('hooks.micNotFound'));
       }
-      throw err instanceof Error ? err : new Error('No se pudo abrir el micrófono.');
+      throw err instanceof Error ? err : new Error(t('hooks.micOpenFailed'));
     }
   };
 
@@ -285,7 +286,7 @@ async function recordWithMediaRecorder(
     recorder.onerror = (event) => {
       signal?.removeEventListener('abort', onAbort);
       cleanup();
-      const err = event instanceof ErrorEvent ? event.error : new Error('Error al grabar audio');
+      const err = event instanceof ErrorEvent ? event.error : new Error(t('hooks.recordAudioError'));
       reject(err);
     };
 

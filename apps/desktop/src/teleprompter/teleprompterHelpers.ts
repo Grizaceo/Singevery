@@ -1,4 +1,5 @@
-import type { RenderLine } from '../types';
+import type { MessageKey } from '../i18n';
+import type { RenderLine, Status } from '../types';
 
 /** Parte líneas previas: lejana + adyacente (última). */
 export function splitPreviousTiers(lines: RenderLine[]): {
@@ -62,12 +63,12 @@ export function tierSizes(
   };
 }
 
-export const STATUS_LABEL: Record<string, string> = {
-  IDLE: 'Esperando',
-  LISTENING: 'Escuchando',
-  IDENTIFYING: 'Identificando',
-  FETCHING_LYRICS: 'Buscando letra',
+export const STATUS_LABEL: Record<Status, MessageKey | ''> = {
+  IDLE: 'teleprompter.status.idle',
+  LISTENING: 'teleprompter.status.listening',
+  IDENTIFYING: 'teleprompter.status.identifying',
+  FETCHING_LYRICS: 'teleprompter.status.fetchingLyrics',
   DISPLAYING: '',
-  NO_LYRICS: 'Sin letra',
-  ERROR: 'Error',
+  NO_LYRICS: 'teleprompter.status.noLyrics',
+  ERROR: 'teleprompter.status.error',
 };

@@ -1,4 +1,5 @@
 import './Pill.css';
+import { useT } from './i18n/useT';
 
 interface PillProps {
   /** Click en SING: expande la pill e inicia el reconocimiento. */
@@ -17,11 +18,12 @@ interface PillProps {
  * la canción que suena.
  */
 export function Pill({ onSing, trackTitle }: PillProps) {
+  const t = useT();
   const label = trackTitle
-    ? `SING — suena «${trackTitle}» · clic para abrir`
-    : 'SING — buscar la canción que suena';
+    ? t('chrome.pill.playing', { title: trackTitle })
+    : t('chrome.pill.idle');
   return (
-    <div className="pill" title="Arrastra para mover">
+    <div className="pill" title={t('chrome.pill.dragTitle')}>
       <button
         type="button"
         className={trackTitle ? 'pill-btn has-track' : 'pill-btn'}

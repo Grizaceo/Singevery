@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { Status } from './types';
 import { useRenderModel } from './renderModelContext';
+import { useT } from './i18n/useT';
 import './SyncControls.css';
 
 const SYNCABLE_STATUSES: Set<Status> = new Set([
@@ -20,6 +21,7 @@ const OFFSET_STEP_MS = 250;
  * este botón abre el panel con saltos de línea, offset por pista y calibración.
  */
 export function SyncControls() {
+  const t = useT();
   const model = useRenderModel();
   const hasLyrics = SYNCABLE_STATUSES.has(model.status);
   const [offsetMs, setOffsetMs] = useState(0);
@@ -74,33 +76,33 @@ export function SyncControls() {
           type="button"
           className="chrome-button sync-resume"
           onClick={() => void window.api?.resumeSync()}
-          title="Volver a seguir la canción automáticamente"
-          aria-label="Sincronizar: volver a seguir la canción automáticamente"
+          title={t('app.sync.resumeTitle')}
+          aria-label={t('app.sync.resumeAria')}
         >
-          Sincronizar
+          {t('app.sync.resume')}
         </button>
       )}
       <button
         type="button"
         className={`chrome-button sync-toggle${open ? ' active' : ''}`}
         onClick={() => setOpen((value) => !value)}
-        title="Ajustar sincronización de la letra (saltos, offset, calibración). La rueda del mouse también ajusta el desfase."
-        aria-label="Ajustar sincronización"
+        title={t('app.sync.toggleTitle')}
+        aria-label={t('app.sync.toggleAria')}
         aria-expanded={open}
       >
         ⇄
       </button>
 
       {open && (
-        <section className="sync-panel" aria-label="Ajustes de sincronización">
+        <section className="sync-panel" aria-label={t('app.sync.panelAria')}>
           <div className="sync-row">
             <button
               type="button"
               className="chrome-button sync-btn seek"
               onClick={() => void seekLine(-1)}
               disabled={!hasLyrics}
-              title="Retroceder una línea"
-              aria-label="Retroceder una línea"
+              title={t('app.sync.prevLine')}
+              aria-label={t('app.sync.prevLine')}
             >
               ◀
             </button>
@@ -109,12 +111,12 @@ export function SyncControls() {
               className="chrome-button sync-btn seek"
               onClick={() => void seekLine(1)}
               disabled={!hasLyrics}
-              title="Adelantar una línea"
-              aria-label="Adelantar una línea"
+              title={t('app.sync.nextLine')}
+              aria-label={t('app.sync.nextLine')}
             >
               ▶
             </button>
-            <span className="sync-label">línea</span>
+            <span className="sync-label">{t('app.sync.lineLabel')}</span>
           </div>
 
           <div className="sync-row offset-row">
@@ -123,12 +125,12 @@ export function SyncControls() {
               className="chrome-button sync-btn offset-adj"
               onClick={() => void adjustOffset(-OFFSET_STEP_MS)}
               disabled={!hasLyrics}
-              title={`Atrasar letra ${OFFSET_STEP_MS}ms (esta pista)`}
-              aria-label="Atrasar letra"
+              title={t('app.sync.delayTitle', { ms: OFFSET_STEP_MS })}
+              aria-label={t('app.sync.delayAria')}
             >
               −
             </button>
-            <span className="sync-offset-label" title="Offset de sincronización (esta pista)">
+            <span className="sync-offset-label" title={t('app.sync.offsetTitle')}>
               {offsetMs === 0 ? '0' : `${offsetMs > 0 ? '+' : ''}${offsetMs}`}
             </span>
             <button
@@ -136,8 +138,8 @@ export function SyncControls() {
               className="chrome-button sync-btn offset-adj"
               onClick={() => void adjustOffset(OFFSET_STEP_MS)}
               disabled={!hasLyrics}
-              title={`Adelantar letra ${OFFSET_STEP_MS}ms (esta pista)`}
-              aria-label="Adelantar letra"
+              title={t('app.sync.advanceTitle', { ms: OFFSET_STEP_MS })}
+              aria-label={t('app.sync.advanceAria')}
             >
               +
             </button>
@@ -146,8 +148,8 @@ export function SyncControls() {
                 type="button"
                 className="chrome-button sync-btn offset-apply-all"
                 onClick={() => void applyToAll()}
-                title="Este desfase pasa en todas las canciones: aplicarlo de forma global para que las próximas ya salgan sincronizadas"
-                aria-label="Aplicar este ajuste a todas las canciones"
+                title={t('app.sync.applyAllTitle')}
+                aria-label={t('app.sync.applyAllAria')}
               >
                 ⇈
               </button>
@@ -161,12 +163,12 @@ export function SyncControls() {
               className="chrome-button sync-btn offset-adj"
               onClick={() => void adjustCalibration(-50)}
               disabled={!hasLyrics}
-              title="Reducir calibración global 50ms"
-              aria-label="Reducir calibración"
+              title={t('app.sync.decreaseCalibTitle', { ms: 50 })}
+              aria-label={t('app.sync.decreaseCalibAria')}
             >
               −
             </button>
-            <span className="sync-offset-label calibration-label" title="Calibración global de latencia">
+            <span className="sync-offset-label calibration-label" title={t('app.sync.calibTitle')}>
               {calibrationMs === 0 ? '0' : `${calibrationMs > 0 ? '+' : ''}${calibrationMs}`}cal
             </span>
             <button
@@ -174,12 +176,12 @@ export function SyncControls() {
               className="chrome-button sync-btn offset-adj"
               onClick={() => void adjustCalibration(50)}
               disabled={!hasLyrics}
-              title="Aumentar calibración global 50ms"
-              aria-label="Aumentar calibración"
+              title={t('app.sync.increaseCalibTitle', { ms: 50 })}
+              aria-label={t('app.sync.increaseCalibAria')}
             >
               +
             </button>
-            <span className="sync-label">calibración</span>
+            <span className="sync-label">{t('app.sync.calibrationLabel')}</span>
           </div>
         </section>
       )}

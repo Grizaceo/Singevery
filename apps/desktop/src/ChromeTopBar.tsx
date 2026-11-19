@@ -8,6 +8,7 @@ import type { ScriptHint } from './scriptDetect';
 import { readWidgetControls } from './widgetPrefs';
 import './ChromeBars.css';
 import { useFitBar } from './useFitBar';
+import { useT } from './i18n/useT';
 
 interface ChromeTopBarProps {
   api: DesktopApi | undefined;
@@ -47,6 +48,7 @@ export function ChromeTopBar({
   onCollapse,
   onOpenSettings,
 }: ChromeTopBarProps) {
+  const t = useT();
   const barRef = useRef<HTMLDivElement>(null);
   useFitBar(barRef);
   const [importing, setImporting] = useState(false);
@@ -64,14 +66,17 @@ export function ChromeTopBar({
       const result = await api.importLyrics();
       if (result.canceled) return;
       if (!result.ok) {
-        setImportStatus(result.error ?? 'No se pudo importar');
+        setImportStatus(result.error ?? t('chrome.topBar.importError'));
         return;
       }
       setImportStatus(
-        `${result.lineCount ?? 0} líneas · ${result.synced ? 'sincronizada' : 'texto plano'}`,
+        t('chrome.topBar.importStatus', {
+          count: result.lineCount ?? 0,
+          mode: t(result.synced ? 'chrome.topBar.importSynced' : 'chrome.topBar.importPlain'),
+        }),
       );
     } catch {
-      setImportStatus('No se pudo importar');
+      setImportStatus(t('chrome.topBar.importError'));
     } finally {
       setImporting(false);
     }
@@ -95,8 +100,8 @@ export function ChromeTopBar({
             className="chrome-button"
             onClick={() => void importLyrics()}
             disabled={!api || importing}
-            title="Importar letra propia o autorizada (LRC/TXT)"
-            aria-label="Importar letra LRC o TXT"
+            title={t('chrome.topBar.importTitle')}
+            aria-label={t('chrome.topBar.importAria')}
           >
             {importing ? '…' : '↥'}
           </button>
@@ -123,8 +128,8 @@ export function ChromeTopBar({
             type="button"
             className="chrome-button"
             onClick={onOpenSettings}
-            title="Ajustes"
-            aria-label="Abrir ajustes"
+            title={t('chrome.topBar.settingsTitle')}
+            aria-label={t('chrome.topBar.openSettings')}
           >
             ⚙
           </button>

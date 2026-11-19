@@ -1,3 +1,4 @@
+import { t } from './i18n';
 import type { RenderModel } from './types';
 
 /**
@@ -7,7 +8,11 @@ import type { RenderModel } from './types';
  */
 export const INITIAL_RENDER_MODEL: RenderModel = {
   previous_lines: [],
-  current_line: { text: "Esperando música..." },
+  current_line: {
+    get text() {
+      return t('status.idle');
+    },
+  },
   next_lines: [],
   font_scale: 1.0,
   opacity: 1.0,

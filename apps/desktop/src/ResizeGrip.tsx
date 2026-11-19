@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, type PointerEvent as ReactPointerEvent } from 'react';
 import type { DesktopApi } from './types';
 import './ResizeGrip.css';
+import { useT } from './i18n/useT';
 
 interface Props {
   api: DesktopApi | undefined;
@@ -13,6 +14,7 @@ interface Props {
  * el canal IPC. El mínimo de tamaño lo aplica el proceso principal.
  */
 export function ResizeGrip({ api }: Props) {
+  const t = useT();
   const cleanupRef = useRef<(() => void) | null>(null);
   useEffect(() => () => cleanupRef.current?.(), []);
   const frameRef = useRef<number | null>(null);
@@ -113,8 +115,8 @@ export function ResizeGrip({ api }: Props) {
     <div
       className="resize-grip"
       onPointerDown={onPointerDown}
-      title="Arrastra para redimensionar"
-      aria-label="Redimensionar ventana"
+      title={t('chrome.resizeGrip.title')}
+      aria-label={t('chrome.resizeGrip.aria')}
       role="separator"
     >
       <svg viewBox="0 0 12 12" width="12" height="12" aria-hidden="true">

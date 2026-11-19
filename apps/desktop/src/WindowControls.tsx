@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { DesktopApi } from './types';
 import './WindowControls.css';
+import { useT } from './i18n/useT';
 
 interface WindowControlsProps {
   api: DesktopApi | undefined;
@@ -10,6 +11,7 @@ interface WindowControlsProps {
 }
 
 export function WindowControls({ api, onCollapse, compact = false }: WindowControlsProps) {
+  const t = useT();
   const [activePreset, setActivePreset] = useState<'L' | null>(null);
 
   useEffect(() => {
@@ -41,8 +43,8 @@ export function WindowControls({ api, onCollapse, compact = false }: WindowContr
             type="button"
             className="chrome-button win-btn collapse"
             onClick={onCollapse}
-            title="Colapsar a viñeta (SING)"
-            aria-label="Colapsar a viñeta"
+            title={t('chrome.windowControls.collapseTitle')}
+            aria-label={t('chrome.windowControls.collapseAria')}
           >
             ◧
           </button>
@@ -51,8 +53,8 @@ export function WindowControls({ api, onCollapse, compact = false }: WindowContr
           type="button"
           className="chrome-button win-btn close danger"
           onClick={handleClose}
-          title="Cerrar"
-          aria-label="Cerrar"
+          title={t('chrome.windowControls.close')}
+          aria-label={t('chrome.windowControls.close')}
         >
           ×
         </button>
@@ -61,8 +63,8 @@ export function WindowControls({ api, onCollapse, compact = false }: WindowContr
             type="button"
             className={`chrome-button win-btn preset${activePreset === 'L' ? ' active' : ''}`}
             onClick={() => void applyPresetL()}
-            title="Grande (760×560)"
-            aria-label="Tamaño grande"
+            title={t('chrome.windowControls.largeTitle')}
+            aria-label={t('chrome.windowControls.largeAria')}
           >
             L
           </button>

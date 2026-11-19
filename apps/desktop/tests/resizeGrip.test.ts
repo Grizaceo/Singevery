@@ -8,6 +8,7 @@ vi.mock('react', async original => ({
   useRef: <T>(value: T) => ({ current: value }),
   useCallback: (callback: unknown) => callback,
   useEffect: (effect: () => (() => void)) => { lifecycle.cleanup.push(effect()); },
+  useContext: () => null,
 }));
 import { ResizeGrip } from '../src/ResizeGrip';
 

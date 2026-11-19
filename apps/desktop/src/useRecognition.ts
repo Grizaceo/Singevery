@@ -14,6 +14,7 @@ import {
 import { AudioMonitor } from './audio/monitor';
 import type { BoundaryKind } from './audio/trackChange';
 import { blobToWav16kMono } from './audio/wav';
+import { t } from './i18n';
 
 /**
  * Tope de ciclos rápidos seguidos. Cinco cubren la histéresis más exigente
@@ -165,7 +166,7 @@ export function useRecognition(): RecognitionState {
   const start = useCallback(
     async (source: AudioSource) => {
       if (!window.api) {
-        setError('API no disponible — usa npm run dev:electron');
+        setError(t('hooks.apiUnavailable'));
         return;
       }
 
@@ -177,8 +178,8 @@ export function useRecognition(): RecognitionState {
       setError(null);
       setHint(
         source === 'microphone'
-          ? 'Permite acceso al micrófono…'
-          : 'Capturando audio del sistema…',
+          ? t('hooks.micPermissionPrompt')
+          : t('hooks.capturingSystemAudio'),
       );
       await window.api.setRecognitionPhase('LISTENING');
       // Modo micrófono = audio externo al PC: suprime SMTC para que el
@@ -205,8 +206,8 @@ export function useRecognition(): RecognitionState {
           if (!tracking) {
             setHint(
               source === 'microphone'
-                ? `Grabando micrófono (${CAPTURE_RECORD_MS / 1000}s)…`
-                : `Grabando audio sistema (${CAPTURE_RECORD_MS / 1000}s)…`,
+                ? t('hooks.recordingMic', { seconds: CAPTURE_RECORD_MS / 1000 })
+                : t('hooks.recordingSystem', { seconds: CAPTURE_RECORD_MS / 1000 }),
             );
             await window.api.setRecognitionPhase('LISTENING');
           }
@@ -240,8 +241,8 @@ export function useRecognition(): RecognitionState {
             }
             throw new Error(
               source === 'microphone'
-                ? 'No se capturó audio — revisa el permiso del micrófono.'
-                : 'No se capturó audio del sistema — revisa que haya una salida de audio activa o usa el micrófono.',
+                ? t('hooks.noAudioCapturedMic')
+                : t('hooks.noAudioCapturedSystem'),
             );
           }
 
@@ -250,8 +251,8 @@ export function useRecognition(): RecognitionState {
           if (level < SILENCE_PEAK) {
             const msg =
               source === 'microphone'
-                ? 'Sin señal del micrófono — sube el volumen, acércalo a los parlantes o reproduce música.'
-                : 'Audio del sistema en silencio — sube el volumen o reproduce algo.';
+                ? t('hooks.micNoSignal')
+                : t('hooks.systemAudioSilent');
             setHint(msg);
             await sleepOrWake(tracking ? CAPTURE_RESYNC_PAUSE_MS : CAPTURE_PAUSE_MS, controller.signal);
             continue;
@@ -267,17 +268,17 @@ export function useRecognition(): RecognitionState {
             const result = await window.api.correctAudio(buffer, mimeType, recordStartedAt);
             if (controller.signal.aborted) break; // F2: se detuvo mientras corregía.
             if (result.ok && result.matched && result.changed) {
-              setHint('Nueva canción detectada…');
+              setHint(t('hooks.newSongDetected'));
               fastCycles = 0;
             } else if (result.ok && result.suspected) {
               // El fingerprint ya vio OTRA canción pero la histéresis todavía
               // no la da por buena. Esa confirmación tenía que llegar en el
               // ciclo siguiente (~20s después): encadenarla de inmediato la
               // baja a los ~7s que cuesta grabar e identificar.
-              setHint('Comprobando cambio de canción…');
+              setHint(t('hooks.checkingSongChange'));
               fastCycles += 1;
             } else {
-              setHint('Sincronizado · corrigiendo en vivo…');
+              setHint(t('hooks.syncedCorrecting'));
               fastCycles = 0;
             }
             if (!controller.signal.aborted) {
@@ -293,7 +294,7 @@ export function useRecognition(): RecognitionState {
             continue;
           }
 
-          setHint('Identificando canción…');
+          setHint(t('hooks.identifyingSong'));
           const result = await window.api.identifyAudio(buffer, mimeType, recordStartedAt);
           if (controller.signal.aborted) break; // F2: se detuvo mientras identificaba.
 
@@ -305,12 +306,12 @@ export function useRecognition(): RecognitionState {
             if (retryable) {
               setHint(
                 level < SILENCE_PEAK * 4
-                  ? 'No se reconoció — señal baja, sube el volumen o acércate. Reintentando…'
-                  : 'No se reconoció la canción, reintentando…',
+                  ? t('hooks.notRecognizedLowSignal')
+                  : t('hooks.notRecognizedRetrying'),
               );
               continue;
             }
-            setError(result.error ?? 'Error al identificar');
+            setError(result.error ?? t('hooks.identifyError'));
             break;
           }
 
@@ -318,14 +319,14 @@ export function useRecognition(): RecognitionState {
             // Match confirmado: el StateStore ancló la posición y carga la letra.
             // Pasamos a modo seguimiento para corregir la deriva continuamente.
             tracking = true;
-            setHint('Sincronizado · corrigiendo en vivo…');
+            setHint(t('hooks.syncedCorrecting'));
             if (!controller.signal.aborted) {
               await sleepOrWake(CAPTURE_RESYNC_PAUSE_MS, controller.signal);
             }
             continue;
           }
 
-          setHint('Sin coincidencia, reintentando…');
+          setHint(t('hooks.noMatchRetrying'));
           if (!controller.signal.aborted) {
             await sleepOrWake(CAPTURE_PAUSE_MS, controller.signal);
           }
@@ -334,7 +335,7 @@ export function useRecognition(): RecognitionState {
         if (err instanceof DOMException && err.name === 'AbortError') {
           return;
         }
-        const message = err instanceof Error ? err.message : 'Error de captura';
+        const message = err instanceof Error ? err.message : t('hooks.captureError');
         setError(message);
       } finally {
         if (abortRef.current === controller) {

@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useT } from './i18n/useT';
 import './ManualSearch.css';
 
 interface ManualSearchProps {
@@ -23,6 +24,7 @@ type SearchStatus = 'idle' | 'busy' | 'error';
  *    preservando la posición/pausa actuales.
  */
 export function ManualSearch({ onClose, initialTitle, initialArtist }: ManualSearchProps) {
+  const t = useT();
   // Estado fresco en cada montaje: App monta el modal condicionalmente
   // ({manualSearchOpen && <ManualSearch/>}), así los valores iniciales
   // (pista actual) se aplican al abrir sin resetear en effects.
@@ -33,26 +35,26 @@ export function ManualSearch({ onClose, initialTitle, initialArtist }: ManualSea
 
   const doSearch = async (useRetry: boolean): Promise<void> => {
     if (!window.api) return;
-    const t = title.trim();
+    const query = title.trim();
     const a = artist.trim();
-    if (!t) {
+    if (!query) {
       setStatus('error');
-      setError('Escribe el título de la canción.');
+      setError(t('reading.search.errorTitle'));
       return;
     }
     setStatus('busy');
     setError(null);
     try {
-      const result = useRetry ? await window.api.retryLyrics(t, a) : await window.api.loadLyrics(t, a);
+      const result = useRetry ? await window.api.retryLyrics(query, a) : await window.api.loadLyrics(query, a);
       if (result.ok) {
         onClose();
       } else {
         setStatus('error');
-        setError(result.error ?? 'No se encontró la letra.');
+        setError(result.error ?? t('reading.search.errorNotFound'));
       }
     } catch (err) {
       setStatus('error');
-      setError(err instanceof Error ? err.message : 'Error al buscar la letra.');
+      setError(err instanceof Error ? err.message : t('reading.search.errorGeneric'));
     }
   };
 
@@ -64,12 +66,12 @@ export function ManualSearch({ onClose, initialTitle, initialArtist }: ManualSea
         className="manual-search-panel"
         role="dialog"
         aria-modal="true"
-        aria-label="Buscar canción manualmente"
+        aria-label={t('reading.search.title')}
         onClick={(e) => e.stopPropagation()}
       >
-        <h2>Buscar canción manualmente</h2>
+        <h2>{t('reading.search.title')}</h2>
         <p className="manual-search-sub">
-          La app no reconoce bien la canción. Escríbela para buscar la letra.
+          {t('reading.search.subtitle')}
         </p>
         <form
           onSubmit={(e) => {
@@ -78,20 +80,20 @@ export function ManualSearch({ onClose, initialTitle, initialArtist }: ManualSea
           }}
         >
           <label>
-            Título
+            {t('reading.search.titleLabel')}
             <input
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              placeholder="p. ej. Bailando Solo"
+              placeholder={t('reading.search.titlePlaceholder')}
               autoFocus
             />
           </label>
           <label>
-            Artista (opcional)
+            {t('reading.search.artistLabel')}
             <input
               value={artist}
               onChange={(e) => setArtist(e.target.value)}
-              placeholder="p. ej. Los Bunkers"
+              placeholder={t('reading.search.artistPlaceholder')}
             />
           </label>
           <div className="manual-search-actions">
@@ -100,16 +102,16 @@ export function ManualSearch({ onClose, initialTitle, initialArtist }: ManualSea
               className="manual-search-primary"
               disabled={status === 'busy'}
             >
-              {status === 'busy' ? 'Buscando…' : 'Buscar letra'}
+              {status === 'busy' ? t('reading.search.busy') : t('reading.search.submit')}
             </button>
             <button
               type="button"
               className="manual-search-secondary"
               disabled={status === 'busy'}
               onClick={() => void doSearch(true)}
-              title="Reintenta identificar la canción desde el audio (preserva posición y pausa)"
+              title={t('reading.search.retryTitle')}
             >
-              Reintentar reconocimiento
+              {t('reading.search.retry')}
             </button>
             <button
               type="button"
@@ -117,7 +119,7 @@ export function ManualSearch({ onClose, initialTitle, initialArtist }: ManualSea
               disabled={status === 'busy'}
               onClick={onClose}
             >
-              Cerrar
+              {t('reading.search.close')}
             </button>
           </div>
           {status === 'error' && (

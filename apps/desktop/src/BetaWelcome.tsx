@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useT } from './i18n/useT';
 
 interface BetaWelcomeProps {
   open: boolean;
@@ -7,50 +8,52 @@ interface BetaWelcomeProps {
 }
 
 export function BetaWelcome({ open, onDone, onOpenSettings }: BetaWelcomeProps) {
+  const t = useT();
   const [guideError, setGuideError] = useState<string | null>(null);
   if (!open) return null;
 
   const openGuide = async (): Promise<void> => {
     const result = await window.api?.openBetaGuide();
-    if (result && !result.ok) setGuideError(result.error ?? 'No se pudo abrir la guía beta');
+    if (result && !result.ok) setGuideError(result.error ?? t('app.beta.guideError'));
   };
 
   return (
     <div className="beta-welcome-backdrop" role="presentation">
       <section className="beta-welcome" role="dialog" aria-modal="true" aria-labelledby="beta-title">
-        <span className="beta-kicker">Beta para evaluación docente</span>
-        <h1 id="beta-title">Bienvenido a Singevery</h1>
+        <span className="beta-kicker">{t('app.beta.kicker')}</span>
+        <h1 id="beta-title">{t('app.beta.title')}</h1>
         <p>
-          Esta versión sirve para probar letras sincronizadas, lectura, reconocimiento y apoyo de
-          afinación. En una instalación nueva no escucha hasta que pulses <strong>SING</strong>.
+          {t('app.beta.introBefore')}
+          <strong>SING</strong>
+          {t('app.beta.introAfter')}
         </p>
         <ol className="beta-steps">
           <li>
-            <strong>Reproduce una canción</strong>
-            <span>Pulsa SING para reconocer el audio del sistema.</span>
+            <strong>{t('app.beta.step1Title')}</strong>
+            <span>{t('app.beta.step1Desc')}</span>
           </li>
           <li>
-            <strong>Prueba voz y lectura</strong>
-            <span>Activa el micrófono o el afinador sólo cuando quieras practicar.</span>
+            <strong>{t('app.beta.step2Title')}</strong>
+            <span>{t('app.beta.step2Desc')}</span>
           </li>
           <li>
-            <strong>Cuéntanos qué falla</strong>
-            <span>Ajustes → Ayuda y beta prepara un ticket que tú revisas antes de enviar.</span>
+            <strong>{t('app.beta.step3Title')}</strong>
+            <span>{t('app.beta.step3Desc')}</span>
           </li>
         </ol>
         <p className="beta-privacy">
-          Los tickets y diagnósticos se guardan primero en tu equipo; no se suben automáticamente.
+          {t('app.beta.privacy')}
         </p>
         {guideError && <p className="beta-error" role="alert">{guideError}</p>}
         <div className="beta-actions">
           <button type="button" className="chrome-button" onClick={() => void openGuide()}>
-            Abrir guía de prueba
+            {t('app.beta.openGuide')}
           </button>
           <button type="button" className="chrome-button" onClick={onOpenSettings}>
-            Ver ajustes
+            {t('app.beta.viewSettings')}
           </button>
           <button type="button" className="chrome-button beta-primary" onClick={onDone}>
-            Empezar
+            {t('app.beta.start')}
           </button>
         </div>
       </section>

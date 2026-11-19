@@ -29,6 +29,7 @@ import {
 } from './autoGhost';
 import { GUARDED_POINTER_EVENTS, withinExpandGuard } from './expandGuard';
 import { detectScriptFromLines } from './scriptDetect';
+import { useT } from './i18n/useT';
 import './App.css';
 
 declare global {
@@ -49,6 +50,7 @@ function shouldShowBetaWelcome(): boolean {
 }
 
 function AppContent() {
+  const t = useT();
   const model = useRenderModel();
   const [readingMode, setReadingMode] = useReadingMode();
   const [translationView, setTranslationView, translationState] = useTranslationView();
@@ -441,16 +443,16 @@ function AppContent() {
       />
       {tangible && (
         <div className="tangible-badge" role="status">
-          Modo tangible · <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>T</kbd> para soltar ·{' '}
-          <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+flechas para mover
+          {t('app.tangible.title')} · <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>T</kbd> {t('app.tangible.toRelease')} ·{' '}
+          <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+{t('app.tangible.arrows')} {t('app.tangible.toMove')}
         </div>
       )}
       {autoGhostNotice && ghost && (
         <div className="auto-ghost-notice" role="status">
           {autoGhostNotice === 'auto-open'
-            ? 'Se abrió en modo intangible para no interrumpirte · doble clic en la pestañita para usarlo · '
-            : 'Intangible por inactividad · doble clic en la pestañita para volver · '}
-          <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>T</kbd> fuerza el modo tangible
+            ? t('app.ghostNotice.autoOpen')
+            : t('app.ghostNotice.idle')}
+          <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>T</kbd> {t('app.ghostNotice.forceTangible')}
         </div>
       )}
       <WidgetHandle

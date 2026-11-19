@@ -5,6 +5,8 @@
 import type { DisplaySettings, ReadingSettings } from '../types';
 import type { WidgetControls } from '../widgetPrefs';
 import { AUTO_GHOST_OPTIONS_S, type AutoGhostPrefs } from '../autoGhost';
+import { useT } from '../i18n/useT';
+import type { MessageKey } from '../i18n';
 
 export interface DisplayTabProps {
   display: DisplaySettings;
@@ -17,28 +19,28 @@ export interface DisplayTabProps {
   patchAutoGhost: (partial: Partial<AutoGhostPrefs>) => void;
 }
 
-const TEXT_COLOR_PRESETS: { value: string; label: string }[] = [
-  { value: '#ffffff', label: 'Blanco' },
-  { value: '#fde047', label: 'Amarillo' },
-  { value: '#22d3ee', label: 'Cian' },
-  { value: '#4ade80', label: 'Verde' },
-  { value: '#f472b6', label: 'Rosa' },
-  { value: '#111114', label: 'Negro' },
+const TEXT_COLOR_PRESETS: { value: string; label: MessageKey }[] = [
+  { value: '#ffffff', label: 'settingsDisplay.color.white' },
+  { value: '#fde047', label: 'settingsDisplay.color.yellow' },
+  { value: '#22d3ee', label: 'settingsDisplay.color.cyan' },
+  { value: '#4ade80', label: 'settingsDisplay.color.green' },
+  { value: '#f472b6', label: 'settingsDisplay.color.pink' },
+  { value: '#111114', label: 'settingsDisplay.color.black' },
 ];
 
-const HANDLE_COLOR_PRESETS: { value: string; label: string }[] = [
-  { value: '#000000', label: 'Negro' },
-  { value: '#ffffff', label: 'Blanco' },
-  { value: '#fde047', label: 'Amarillo' },
-  { value: '#22d3ee', label: 'Cian' },
-  { value: '#a78bfa', label: 'Violeta' },
-  { value: '#f472b6', label: 'Rosa' },
+const HANDLE_COLOR_PRESETS: { value: string; label: MessageKey }[] = [
+  { value: '#000000', label: 'settingsDisplay.color.black' },
+  { value: '#ffffff', label: 'settingsDisplay.color.white' },
+  { value: '#fde047', label: 'settingsDisplay.color.yellow' },
+  { value: '#22d3ee', label: 'settingsDisplay.color.cyan' },
+  { value: '#a78bfa', label: 'settingsDisplay.color.violet' },
+  { value: '#f472b6', label: 'settingsDisplay.color.pink' },
 ];
 
-const HANDLE_POSITION_PRESETS: { value: number; label: string }[] = [
-  { value: 0.06, label: 'Izquierda' },
-  { value: 0.5, label: 'Centro' },
-  { value: 0.94, label: 'Derecha' },
+const HANDLE_POSITION_PRESETS: { value: number; label: MessageKey }[] = [
+  { value: 0.06, label: 'settingsDisplay.position.left' },
+  { value: 0.5, label: 'settingsDisplay.position.center' },
+  { value: 0.94, label: 'settingsDisplay.position.right' },
 ];
 
 export function DisplayTab({
@@ -51,14 +53,15 @@ export function DisplayTab({
   autoGhost,
   patchAutoGhost,
 }: DisplayTabProps) {
+  const t = useT();
   return (
     <>
       {/* ---------------- Letra: lo que se toca a diario ---------------- */}
       <section className="settings-section">
-        <span className="settings-label settings-group-title">Letra</span>
+        <span className="settings-label settings-group-title">{t('settingsDisplay.group.lyrics')}</span>
 
         <label className="settings-label" htmlFor="font-range">
-          Tamaño ({display.fontScale.toFixed(1)}×)
+          {t('settingsDisplay.size', { value: display.fontScale.toFixed(1) })}
         </label>
         <input
           id="font-range"
@@ -71,7 +74,7 @@ export function DisplayTab({
         />
 
         <label className="settings-label" htmlFor="opacity-range">
-          Opacidad de la letra ({Math.round(display.opacity * 100)}%)
+          {t('settingsDisplay.textOpacity', { value: Math.round(display.opacity * 100) })}
         </label>
         <input
           id="opacity-range"
@@ -83,11 +86,11 @@ export function DisplayTab({
           onChange={(e) => patchDisplay({ opacity: Number(e.target.value) })}
         />
         <p className="settings-hint">
-          La línea que se canta nunca baja del 60 % para seguir siendo legible.
+          {t('settingsDisplay.hint.currentLine')}
         </p>
 
         <label className="settings-label" htmlFor="background-opacity-range">
-          Opacidad del fondo ({Math.round(display.backgroundOpacity * 100)}%)
+          {t('settingsDisplay.backgroundOpacity', { value: Math.round(display.backgroundOpacity * 100) })}
         </label>
         <input
           id="background-opacity-range"
@@ -104,24 +107,24 @@ export function DisplayTab({
             checked={display.legibilityBoost}
             onChange={(e) => patchDisplay({ legibilityBoost: e.target.checked })}
           />
-          Reforzar contorno del texto cuando el fondo es muy transparente
+          {t('settingsDisplay.legibilityBoost')}
         </label>
 
-        <span className="settings-label">Color</span>
+        <span className="settings-label">{t('settingsDisplay.color.label')}</span>
         <div className="settings-color-row">
           {TEXT_COLOR_PRESETS.map((preset) => (
             <button
               key={preset.value}
               type="button"
               className={`settings-color-swatch${display.textColor === preset.value ? ' active' : ''}`}
-              title={preset.label}
-              aria-label={preset.label}
+              title={t(preset.label)}
+              aria-label={t(preset.label)}
               onClick={() => patchDisplay({ textColor: preset.value })}
             >
               <span style={{ backgroundColor: preset.value }} />
             </button>
           ))}
-          <label className="settings-color-picker" title="Color personalizado">
+          <label className="settings-color-picker" title={t('settingsDisplay.customColor')}>
             <input
               type="color"
               value={display.textColor}
@@ -131,7 +134,7 @@ export function DisplayTab({
         </div>
 
         <label className="settings-label" htmlFor="window-size-range">
-          Líneas visibles ({display.lyricsWindowSize} arriba y abajo)
+          {t('settingsDisplay.linesVisible', { value: display.lyricsWindowSize })}
         </label>
         <input
           id="window-size-range"
@@ -143,11 +146,10 @@ export function DisplayTab({
           onChange={(e) => patchDisplay({ lyricsWindowSize: Number(e.target.value) })}
         />
         <p className="settings-hint">
-          Más líneas dan margen cuando la sincronía va algo corrida y terminas cantando desde la
-          previsualización. El texto se achica solo para que quepa.
+          {t('settingsDisplay.hint.linesWindow')}
         </p>
 
-        <span className="settings-label">Alineación</span>
+        <span className="settings-label">{t('settingsDisplay.alignment.label')}</span>
         <div className="settings-row">
           {(['left', 'center', 'right'] as const).map((align) => (
             <button
@@ -161,15 +163,14 @@ export function DisplayTab({
           ))}
         </div>
         <p className="settings-hint">
-          La letra se muestra centrada por defecto; el layout lado a lado solo se activa con la
-          traducción en modo paralelo.
+          {t('settingsDisplay.hint.alignment')}
         </p>
       </section>
 
       {/* ---------------- Handle del widget + botones visibles (F5) ---------------- */}
       <section className="settings-section">
-        <span className="settings-label settings-group-title">Widget</span>
-        <p className="settings-hint">La pestañita para mover el overlay y qué controles se ven.</p>
+        <span className="settings-label settings-group-title">{t('settingsDisplay.group.widget')}</span>
+        <p className="settings-hint">{t('settingsDisplay.widgetHint')}</p>
 
         <div className="settings-color-row">
           {HANDLE_COLOR_PRESETS.map((preset) => (
@@ -177,14 +178,14 @@ export function DisplayTab({
               key={preset.value}
               type="button"
               className={`settings-color-swatch${display.handleColor === preset.value ? ' active' : ''}`}
-              title={preset.label}
-              aria-label={`Handle ${preset.label}`}
+              title={t(preset.label)}
+              aria-label={t('settingsDisplay.handleColorAria', { color: t(preset.label) })}
               onClick={() => patchDisplay({ handleColor: preset.value })}
             >
               <span style={{ backgroundColor: preset.value }} />
             </button>
           ))}
-          <label className="settings-color-picker" title="Color personalizado del handle">
+          <label className="settings-color-picker" title={t('settingsDisplay.customHandleColor')}>
             <input
               type="color"
               value={display.handleColor}
@@ -193,7 +194,7 @@ export function DisplayTab({
           </label>
         </div>
         <label className="settings-label" htmlFor="handle-scale-range">
-          Tamaño ({display.handleScale.toFixed(1)}×)
+          {t('settingsDisplay.size', { value: display.handleScale.toFixed(1) })}
         </label>
         <input
           id="handle-scale-range"
@@ -205,7 +206,7 @@ export function DisplayTab({
           onChange={(e) => patchDisplay({ handleScale: Number(e.target.value) })}
         />
         <label className="settings-label" htmlFor="handle-position-range">
-          Posición horizontal ({Math.round(display.handlePositionX * 100)}%)
+          {t('settingsDisplay.handlePosition', { value: Math.round(display.handlePositionX * 100) })}
         </label>
         <input
           id="handle-position-range"
@@ -224,19 +225,19 @@ export function DisplayTab({
               className={`chrome-button${Math.abs(display.handlePositionX - preset.value) < 0.03 ? ' active' : ''}`}
               onClick={() => patchDisplay({ handlePositionX: preset.value })}
             >
-              {preset.label}
+              {t(preset.label)}
             </button>
           ))}
         </div>
 
-        <span className="settings-label">Botones visibles</span>
+        <span className="settings-label">{t('settingsDisplay.visibleButtons')}</span>
         <label className="settings-check">
           <input
             type="checkbox"
             checked={widgetControls.reading}
             onChange={(e) => patchWidgetControls({ reading: e.target.checked })}
           />
-          Modos de lectura (原 か ふ A IPA…)
+          {t('settingsDisplay.readingModes')}
         </label>
         <label className="settings-check">
           <input
@@ -244,7 +245,7 @@ export function DisplayTab({
             checked={widgetControls.translate}
             onChange={(e) => patchWidgetControls({ translate: e.target.checked })}
           />
-          Traducción (T)
+          {t('settingsDisplay.translate')}
         </label>
         <label className="settings-check">
           <input
@@ -252,7 +253,7 @@ export function DisplayTab({
             checked={widgetControls.import}
             onChange={(e) => patchWidgetControls({ import: e.target.checked })}
           />
-          Importar letra (↥)
+          {t('settingsDisplay.importLyrics')}
         </label>
         <label className="settings-check">
           <input
@@ -260,7 +261,7 @@ export function DisplayTab({
             checked={widgetControls.settings}
             onChange={(e) => patchWidgetControls({ settings: e.target.checked })}
           />
-          Ajustes (⚙)
+          {t('settingsDisplay.settings')}
         </label>
 
         <label className="settings-check">
@@ -269,10 +270,10 @@ export function DisplayTab({
             checked={autoGhost.enabled}
             onChange={(e) => patchAutoGhost({ enabled: e.target.checked })}
           />
-          Volverse intangible tras un rato sin usarlo
+          {t('settingsDisplay.autoGhost')}
         </label>
         <label className="settings-label" htmlFor="auto-ghost-delay">
-          Después de
+          {t('settingsDisplay.after')}
         </label>
         <select
           id="auto-ghost-delay"
@@ -287,8 +288,7 @@ export function DisplayTab({
           ))}
         </select>
         <p className="settings-hint">
-          Si no tocas el widget durante ese tiempo, deja pasar los clics a la app de atrás (modo
-          fantasma). Para recuperarlo: doble clic en la pestañita, o Ctrl+Alt+T.
+          {t('settingsDisplay.hint.autoGhost')}
         </p>
 
         <label className="settings-check">
@@ -297,17 +297,16 @@ export function DisplayTab({
             checked={autoGhost.openOnRecognize}
             onChange={(e) => patchAutoGhost({ openOnRecognize: e.target.checked })}
           />
-          Abrirse solo al reconocer una canción (desde SING)
+          {t('settingsDisplay.openOnRecognize')}
         </label>
         <p className="settings-hint">
-          Se abre en modo intangible para no atrapar tus clics. Desactivado, se queda como SING
-          (con un punto verde) hasta que lo pulses.
+          {t('settingsDisplay.hint.openOnRecognize')}
         </p>
       </section>
 
       {/* ---------------- Extras de lectura ---------------- */}
       <section className="settings-section">
-        <span className="settings-label settings-group-title">Extras de lectura</span>
+        <span className="settings-label settings-group-title">{t('settingsDisplay.group.readingExtras')}</span>
         <label className="settings-check">
           <input
             type="checkbox"
@@ -316,7 +315,7 @@ export function DisplayTab({
               patchReading({ pinyinToneType: e.target.checked ? 'symbol' : 'none' })
             }
           />
-          Tonos en el pinyin chino (nǐ hǎo vs ni hao)
+          {t('settingsDisplay.pinyinTones')}
         </label>
         <label className="settings-check">
           <input
@@ -326,7 +325,7 @@ export function DisplayTab({
               patchReading({ spanishVariant: e.target.checked ? 'distincion' : 'seseo' })
             }
           />
-          IPA del español con distinción castellana (caza /ˈkaθa/ vs seseo /ˈkasa/)
+          {t('settingsDisplay.spanishIpa')}
         </label>
         <label className="settings-check">
           <input
@@ -334,7 +333,7 @@ export function DisplayTab({
             checked={display.mirrorMode}
             onChange={(e) => patchDisplay({ mirrorMode: e.target.checked })}
           />
-          Modo espejo (para proyectar sobre un cristal)
+          {t('settingsDisplay.mirrorMode')}
         </label>
         <label className="settings-check">
           <input
@@ -344,13 +343,11 @@ export function DisplayTab({
               patchDisplay({ textColorMode: e.target.checked ? 'auto' : 'manual' })
             }
           />
-          Color automático según el fondo (experimental)
+          {t('settingsDisplay.autoColor')}
         </label>
         {display.textColorMode === 'auto' && (
           <p className="settings-hint">
-            Analiza el brillo de la pantalla bajo el widget cada pocos segundos; la imagen se
-            procesa localmente y se descarta. Puede producir un ligero parpadeo, y el widget no
-            aparece en grabaciones mientras esté activo.
+            {t('settingsDisplay.hint.autoColor')}
           </p>
         )}
       </section>
